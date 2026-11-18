@@ -2,6 +2,8 @@
 
 A command-line task tracker that stores tickets on a separate branch in your Git repository.
 
+Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
+
 ## Prerequisites
 
 - Go 1.24 or later, a C compiler, and `pkg-config` (macOS or Linux, arm64 or amd64).
