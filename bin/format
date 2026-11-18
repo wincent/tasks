@@ -1,0 +1,7 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")/.."
+gofmt -w cmd internal
+exec dprint fmt "$@"

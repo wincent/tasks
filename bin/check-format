@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+status=0
+files=$(gofmt -l cmd internal) || status=1
+if [ -n "$files" ]; then
+  printf 'Go files that need formatting:\n%s\n' "$files" >&2
+  status=1
+fi
+
+dprint check "$@" || status=1
+exit "$status"
