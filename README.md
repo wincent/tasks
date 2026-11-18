@@ -18,6 +18,12 @@ From the root of this source repository:
 go install ./cmd/tasks
 ```
 
+Or install from GitHub without cloning:
+
+```sh
+go install github.com/wincent/tasks/cmd/tasks@latest
+```
+
 Put your Go binary directory (`go env GOBIN`, or `$(go env GOPATH)/bin` if unset) on your `PATH`.
 
 ## Set up a consuming repository
