@@ -1,6 +1,6 @@
 # TASKS-1: Create an ADRs folder
 
-Status: active
+Status: merged
 
 ## Description
 
