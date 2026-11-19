@@ -1,6 +1,6 @@
 # TASKS-4: Add a `help` subcommand
 
-Status: active
+Status: merged
 
 ## Description
 
