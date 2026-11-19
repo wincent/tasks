@@ -34,6 +34,9 @@ func TestHelp(t *testing.T) {
 	if short := readHelp(t, "-h"); short != root {
 		t.Errorf("top-level -h differs from --help: %q", short)
 	}
+	if alias := readHelp(t, "help"); alias != root {
+		t.Errorf("help differs from top-level --help: %q", alias)
+	}
 	if !strings.HasPrefix(root, "Usage: tasks [COMMAND]\n") {
 		t.Errorf("missing top-level usage: %q", root)
 	}
@@ -45,6 +48,9 @@ func TestHelp(t *testing.T) {
 			out := readHelp(t, name, "--help")
 			if short := readHelp(t, name, "-h"); short != out {
 				t.Errorf("-h differs from --help: %q", short)
+			}
+			if alias := readHelp(t, "help", name); alias != out {
+				t.Errorf("help %s differs from %s --help: %q", name, name, alias)
 			}
 
 			usage, _, _ := strings.Cut(out, "\n")
@@ -68,5 +74,22 @@ func TestHelp(t *testing.T) {
 				t.Error("missing Options section")
 			}
 		})
+	}
+}
+
+func TestHelpUsageErrors(t *testing.T) {
+	cwd := filepath.Join(t.TempDir(), "missing")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"unknown"}, "unknown command: unknown"},
+		{[]string{"create", "list"}, "help expects 1 positional argument(s)"},
+	} {
+		args := append([]string{"help"}, tc.args...)
+		out, _, err := invoke(cwd, "", args...)
+		if out != "" || err == nil || ExitCode(err) != 2 || err.Error() != tc.want {
+			t.Errorf("%v: got output %q and error %v, want usage error %q and no output", args, out, err, tc.want)
+		}
 	}
 }

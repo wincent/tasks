@@ -23,7 +23,6 @@ type IO struct {
 
 type arguments struct {
 	action      string
-	helpSubject string
 	positional  []string
 	values      map[string][]string
 	flags       map[string]bool
@@ -83,9 +82,7 @@ func parse(args []string) (arguments, error) {
 	}
 
 	if a.flags["--help"] || a.flags["-h"] {
-		a.helpSubject = a.action
-		a.action = "help"
-		return a, nil
+		return arguments{action: "help", positional: []string{a.action}}, nil
 	}
 	if len(a.positional) < spec.min && spec.min != spec.max {
 		return a, fmt.Errorf("%s expects at least %d positional argument(s)", a.action, spec.min)
@@ -140,8 +137,9 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 	if err != nil {
 		return &usageError{err}
 	}
+	run := commands[a.action].run
 	if a.action == "help" {
-		return help(a.helpSubject, streams.Out)
+		return run(ctx, cwd, a, streams)
 	}
 	repo, err := git.Open(cwd)
 	if err != nil {
@@ -155,5 +153,5 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 	if a.inputPrefix != "" && a.inputPrefix != a.prefix {
 		return &usageError{fmt.Errorf("unexpected task prefix %s; use %s or %d", a.inputPrefix, a.prefix.ID(a.number()), a.number())}
 	}
-	return commands[a.action].run(ctx, cwd, a, streams)
+	return run(ctx, cwd, a, streams)
 }

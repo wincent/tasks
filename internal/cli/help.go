@@ -49,8 +49,8 @@ Start with 'tasks create "Task title"'. Use the number in the printed
 path with 'tasks run NUMBER'. To review first, add --no-merge, then
 use 'tasks merge NUMBER' when ready.
 
-Use 'tasks COMMAND --help' for options. For setup, see README.md in the
-github.com/wincent/tasks source repository.
+Use 'tasks help COMMAND' or 'tasks COMMAND --help' for options.
+For setup, see README.md in the github.com/wincent/tasks source repository.
 `)
 	}
 	_, err := io.WriteString(out, text.String())
