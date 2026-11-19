@@ -137,6 +137,21 @@ func TestListingPartialResultsAndStatusWarnings(t *testing.T) {
 	}
 }
 
+func TestListingNoUncompletedTasksHint(t *testing.T) {
+	repo, root := fixture(t)
+	path := strings.TrimSpace(run(t, root, "create", "Merged task", "--body", "requirements"))
+	commitTaskText(t, repo, path, "Status: merged\n")
+
+	out, diagnostic, err := invoke(root, "", "list")
+	if err != nil || out != "" {
+		t.Fatalf("expected an empty listing without error: stdout %q, stderr %q, error %v", out, diagnostic, err)
+	}
+	want := "There are no uncompleted tasks.\nRun `tasks list done` or `tasks list merged` to see completed tasks.\n"
+	if diagnostic != want {
+		t.Fatalf("stderr = %q, want %q", diagnostic, want)
+	}
+}
+
 func TestListingOnlyInvalidRecordsDoesNotClaimEmptyStore(t *testing.T) {
 	_, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Broken", "--body", "requirements"))
