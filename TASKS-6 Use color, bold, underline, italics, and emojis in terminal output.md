@@ -1,6 +1,6 @@
 # TASKS-6: Use color, bold, underline, italics, and emojis in terminal output
 
-Status: active
+Status: merged
 
 ## Description
 
