@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,47 +15,50 @@ func bodyOptions() map[string]optionKind {
 }
 
 func addNote(_ context.Context, _ string, a arguments, streams IO, invocation storeInvocation) error {
-	target, title := "", "Comment"
+	target, heading, action := "", "Comment", "Commented on"
 	if a.action == "close" {
 		lock, err := taskLock(invocation.session.Directory, a.prefix, a.number())
 		if err != nil {
 			return err
 		}
 		defer lock.Close()
-		target, title = "closed", "Closed"
+		target, heading, action = "closed", "Closed", "Closed"
 	}
-	path, err := updateTask(invocation.session, a.prefix, a.number(), target, title, invocation.body, a.action)
+	task, err := updateTask(invocation.session, a.prefix, a.number(), target, heading, invocation.body, a.action)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(streams.Out, path)
-	return err
+	return taskResult(streams.Out, action, task.ID(), task.Title, task.Path)
 }
 
-func updateTask(session *store.Session, prefix store.Prefix, n int, status, heading, note, action string) (string, error) {
+func updateTask(session *store.Session, prefix store.Prefix, n int, status, heading, note, action string) (store.Task, error) {
 	tasks, err := session.Preview(prefix)
 	if err != nil {
-		return "", err
+		return store.Task{}, err
 	}
 	defer tasks.Close()
 	task, err := tasks.Read(n)
 	if err != nil {
-		return "", err
+		return store.Task{}, err
 	}
 	content := task.Content
 	if status != "" {
 		content, err = store.WithStatus(content, status)
 		if err != nil {
-			return "", err
+			return store.Task{}, err
 		}
 	}
 	if strings.TrimSpace(note) != "" {
 		content = strings.TrimSpace(content) + "\n\n## " + heading + " (" + time.Now().UTC().Format(time.RFC3339) + ")\n\n" + strings.TrimSpace(note) + "\n"
 	}
-	if content == task.Content {
-		return task.Path, nil
+	if content != task.Content {
+		path, err := writeTask(session, prefix, filepath.Base(task.Path), content, action+" "+task.ID())
+		if err != nil {
+			return store.Task{}, err
+		}
+		task.Path, task.Content, task.Status = path, content, status
 	}
-	return writeTask(session, prefix, filepath.Base(task.Path), content, action+" "+task.ID())
+	return task, nil
 }
 
 func writeTask(session *store.Session, prefix store.Prefix, name, content, message string) (string, error) {

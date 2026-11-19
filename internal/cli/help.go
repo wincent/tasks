@@ -12,7 +12,8 @@ const bodyHelp = `Options:
   --body TEXT       Use the given text.
   --body-file FILE  Read text from FILE, or use - to read from standard input.
 
-Without either option, open your editor in an interactive terminal.`
+Without either option, open your editor in an interactive terminal.
+Leave the draft empty to cancel.`
 
 const worktreeHelp = "  --worktree PATH  Select an existing checkout for this task."
 

@@ -122,7 +122,8 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 		return err
 	}
 	if !already {
-		fmt.Fprintf(streams.Err, "Merging %s into local main...\n", task.ID())
+		p := terminalPresentation(streams.Err)
+		fmt.Fprintf(streams.Err, "%s %s into local main...\n", p.label("Merging", "🔄", "1;36"), p.paint(task.ID(), "4"))
 		if err := publishMerge(ctx, repo, source, task, base, streams); err != nil {
 			if saved == nil || (source.Paths.WorkDir != "" && source.Paths.WorkDir != saved.Worktree) {
 				saved = &taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}
@@ -152,7 +153,8 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			fmt.Fprintf(streams.Err, "Could not record the merged tip locally: %v\n", err)
 		}
 	}
-	fmt.Fprintf(streams.Out, "%s merged into local main.\n", task.ID())
+	p := terminalPresentation(streams.Out)
+	fmt.Fprintf(streams.Out, "%s %s\n", p.label(task.ID(), "✅", "4"), p.paint("merged into local main.", "1;32"))
 	if saved != nil && saved.SessionFile != "" {
 		fmt.Fprintf(streams.Out, "Session: %s\n", saved.SessionFile)
 	}

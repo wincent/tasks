@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/wincent/tasks/internal/testutil"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wincent/tasks/internal/testutil"
 )
 
 func TestGlowProcess(t *testing.T) {
@@ -42,6 +43,12 @@ func TestGlowProcess(t *testing.T) {
 }
 func outputTerminal(t *testing.T, root string, args ...string) (string, string, error) {
 	t.Helper()
+	return captureTerminal(t, root, false, args...)
+}
+
+// With a shared terminal, capture the editor and command output in order.
+func captureTerminal(t *testing.T, root string, shared bool, args ...string) (string, string, error) {
+	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +63,11 @@ func outputTerminal(t *testing.T, root string, args ...string) (string, string, 
 	var diagnostic bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	err = Run(ctx, root, args, IO{In: strings.NewReader(""), Out: slave, Err: &diagnostic})
+	streams := IO{Out: slave, Err: &diagnostic}
+	if shared {
+		streams.In, streams.Err = slave, slave
+	}
+	err = Run(ctx, root, args, streams)
 	slave.Close()
 	data := <-done
 	return strings.ReplaceAll(string(data), "\r\n", "\n"), diagnostic.String(), err
@@ -160,7 +171,7 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 			}
 			t.Setenv("TERM", policy.term)
 			t.Setenv("NO_COLOR", policy.noColor)
-			for _, args := range [][]string{{"list"}, {}} {
+			for _, args := range [][]string{{"list"}, {}, {"search", "edited"}} {
 				output, diagnostic, err := outputTerminal(t, root, args...)
 				if err != nil {
 					t.Fatalf("%v %s", err, diagnostic)
@@ -168,16 +179,20 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 				if strings.Contains(output, "\x1b[") != policy.color {
 					t.Fatal("color policy", output)
 				}
-				if !strings.Contains(output, "Edited") || !strings.Contains(output, "Manual") {
-					t.Fatal(output)
+				edited := "EXAMPLE-1\topen\tEdited (M)\n"
+				manual := "EXAMPLE-9\topen\tManual (?)\n"
+				if policy.color {
+					edited = "\x1b[4mEXAMPLE-1\x1b[0m\topen\t\x1b[3mEdited\x1b[0m (\x1b[31mM\x1b[0m)\n"
+					manual = "\x1b[4mEXAMPLE-9\x1b[0m\topen\t\x1b[3mManual\x1b[0m (\x1b[34m?\x1b[0m)\n"
 				}
-				if policy.color && (!strings.Contains(output, "\x1b[31mM\x1b[0m") || !strings.Contains(output, "\x1b[34m?\x1b[0m")) {
-					t.Fatal("marker colors", output)
+				expectManual := len(args) == 0 || args[0] == "list"
+				if !strings.Contains(output, edited) || strings.Contains(output, manual) != expectManual {
+					t.Fatalf("unexpected listing %q", output)
 				}
 			}
 			output, diagnostic, err := outputTerminal(t, root, "list", "--json")
-			if err != nil || strings.Contains(output, "\x1b") {
-				t.Fatalf("JSON terminal %v %s %s", err, output, diagnostic)
+			if piped := run(t, root, "list", "--json"); err != nil || output != piped {
+				t.Fatalf("JSON terminal %v %q %q; want %q", err, output, diagnostic, piped)
 			}
 			if !strings.Contains(output, `"title": "Edited"`) || strings.Contains(output, `"change"`) {
 				t.Fatal(output)
