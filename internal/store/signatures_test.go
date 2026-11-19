@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,13 +16,22 @@ import (
 func TestMetadataRemainsUnsignedWithSigningPolicy(t *testing.T) {
 	for _, scope := range []string{"global", "local"} {
 		t.Run(scope, func(t *testing.T) {
-			if scope == "global" {
+			const globalChild = "TASKS_TEST_METADATA_GLOBAL_SIGNING_CHILD"
+			if scope == "global" && os.Getenv(globalChild) != "1" {
+				// libgit2 caches global config search paths at initialization.
+				// Use a fresh process so earlier tests cannot select another home.
 				home := t.TempDir()
+				mustWrite(t, filepath.Join(home, ".gitconfig"), []byte("[commit]\ngpgSign = true\n[gpg]\nprogram = /nonexistent/signer\n"))
 				t.Setenv("HOME", home)
 				t.Setenv("XDG_CONFIG_HOME", home)
-				if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[commit]\ngpgSign = true\n[gpg]\nprogram = /nonexistent/signer\n"), 0600); err != nil {
-					t.Fatal(err)
+				t.Setenv("GIT_CONFIG_COUNT", "0")
+				t.Setenv("GIT_CONFIG_PARAMETERS", "")
+				t.Setenv(globalChild, "1")
+				command := exec.Command(os.Args[0], "-test.run=^TestMetadataRemainsUnsignedWithSigningPolicy$/^global$")
+				if output, err := command.CombinedOutput(); err != nil {
+					t.Fatalf("global signing policy in fresh process: %v\n%s", err, output)
 				}
+				return
 			}
 			for key, value := range map[string]string{"GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid", "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"} {
 				t.Setenv(key, value)
