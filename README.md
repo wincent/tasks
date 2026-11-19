@@ -48,6 +48,15 @@ tasks init
 
 `tasks init` sets up or validates the local task checkout. It does not fetch, push, or reset the branch. Try `tasks create "First task" --body "Describe the work"` and `tasks --help`.
 
+### Push both branches by default
+
+To make a plain `git push` update both `main` and `tasks` on `origin`, run these commands once in the consuming repository after both branches exist locally. If Git uses a different remote for pushes, replace `origin` with that remote's name.
+
+```sh
+git config --local --add remote.origin.push refs/heads/main:refs/heads/main
+git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
+```
+
 ## License
 
 [The Unlicense](UNLICENSE) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
