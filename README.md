@@ -15,7 +15,7 @@ Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
 From the root of this source repository:
 
 ```sh
-go install ./cmd/tasks
+bin/install
 ```
 
 Or install from GitHub without cloning:
