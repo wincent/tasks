@@ -1,6 +1,6 @@
 # TASKS-5: Add `test` and `vet` scripts under `bin`
 
-Status: active
+Status: merged
 
 ## Description
 
