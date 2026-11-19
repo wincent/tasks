@@ -1,6 +1,6 @@
 # TASKS-9: Document common remote set-up
 
-Status: active
+Status: merged
 
 ## Description
 
