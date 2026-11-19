@@ -1,6 +1,6 @@
 # TASKS-8: Make `install` wrapper
 
-Status: open
+Status: active
 
 ## Description
 
