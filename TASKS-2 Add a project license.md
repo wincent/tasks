@@ -9,3 +9,11 @@ Before publishing the project, decide between a public domain dedication via The
 ## Comment (2026-11-19T14:53:47Z)
 
 In the end, I've decided to go with the UNLICENSE. I didn't actually write the code, and the LLM that wrote it was trained on humanity's collective output (much of it subsumed into the training data without license). It seems pointless at this point to license new projects that are AI-generated under a regime that dates back to a different era.
+
+## Comment (2026-11-19T14:57:17Z)
+
+Previous attempt aborted with this reason:
+
+> Needs attention: The checkout does not show that the rights holders approved releasing the imported code under The Unlicense. Confirm that approval before publishing.
+
+I confirm that I'm the rights holder and I approved of releasing the imported code under these terms.
