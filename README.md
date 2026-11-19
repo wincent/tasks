@@ -47,3 +47,7 @@ tasks init
 ```
 
 `tasks init` sets up or validates the local task checkout. It does not fetch, push, or reset the branch. Try `tasks create "First task" --body "Describe the work"` and `tasks --help`.
+
+## License
+
+[The Unlicense](UNLICENSE) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
