@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")/.."
+gh actions-lock --verify
+bin/test
+bin/vet
+exec bin/check-format
