@@ -54,8 +54,9 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 	if a.flags["--json"] {
 		return encode(streams.Out, selected)
 	}
+	p := terminalPresentation(streams.Out)
 	if listing.recent {
-		fmt.Fprintln(streams.Out, "Recent tasks:")
+		fmt.Fprintln(streams.Out, p.paint("Recent tasks:", "1"))
 		if len(selected) > 10 {
 			selected = selected[len(selected)-10:]
 		}
@@ -80,9 +81,9 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 	for _, task := range selected {
 		suffix := ""
 		if marker := markers[filepath.Base(task.Path)]; marker != "" {
-			suffix = " (" + changeMarker(marker, streams.Out) + ")"
+			suffix = " (" + p.changeMarker(marker) + ")"
 		}
-		fmt.Fprintf(streams.Out, "%s\t%s\t%s%s\n", task.ID(), task.Status, task.Title, suffix)
+		fmt.Fprintf(streams.Out, "%s\t%s\t%s%s\n", p.paint(task.ID(), "4"), p.status(task.Status), p.paint(task.Title, "3"), suffix)
 		for _, activity := range task.Activity {
 			suffix := ""
 			if activity.SessionFile != "" {

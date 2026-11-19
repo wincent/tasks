@@ -57,11 +57,12 @@ func statusTask(directory string, tasks *store.Store, a arguments, streams IO) e
 	if a.flags["--json"] {
 		return errors.Join(err, encode(streams.Out, result))
 	}
+	p := terminalPresentation(streams.Out)
 	if result.Merging {
-		fmt.Fprintln(streams.Out, "Merging into local main.")
+		fmt.Fprintln(streams.Out, p.label("Merging into local main.", "🔄", "1;36"))
 	}
 	for _, task := range result.Tasks {
-		fmt.Fprintf(streams.Out, "%s  %s  %s\n", tasks.Prefix.ID(task.Number), task.Status, task.Title)
+		fmt.Fprintf(streams.Out, "%s  %s  %s\n", p.paint(tasks.Prefix.ID(task.Number), "4"), p.status(task.Status), p.paint(task.Title, "3"))
 		if task.Worktree != "" {
 			fmt.Fprintln(streams.Out, "  Checkout:", task.Worktree)
 		}

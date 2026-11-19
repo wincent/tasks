@@ -14,8 +14,9 @@ func init() {
 	commands.register(commandSpec{
 		name: "create", min: 1, max: 1, options: bodyOptions(),
 		usage:   "TITLE " + bodyUsage,
-		summary: "Create a task and print its file path.",
-		details: `Quote a title that contains spaces.
+		summary: "Create a task.",
+		details: `Quote a title that contains spaces. On a terminal, print a creation
+confirmation; when stdout is redirected, print the task's file path.
 
 ` + bodyHelp,
 		run: withTaskStore(storeRequirements{mutation: true, body: true, prepare: func(a arguments) error {
@@ -41,6 +42,5 @@ func createTask(_ context.Context, _ string, a arguments, streams IO, invocation
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(streams.Out, filepath.Clean(path))
-	return err
+	return taskResult(streams.Out, "Created", id, title, filepath.Clean(path))
 }

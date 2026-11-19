@@ -185,7 +185,8 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
 
-	fmt.Fprintf(streams.Err, "%s: %s\nCheckout: %s\nSession: %s\n", task.ID(), task.Title, root, record.SessionFile)
+	diagnostics := terminalPresentation(streams.Err)
+	fmt.Fprintf(streams.Err, "%s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), root, record.SessionFile)
 	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with 'Needs attention:' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path)
 	argv := []string{executable, "--session", record.SessionFile}
 	progress := &piProgress{out: streams.Out}
@@ -242,6 +243,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if err != nil {
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
+	p := terminalPresentation(streams.Out)
 	if included && head.ID == source.Head.ID {
 		if interactive && (task.Status == "open" || task.Status == "blocked" || task.Status == "active") {
 			return launchBlocked(repo, directory, prefix, n, record, errors.New("Pi exited without implementation commits; run again to continue, or close if no changes are needed"))
@@ -253,14 +255,16 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		if err := setResult(ctx, repo, prefix, n, "closed", note); err != nil {
 			return err
 		}
-		fmt.Fprintf(streams.Out, "%s closed without changes. Checkout: %s; session: %s\n", task.ID(), root, record.SessionFile)
+		fmt.Fprintf(streams.Out, "%s %s. Checkout: %s; session: %s\n",
+			p.label(task.ID(), "✅", "4"), p.paint("closed without changes", "1;32"), root, record.SessionFile)
 		return nil
 	}
 	if interactive || a.flags["--no-merge"] {
 		if err := setResult(ctx, repo, prefix, n, "done", ""); err != nil {
 			return err
 		}
-		fmt.Fprintf(streams.Out, "%s ready for review. Checkout: %s; session: %s\n", task.ID(), root, record.SessionFile)
+		fmt.Fprintf(streams.Out, "%s %s. Checkout: %s; session: %s\n",
+			p.label(task.ID(), "✅", "4"), p.paint("ready for review", "1;32"), root, record.SessionFile)
 		return nil
 	}
 	return mergeWork(ctx, repo, directory, cwd, prefix, n, root, streams)

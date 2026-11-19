@@ -73,7 +73,8 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 	if err != nil {
 		return "", err
 	}
-	label := "Creating task: " + strings.TrimSpace(a.positional[0])
+	p := terminalPresentation(streams.Err)
+	label := p.paint("Creating task:", "1") + " " + p.paint(strings.TrimSpace(a.positional[0]), "3")
 	kind := "description"
 	operation := "task creation"
 	if a.action != "create" {
@@ -84,7 +85,7 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 			repo.Close()
 			return "", err
 		}
-		label = fmt.Sprintf("%s: %s", task.ID(), filepath.Base(task.Path))
+		label = p.task(task.ID(), task.Title, ": ")
 		kind = "comment"
 		operation = "task " + a.action
 	}
@@ -104,7 +105,11 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 	if err := os.WriteFile(draft, nil, 0600); err != nil {
 		return "", err
 	}
-	fmt.Fprintf(streams.Err, "%s\nWrite the %s, then save and quit. Leave it empty to cancel.\n", label, kind)
+	// An interactive create already gets a one-line confirmation on stdout.
+	// Keep guidance if that stream is redirected or if adding a note.
+	if a.action != "create" || !terminal.IsTerminal(streams.Out) {
+		fmt.Fprintf(streams.Err, "%s\nWrite the %s, then save and quit. Leave it empty to cancel.\n", label, kind)
+	}
 	if err := runEditor(ctx, cwd, command, draft, streams); err != nil {
 		return "", fmt.Errorf("%s cancelled: %w", operation, err)
 	}
@@ -164,7 +169,9 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 	if err := os.WriteFile(draft, []byte(task.Content), 0600); err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Err, "Editing %s. Save and quit to commit; leave unchanged to cancel.\n", task.ID())
+	p := terminalPresentation(streams.Err)
+	fmt.Fprintf(streams.Err, "%s %s. Save and quit to commit; leave unchanged to cancel.\n",
+		p.paint("Editing", "1"), p.task(task.ID(), task.Title, " "))
 	if err := runEditor(ctx, cwd, command, draft, streams); err != nil {
 		return err
 	}
@@ -174,8 +181,7 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 	}
 	if bytes.Equal(data, []byte(task.Content)) {
 		saved = true
-		_, err = fmt.Fprintln(streams.Out, task.Path)
-		return err
+		return taskResult(streams.Out, "Unchanged", task.ID(), task.Title, task.Path)
 	}
 	if !utf8.Valid(data) {
 		return errors.New("edited task must be UTF-8")
@@ -227,6 +233,5 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 		return err
 	}
 	saved = true
-	_, err = fmt.Fprintln(streams.Out, task.Path)
-	return err
+	return taskResult(streams.Out, "Edited", task.ID(), task.Title, task.Path)
 }
