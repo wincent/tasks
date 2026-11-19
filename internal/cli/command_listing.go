@@ -114,7 +114,7 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 					fmt.Fprintln(streams.Err, "Run `tasks list blocked` to see tasks waiting for a decision or other input.")
 				}
 			} else {
-				fmt.Fprintln(streams.Err, "There are no uncompleted tasks.\nRun `tasks list --status done` to see completed tasks.")
+				fmt.Fprintln(streams.Err, "There are no uncompleted tasks.\nRun `tasks list done` or `tasks list merged` to see completed tasks.")
 			}
 		}
 	}
