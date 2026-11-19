@@ -1,6 +1,6 @@
 # TASKS-7: Improve hint when `list` has no tasks to show
 
-Status: open
+Status: active
 
 ## Description
 
