@@ -1,6 +1,6 @@
 # TASKS-2: Add a project license
 
-Status: active
+Status: blocked
 
 ## Description
 
