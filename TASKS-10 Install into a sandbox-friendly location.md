@@ -1,6 +1,6 @@
 # TASKS-10: Install into a sandbox-friendly location
 
-Status: open
+Status: active
 
 ## Description
 
