@@ -46,9 +46,10 @@ func help(subject string, out io.Writer) error {
 Without a command, show recent tasks. Use 123 or PREFIX-123. The prefix
 comes from .tasks.yml on local main.
 
-Start with 'tasks create "Task title"'. Use the number in the printed
-path with 'tasks run NUMBER'. To review first, add --no-merge, then
-use 'tasks merge NUMBER' when ready.
+For a quick task, use 'tasks go "Task title"' to create and run it.
+To write a description first, use 'tasks create "Task title"', then
+'tasks run NUMBER'. To review before merging, add --no-merge to 'tasks run',
+then use 'tasks merge NUMBER' when ready.
 
 Use 'tasks help COMMAND' or 'tasks COMMAND --help' for options.
 For setup, see README.md in the github.com/wincent/tasks source repository.
