@@ -18,13 +18,15 @@ From the root of this source repository:
 bin/install
 ```
 
+This installs `tasks` into `~/.local/bin`. Make sure that directory is on your `PATH`.
+
 Or install from GitHub without cloning:
 
 ```sh
 go install github.com/wincent/tasks/cmd/tasks@latest
 ```
 
-Put your Go binary directory (`go env GOBIN`, or `$(go env GOPATH)/bin` if unset) on your `PATH`.
+For the GitHub install, put your Go binary directory (`go env GOBIN`, or `$(go env GOPATH)/bin` if unset) on your `PATH`.
 
 ## Set up a consuming repository
 

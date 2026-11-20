@@ -3,4 +3,5 @@
 set -e
 
 cd "$(dirname "$0")/.."
+export GOBIN="$HOME/.local/bin"
 exec go install "$@" ./cmd/tasks
