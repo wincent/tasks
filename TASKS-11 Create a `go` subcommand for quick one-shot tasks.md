@@ -1,6 +1,6 @@
 # TASKS-11: Create a `go` subcommand for quick one-shot tasks
 
-Status: open
+Status: active
 
 ## Description
 
