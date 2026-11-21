@@ -1,6 +1,6 @@
 # TASKS-20: Fix alignment problem in `tasks list` output
 
-Status: open
+Status: active
 
 ## Description
 
