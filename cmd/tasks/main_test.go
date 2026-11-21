@@ -53,6 +53,26 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestExecutableVersionOutsideRepository(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(executable, "--version")
+	command.Dir = t.TempDir()
+	command.Env = append(os.Environ(), "TASK_TEST_MAIN_HELPER=1")
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	stdout, err := command.Output()
+	if err != nil || stderr.Len() != 0 {
+		t.Fatalf("tasks --version: %v; stderr: %q", err, stderr.String())
+	}
+	fields := strings.Fields(string(stdout))
+	if len(fields) != 1 || string(stdout) != fields[0]+"\n" {
+		t.Errorf("stdout = %q, want a version followed by a newline", stdout)
+	}
+}
+
 func TestExecutableForwardsAndPreservesSignalsAfterChildCleanup(t *testing.T) {
 	for _, value := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(value.String(), func(t *testing.T) {

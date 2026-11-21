@@ -40,6 +40,9 @@ func TestHelp(t *testing.T) {
 	if !strings.HasPrefix(root, "Usage: tasks [COMMAND]\n") {
 		t.Errorf("missing top-level usage: %q", root)
 	}
+	if !strings.Contains(root, "\n  --version   Print the version and exit.\n") {
+		t.Errorf("missing --version option in top-level help: %q", root)
+	}
 	for name, spec := range commands {
 		if spec.hidden {
 			continue

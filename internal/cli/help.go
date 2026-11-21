@@ -51,6 +51,10 @@ To write a description first, use 'tasks create "Task title"', then
 'tasks run NUMBER'. To review before merging, add --no-merge to 'tasks run',
 then use 'tasks merge NUMBER' when ready.
 
+Options:
+  -h, --help  Show this help.
+  --version   Print the version and exit.
+
 Use 'tasks help COMMAND' or 'tasks COMMAND --help' for options.
 For setup, see README.md in the github.com/wincent/tasks source repository.
 `)

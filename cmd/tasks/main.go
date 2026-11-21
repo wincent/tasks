@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync/atomic"
 	"syscall"
 
@@ -16,6 +17,15 @@ func main() {
 	// A viewer piped into an early-closing consumer must observe EPIPE and
 	// finish normally, rather than die in the runtime's stdout SIGPIPE path.
 	signal.Ignore(syscall.SIGPIPE)
+	args := os.Args[1:]
+	if len(args) == 1 && args[0] == "--version" {
+		if _, err := fmt.Fprintln(os.Stdout, buildVersion()); err != nil {
+			fmt.Fprintf(os.Stderr, "tasks: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	base, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	signals := make(chan os.Signal, 1)
@@ -32,7 +42,6 @@ func main() {
 	}()
 	ctx := process.WithCancellationSignal(base, func() syscall.Signal { return syscall.Signal(received.Load()) })
 	cwd, err := os.Getwd()
-	args := os.Args[1:]
 	if err == nil {
 		err = cli.Run(ctx, cwd, args, cli.IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	}
@@ -48,4 +57,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tasks: %v\n", err)
 		os.Exit(cli.ExitCode(err))
 	}
+}
+
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
 }
