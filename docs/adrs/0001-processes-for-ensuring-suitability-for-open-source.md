@@ -10,7 +10,7 @@ A clean working tree is not enough for open source publication. Git preserves ol
 
 ## Decision
 
-A maintainer assigns an agent to review the repository monthly and again before initial publication or before making additional branches or tags public. The audit is read-only by default. A maintainer approves remediation and decides whether the repository is ready to publish.
+A maintainer assigns an agent to review the repository monthly and again before initial publication or before making additional branches or tags public. The audit is read-only by default. A maintainer approves remediation and decides whether the repository is ready to publish. After publication, [ADR-0003](0003-monitor-public-repository-for-leaks.md) covers the recurring review of public refs and hosted content.
 
 ### Audit procedure
 
