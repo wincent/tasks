@@ -1,6 +1,6 @@
 # TASKS-14: 13
 
-Status: open
+Status: active
 
 ## Description
 
