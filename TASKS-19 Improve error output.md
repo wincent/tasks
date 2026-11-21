@@ -1,6 +1,6 @@
 # TASKS-19: Improve error output
 
-Status: open
+Status: active
 
 ## Description
 
