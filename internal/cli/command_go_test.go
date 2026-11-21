@@ -59,6 +59,32 @@ func TestGoKeepsTaskWhenRunFails(t *testing.T) {
 	assertStatus(t, root, "blocked")
 }
 
+func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	before := systemGit(t, root, "rev-parse", "refs/heads/tasks")
+	for _, tc := range []struct {
+		title, number string
+	}{
+		{"13", "13"},
+		{"TASK-13", "13"},
+		{"  example2-13  ", "13"},
+		{"013", "13"},
+		{"0", "NUMBER"},
+		{"TASK-99999999999999999999", "NUMBER"},
+	} {
+		out, err := invokePi(context.Background(), root, func(context.Context, process.Command) process.Result {
+			t.Fatalf("go %q launched Pi", tc.title)
+			return process.Result{}
+		}, "go", tc.title)
+		if out != "" || err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "tasks run "+tc.number+"'") {
+			t.Errorf("go %q output %q and error %v; want usage error with tasks run %s hint", tc.title, out, err, tc.number)
+		}
+	}
+	if after := systemGit(t, root, "rev-parse", "refs/heads/tasks"); after != before {
+		t.Fatal("rejected task references changed task history")
+	}
+}
+
 func TestGoRejectsInvalidArgumentsWithoutCreatingTask(t *testing.T) {
 	_, root := fixture(t)
 	before := systemGit(t, root, "rev-parse", "refs/heads/tasks")

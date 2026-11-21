@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/wincent/tasks/internal/git"
@@ -187,7 +186,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 
 	diagnostics := terminalPresentation(streams.Err)
 	fmt.Fprintf(streams.Err, "%s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), root, record.SessionFile)
-	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with 'Needs attention:' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path)
+	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path, attentionLabel)
 	argv := []string{executable, "--session", record.SessionFile}
 	progress := &piProgress{out: streams.Out}
 	child := process.Command{Directory: scope, Environment: os.Environ(), Out: streams.Out, Err: streams.Err, ExtraFiles: []*os.File{loan, live}}
@@ -212,7 +211,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		return launchBlocked(repo, directory, prefix, n, record, &exitError{Code: result.Code, Err: result.Err})
 	case progress.failure != "":
 		return launchBlocked(repo, directory, prefix, n, record, errors.New(progress.failure))
-	case strings.HasPrefix(strings.ToLower(progress.summary), "needs attention:"):
+	case needsAttention(progress.summary):
 		return launchBlocked(repo, directory, prefix, n, record, errors.New(progress.summary))
 	}
 

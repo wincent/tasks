@@ -10,6 +10,12 @@ import (
 	"github.com/wincent/tasks/internal/tail"
 )
 
+const attentionLabel = "Needs attention:"
+
+func needsAttention(summary string) bool {
+	return len(summary) >= len(attentionLabel) && strings.EqualFold(summary[:len(attentionLabel)], attentionLabel)
+}
+
 // Pi's JSON mode streams native events instead of waiting until the final
 // response. Display compact progress and keep the exact transcript on disk.
 type piProgress struct {
@@ -68,6 +74,7 @@ func (p *piProgress) event(line []byte) error {
 		return nil
 	}
 	var output string
+	var attention bool
 	switch e.Type {
 	case "tool_execution_start":
 		output = "Running " + e.ToolName + "..."
@@ -95,9 +102,15 @@ func (p *piProgress) event(line []byte) error {
 		}
 		output = strings.TrimSpace(strings.Join(text, "\n"))
 		p.summary = output
+		attention = needsAttention(output)
 	}
 	if output != "" {
-		_, err := fmt.Fprintln(p.out, tail.Safe(output))
+		output = tail.Safe(output)
+		if attention {
+			label := output[:len(attentionLabel)]
+			output = terminalPresentation(p.out).paint(label, "1;4") + output[len(label):]
+		}
+		_, err := fmt.Fprintln(p.out, output)
 		return err
 	}
 	return nil
