@@ -61,4 +61,4 @@ git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 
 ## License
 
-[The Unlicense](UNLICENSE) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
+[The Unlicense](UNLICENSE.md) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
