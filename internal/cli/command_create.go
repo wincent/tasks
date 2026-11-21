@@ -42,7 +42,11 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 		title := strings.TrimSpace(a.positional[0])
 		id := a.prefix.ID(n)
 		name := fmt.Sprintf("%s %s.md", id, title)
-		content := fmt.Sprintf("# %s: %s\n\nStatus: open\n\n## Description\n\n%s\n", id, title, invocation.body)
+		description := invocation.body
+		if !withBody {
+			description = "None provided."
+		}
+		content := fmt.Sprintf("# %s: %s\n\nStatus: open\n\n## Description\n\n%s\n", id, title, description)
 		path, err := writeTask(session, a.prefix, name, content, "create "+id)
 		if err != nil {
 			return err

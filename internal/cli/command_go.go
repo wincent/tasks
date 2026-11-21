@@ -29,9 +29,9 @@ func init() {
 		name: "go", min: 1, max: 1,
 		usage:   "TITLE",
 		summary: "Create and run a task from its title alone.",
-		details: `Quote a title that contains spaces. Create a task with an empty description,
-then run Pi non-interactively and merge successful work into local main.
-Pi must be on PATH. To run an existing task, use 'tasks run NUMBER'.`,
+		details: `Quote a title that contains spaces. Create a task with "None provided." as its
+description, then run Pi non-interactively and merge successful work into local
+main. Pi must be on PATH. To run an existing task, use 'tasks run NUMBER'.`,
 		validate: validateGo,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			n, err := createTask(ctx, cwd, a, streams, false)
