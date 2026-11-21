@@ -9,8 +9,9 @@ package testutil
 #include <pty.h>
 #endif
 #include <errno.h>
-static int task_openpty(int *master, int *slave) {
- if (openpty(master, slave, NULL, NULL, NULL) < 0) return errno;
+static int task_openpty(int *master, int *slave, unsigned short columns) {
+ struct winsize size = {.ws_col = columns};
+ if (openpty(master, slave, NULL, NULL, columns ? &size : NULL) < 0) return errno;
  return 0;
 }
 */
@@ -22,8 +23,12 @@ import (
 )
 
 func OpenPTY() (*os.File, *os.File, error) {
+	return OpenPTYWithWidth(0)
+}
+
+func OpenPTYWithWidth(columns uint16) (*os.File, *os.File, error) {
 	var master, slave C.int
-	if code := C.task_openpty(&master, &slave); code != 0 {
+	if code := C.task_openpty(&master, &slave, C.ushort(columns)); code != 0 {
 		return nil, nil, syscall.Errno(code)
 	}
 	if err := syscall.SetNonblock(int(master), true); err != nil {

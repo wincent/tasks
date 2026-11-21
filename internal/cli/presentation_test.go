@@ -1,11 +1,82 @@
 package cli
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/testutil"
 )
+
+func TestMergeHeadlinesUseDestinationWidth(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	t.Setenv("TERM", "xterm")
+	t.Setenv("NO_COLOR", "")
+	run(t, root, "create", "界界界 Review the feature", "--body", "requirements")
+	if out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		commitImplementation(t, piWorktree(t, child), "feature.txt", "done\n")
+		return process.Result{}
+	}, "run", "1", "--no-merge"); err != nil {
+		t.Fatalf("prepare merge: %v\n%s", err, out)
+	}
+
+	out, readOut := sizedTerminalOutput(t, 50)
+	diagnostic, readDiagnostic := sizedTerminalOutput(t, 47)
+	if err := Run(context.Background(), root, []string{"merge", "1"}, IO{Out: out, Err: diagnostic}); err != nil {
+		t.Fatal(err)
+	}
+	wantProgress := "🔄 \x1b[1;36mMerging\x1b[0m \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3m界界…\x1b[0m) into local main...\n"
+	if got := readDiagnostic(); got != wantProgress {
+		t.Errorf("merge progress = %q; want %q", got, wantProgress)
+	}
+	wantResult := "✅ \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3m界界界 Rev…\x1b[0m) \x1b[1;32mmerged into local main.\x1b[0m"
+	if got, _, _ := strings.Cut(readOut(), "\n"); got != wantResult {
+		t.Errorf("merge result = %q; want %q", got, wantResult)
+	}
+}
+
+func sizedTerminalOutput(t *testing.T, columns uint16) (*os.File, func() string) {
+	t.Helper()
+	master, slave, err := testutil.OpenPTYWithWidth(columns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { master.Close(); slave.Close() })
+	if err := master.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan []byte, 1)
+	go func() { data, _ := io.ReadAll(master); done <- data }()
+	return slave, func() string {
+		slave.Close()
+		return strings.ReplaceAll(string(<-done), "\r\n", "\n")
+	}
+}
+
+func TestEllipsizeTaskTitle(t *testing.T) {
+	for _, tc := range []struct {
+		title string
+		width int
+		want  string
+	}{
+		{"Title", 0, ""},
+		{"Title", 1, "…"},
+		{"Title", 5, "Title"},
+		{"One two", 5, "One…"},
+		{"👩‍💻 test", 2, "…"},
+		{"👩‍💻 test", 3, "👩‍💻…"},
+		{"e\u0301 test", 2, "e\u0301…"},
+	} {
+		if got := ellipsize(tc.title, tc.width); got != tc.want {
+			t.Errorf("ellipsize(%q, %d) = %q; want %q", tc.title, tc.width, got, tc.want)
+		}
+	}
+}
 
 func TestCreateConfirmationOnTerminal(t *testing.T) {
 	for _, tc := range []struct {

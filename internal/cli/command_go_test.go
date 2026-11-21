@@ -28,7 +28,9 @@ func TestGoCreatesAndRunsNewTask(t *testing.T) {
 		commitImplementation(t, piWorktree(t, child), "quick.txt", "done\n")
 		return process.Result{}
 	}, "go", "  Quick win  ")
-	if err != nil || launches != 1 || !strings.Contains(out, "merged into local main") {
+	if err != nil || launches != 1 ||
+		!strings.Contains(out, "Merging EXAMPLE-2 (Quick win) into local main...\n") ||
+		!strings.Contains(out, "EXAMPLE-2 (Quick win) merged into local main.\n") {
 		t.Fatalf("go ran Pi %d times: %v\n%s", launches, err, out)
 	}
 	path, _, _ := strings.Cut(out, "\n")

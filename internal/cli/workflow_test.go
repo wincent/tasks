@@ -157,7 +157,9 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 		assertTail(t, root, "Done.") // The task runner still holds the run lock.
 		return process.Result{}
 	}, "run", "1")
-	if err != nil || !strings.Contains(out, "Running bash") || !strings.Contains(out, "merged into local main") {
+	if err != nil || !strings.Contains(out, "Running bash") ||
+		!strings.Contains(out, "Merging EXAMPLE-1 (Ship something) into local main...\n") ||
+		!strings.Contains(out, "EXAMPLE-1 (Ship something) merged into local main.\n") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	assertStatus(t, root, "merged")
@@ -181,7 +183,11 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 		t.Fatalf("unexpected local transcript store: %v", err)
 	}
 	assertTail(t, root, "Done.")
-	run(t, root, "merge", "1") // Reconcile via the retained branch, without a checkout.
+	// Reconcile via the retained branch, without a checkout or a progress line.
+	if out, diagnostic, err := invoke(root, "", "merge", "1"); err != nil || diagnostic != "" ||
+		!strings.HasPrefix(out, "EXAMPLE-1 (Ship something) merged into local main.\n") {
+		t.Fatalf("merge retry = %q, %q, %v", out, diagnostic, err)
+	}
 }
 
 func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
@@ -516,7 +522,7 @@ func TestRunWithoutChangesClosesWithExplanation(t *testing.T) {
 		fmt.Fprintln(child.Out, `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The feature already works."}]}}`)
 		return process.Result{}
 	}, "run", "1")
-	if err != nil || !strings.Contains(out, "closed without changes") {
+	if err != nil || !strings.Contains(out, "EXAMPLE-1 (No changes) closed without changes.\n") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if got := run(t, root, "show", "1"); !strings.Contains(got, "The feature already works.") {

@@ -254,16 +254,16 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		if err := setResult(ctx, repo, prefix, n, "closed", note); err != nil {
 			return err
 		}
-		fmt.Fprintf(streams.Out, "%s %s. Checkout: %s; session: %s\n",
-			p.label(task.ID(), "✅", "4"), p.paint("closed without changes", "1;32"), root, record.SessionFile)
+		p.printTaskHeadline(task, "✅", "", " "+p.paint("closed without changes", "1;32")+".")
+		fmt.Fprintf(streams.Out, "Checkout: %s; session: %s\n", root, record.SessionFile)
 		return nil
 	}
 	if interactive || a.flags["--no-merge"] {
 		if err := setResult(ctx, repo, prefix, n, "done", ""); err != nil {
 			return err
 		}
-		fmt.Fprintf(streams.Out, "%s %s. Checkout: %s; session: %s\n",
-			p.label(task.ID(), "✅", "4"), p.paint("ready for review", "1;32"), root, record.SessionFile)
+		p.printTaskHeadline(task, "✅", "", " "+p.paint("ready for review", "1;32")+".")
+		fmt.Fprintf(streams.Out, "Checkout: %s; session: %s\n", root, record.SessionFile)
 		return nil
 	}
 	return mergeWork(ctx, repo, directory, cwd, prefix, n, root, streams)

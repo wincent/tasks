@@ -57,13 +57,13 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 		commitImplementation(t, checkoutPath, "feature.txt", "fixture")
 		return process.Result{}
 	}, "run", "run-1", "--no-merge")
-	if err != nil || !strings.Contains(out, "RUN-1 ready for review") {
+	if err != nil || !strings.Contains(out, "RUN-1 (Configured prefix) ready for review.\n") {
 		t.Fatalf("run: %v\n%s", err, out)
 	}
 	if out := strings.TrimSpace(run(t, root, "worktree", "1")); filepath.Join(root, out) != checkoutPath {
 		t.Fatalf("worktree: %s, want %s", out, checkoutPath)
 	}
-	if out := run(t, checkoutPath, "merge"); !strings.Contains(out, "RUN-1 merged into local main") {
+	if out := run(t, checkoutPath, "merge"); !strings.Contains(out, "RUN-1 (Configured prefix) merged into local main.\n") {
 		t.Fatalf("merge: %s", out)
 	}
 	if out := run(t, root, "check"); !strings.Contains(out, "Checked 1 task(s)") {
