@@ -195,7 +195,7 @@ func (store *Store) Scan() ([]Task, error) {
 	seen := map[int]string{}
 	duplicates := map[int]bool{}
 	for _, entry := range entries {
-		if entry.name == ".git" || (entry.name == artifactStorage && entry.directory) {
+		if strings.HasPrefix(entry.name, ".") || (entry.name == artifactStorage && entry.directory) {
 			continue
 		}
 		path := filepath.Join(store.Path, entry.name)
