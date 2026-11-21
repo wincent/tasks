@@ -1,6 +1,6 @@
 # TASKS-16: Be more verbose when merging
 
-Status: active
+Status: merged
 
 ## Description
 
