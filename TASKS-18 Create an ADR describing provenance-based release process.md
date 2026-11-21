@@ -1,6 +1,6 @@
 # TASKS-18: Create an ADR describing provenance-based release process
 
-Status: active
+Status: merged
 
 ## Description
 
