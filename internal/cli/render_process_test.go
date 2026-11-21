@@ -166,12 +166,12 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 			if err := os.WriteFile(path, append(original, []byte("manual edit\n")...), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "EXAMPLE-9 Manual.md"), []byte("Status: open\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "EXAMPLE-10 Manual.md"), []byte("Status: merged\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("TERM", policy.term)
 			t.Setenv("NO_COLOR", policy.noColor)
-			for _, args := range [][]string{{"list"}, {}, {"search", "edited"}} {
+			for _, args := range [][]string{{"list", "all"}, {}, {"search", "edited"}} {
 				output, diagnostic, err := outputTerminal(t, root, args...)
 				if err != nil {
 					t.Fatalf("%v %s", err, diagnostic)
@@ -179,19 +179,25 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 				if strings.Contains(output, "\x1b[") != policy.color {
 					t.Fatal("color policy", output)
 				}
-				edited := "EXAMPLE-1\topen\tEdited (M)\n"
-				manual := "EXAMPLE-9\topen\tManual (?)\n"
+				edited := "EXAMPLE-1   open    Edited (M)\n"
+				manual := "EXAMPLE-10  merged  Manual (?)\n"
 				if policy.color {
-					edited = "\x1b[4mEXAMPLE-1\x1b[0m\topen\t\x1b[3mEdited\x1b[0m (\x1b[31mM\x1b[0m)\n"
-					manual = "\x1b[4mEXAMPLE-9\x1b[0m\topen\t\x1b[3mManual\x1b[0m (\x1b[34m?\x1b[0m)\n"
+					edited = "\x1b[4mEXAMPLE-1\x1b[0m   open    \x1b[3mEdited\x1b[0m (\x1b[31mM\x1b[0m)\n"
+					manual = "\x1b[4mEXAMPLE-10\x1b[0m  \x1b[32mmerged\x1b[0m  \x1b[3mManual\x1b[0m (\x1b[34m?\x1b[0m)\n"
 				}
 				expectManual := len(args) == 0 || args[0] == "list"
+				if !expectManual {
+					edited = strings.Replace(edited, "   open    ", "  open  ", 1)
+				}
 				if !strings.Contains(output, edited) || strings.Contains(output, manual) != expectManual {
 					t.Fatalf("unexpected listing %q", output)
 				}
 			}
-			output, diagnostic, err := outputTerminal(t, root, "list", "--json")
-			if piped := run(t, root, "list", "--json"); err != nil || output != piped {
+			if piped := run(t, root, "list", "all"); piped != "EXAMPLE-1\topen\tEdited (M)\nEXAMPLE-10\tmerged\tManual (?)\n" {
+				t.Fatalf("unexpected piped listing %q", piped)
+			}
+			output, diagnostic, err := outputTerminal(t, root, "list", "all", "--json")
+			if piped := run(t, root, "list", "all", "--json"); err != nil || output != piped {
 				t.Fatalf("JSON terminal %v %q %q; want %q", err, output, diagnostic, piped)
 			}
 			if !strings.Contains(output, `"title": "Edited"`) || strings.Contains(output, `"change"`) {

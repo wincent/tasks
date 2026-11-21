@@ -78,12 +78,27 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 			markers[change.Path] = marker
 		}
 	}
+	// IDs and statuses are ASCII. Measure the visible rows before adding
+	// styling, and keep tab separators when the output is redirected.
+	var idWidth, statusWidth int
+	if p.interactive {
+		for _, task := range selected {
+			idWidth = max(idWidth, len(task.ID()))
+			statusWidth = max(statusWidth, len(task.Status))
+		}
+	}
 	for _, task := range selected {
+		id := task.ID()
+		afterID, afterStatus := "\t", "\t"
+		if p.interactive {
+			afterID = strings.Repeat(" ", idWidth-len(id)+2)
+			afterStatus = strings.Repeat(" ", statusWidth-len(task.Status)+2)
+		}
 		suffix := ""
 		if marker := markers[filepath.Base(task.Path)]; marker != "" {
 			suffix = " (" + p.changeMarker(marker) + ")"
 		}
-		fmt.Fprintf(streams.Out, "%s\t%s\t%s%s\n", p.paint(task.ID(), "4"), p.status(task.Status), p.paint(task.Title, "3"), suffix)
+		fmt.Fprintf(streams.Out, "%s%s%s%s%s%s\n", p.paint(id, "4"), afterID, p.status(task.Status), afterStatus, p.paint(task.Title, "3"), suffix)
 		for _, activity := range task.Activity {
 			suffix := ""
 			if activity.SessionFile != "" {
