@@ -1,6 +1,6 @@
 # TASKS-17: Add a --version flag
 
-Status: open
+Status: merged
 
 ## Description
 
