@@ -21,7 +21,7 @@ func TestGoCreatesAndRunsNewTask(t *testing.T) {
 	out, err := invokePi(ctx, root, func(_ context.Context, child process.Command) process.Result {
 		launches++
 		prompt = child.Args[len(child.Args)-1]
-		const want = "# EXAMPLE-2: Quick win\n\nStatus: active\n\n## Description\n\n\n"
+		const want = "# EXAMPLE-2: Quick win\n\nStatus: active\n\n## Description\n\nNone provided.\n"
 		if got := run(t, root, "show", "2", "--raw"); got != want {
 			t.Fatalf("task at launch: got %q, want %q", got, want)
 		}
