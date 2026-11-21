@@ -49,7 +49,7 @@ func mergeTask(ctx context.Context, cwd string, a arguments, streams IO) error {
 		}
 		n = taskBranchNumber(prefix, head.Branch)
 		if n == 0 {
-			return errors.New("cannot infer task from current branch; use tasks merge NUMBER")
+			return errors.New("cannot infer task from current branch; use `tasks merge NUMBER`")
 		}
 	}
 	if err := store.RequireLocalHistory(repo); err != nil {
@@ -94,7 +94,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			return err
 		}
 		if source.Head.ID == (git.ID{}) {
-			return fmt.Errorf("no implementation branch for %s; use tasks run %d", task.ID(), n)
+			return fmt.Errorf("no implementation branch for %s; use `tasks run %d`", task.ID(), n)
 		}
 	}
 	if err := withMetadata(ctx, repo, func(session *store.Session) error {
@@ -128,7 +128,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			if saved == nil || (source.Paths.WorkDir != "" && source.Paths.WorkDir != saved.Worktree) {
 				saved = &taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}
 			}
-			resume := fmt.Errorf("%s needs attention: %w\nRetry with tasks merge %d", task.ID(), err, n)
+			resume := fmt.Errorf("%s needs attention: %w\nRetry with `tasks merge %d`", task.ID(), err, n)
 			if saved.Worktree != "" {
 				resume = fmt.Errorf("%w\nCheckout: %s; session: %s", resume, saved.Worktree, saved.SessionFile)
 				saved.Reason = shortResult(err.Error())
@@ -145,7 +145,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := setResult(finish, repo, prefix, n, "merged", ""); err != nil {
-		return fmt.Errorf("%s is in local main, but recording the result failed; rerun tasks merge %d: %w", task.ID(), n, err)
+		return fmt.Errorf("%s is in local main, but recording the result failed; rerun `tasks merge %d`: %w", task.ID(), n, err)
 	}
 	if saved != nil && (saved.Branch == "" || saved.Branch == source.Head.Branch) {
 		saved.Reason, saved.Revision = "", source.Head.ID.String()

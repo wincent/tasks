@@ -30,8 +30,17 @@ func TestInitRequiresExplicitLocalTaskHistory(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent")
 	for _, args := range [][]string{{"init"}, {"create", "Missing history", "--body", "requirements"}} {
 		output, _, err := invoke(root, "", args...)
-		if output != "" || err == nil || !strings.Contains(err.Error(), "git fetch REMOTE refs/heads/tasks:refs/heads/tasks") || !strings.Contains(err.Error(), "git commit-tree") {
+		if output != "" || err == nil {
 			t.Fatalf("%v: %q %v", args, output, err)
+		}
+		for _, example := range []string{
+			"\n\n    git fetch REMOTE refs/heads/tasks:refs/heads/tasks\n\n",
+			"\n    commit=$(git commit-tree ",
+			"Then run `tasks init`.",
+		} {
+			if !strings.Contains(err.Error(), example) {
+				t.Errorf("%v: missing delimited example %q in %v", args, example, err)
+			}
 		}
 		if _, err := repo.Reference(store.Branch); !git.HasCode(err, git.NotFound) {
 			t.Fatalf("created tasks branch: %v", err)

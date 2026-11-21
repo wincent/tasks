@@ -137,6 +137,15 @@ func TestListingPartialResultsAndStatusWarnings(t *testing.T) {
 	}
 }
 
+func TestRecentListingEmptyStoreHint(t *testing.T) {
+	_, root := fixture(t)
+	out, diagnostic, err := invoke(root, "")
+	const want = "No tasks yet. Create one with: `tasks create \"Task title\"`\n"
+	if err != nil || diagnostic != "" || !strings.Contains(out, want) {
+		t.Fatalf("stdout = %q, stderr = %q, error = %v; want %q in stdout", out, diagnostic, err, want)
+	}
+}
+
 func TestListingNoUncompletedTasksHint(t *testing.T) {
 	repo, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Merged task", "--body", "requirements"))

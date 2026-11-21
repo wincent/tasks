@@ -43,6 +43,18 @@ func TestHelp(t *testing.T) {
 	if !strings.Contains(root, "\n  --version   Print the version and exit.\n") {
 		t.Errorf("missing --version option in top-level help: %q", root)
 	}
+	for _, example := range []string{
+		"`tasks go \"Task title\"`",
+		"`tasks create \"Task title\"`",
+		"`tasks run NUMBER`",
+		"`tasks run NUMBER --no-merge`",
+		"`tasks merge NUMBER`",
+		"`tasks help COMMAND` or `tasks COMMAND --help`",
+	} {
+		if !strings.Contains(root, example) {
+			t.Errorf("missing delimited example %s in top-level help: %q", example, root)
+		}
+	}
 	for name, spec := range commands {
 		if spec.hidden {
 			continue
@@ -87,7 +99,7 @@ func TestHelpUsageErrors(t *testing.T) {
 		want string
 	}{
 		{[]string{"unknown"}, "unknown command: unknown"},
-		{[]string{"create", "list"}, "help expects 1 positional argument(s)"},
+		{[]string{"create", "list"}, "`tasks help` expects 1 positional argument(s)"},
 	} {
 		args := append([]string{"help"}, tc.args...)
 		out, _, err := invoke(cwd, "", args...)

@@ -146,7 +146,7 @@ func findCheckout(repo *git.Repository, cwd string, prefix store.Prefix, n int, 
 		return checkout{}, fmt.Errorf("%s is not a registered %s checkout", selected, prefix.ID(n))
 	}
 	if mismatched != "" {
-		return checkout{}, fmt.Errorf("%s; switch back or use --worktree PATH", mismatched)
+		return checkout{}, fmt.Errorf("%s; switch back or use `--worktree PATH`", mismatched)
 	}
 	for _, entry := range matches {
 		if saved != nil && entry.Paths.WorkDir == saved.Worktree && (saved.Branch == "" || saved.Branch == entry.Head.Branch) {
@@ -159,7 +159,7 @@ func findCheckout(repo *git.Repository, cwd string, prefix store.Prefix, n int, 
 	case 1:
 		return matches[0], nil
 	default:
-		return checkout{}, fmt.Errorf("multiple checkouts for %s; use --worktree PATH or run from the intended checkout", prefix.ID(n))
+		return checkout{}, fmt.Errorf("multiple checkouts for %s; use `--worktree PATH` or run from the intended checkout", prefix.ID(n))
 	}
 }
 
@@ -180,7 +180,7 @@ func retainedBranch(repo *git.Repository, prefix store.Prefix, n int, saved *tas
 		matches = append(matches, head)
 	}
 	if len(matches) > 1 {
-		return git.Head{}, fmt.Errorf("multiple %s branches without a checkout; check out the intended branch and pass --worktree PATH", prefix.ID(n))
+		return git.Head{}, fmt.Errorf("multiple %s branches without a checkout; check out the intended branch and pass `--worktree PATH`", prefix.ID(n))
 	}
 	if len(matches) == 1 {
 		return matches[0], nil
@@ -217,7 +217,7 @@ func mainCheckout(repo *git.Repository) (*checkout, error) {
 	var result *checkout
 	for _, entry := range entries {
 		if entry.Invalid != "" {
-			return nil, fmt.Errorf("cannot locate main with invalid checkout %s; inspect git worktree list", entry.Paths.WorkDir)
+			return nil, fmt.Errorf("cannot locate main with invalid checkout %s; inspect `git worktree list`", entry.Paths.WorkDir)
 		}
 		if entry.Head.Branch == mainRef {
 			if result != nil {

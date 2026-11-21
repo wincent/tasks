@@ -42,22 +42,17 @@ func help(subject string, out io.Writer) error {
 		for _, spec := range commands.visible() {
 			fmt.Fprintf(&text, "  %-10s %s\n", spec.name, spec.summary)
 		}
-		fmt.Fprint(&text, `
-Without a command, show recent tasks. Use 123 or PREFIX-123. The prefix
-comes from .tasks.yml on local main.
-
-For a quick task, use 'tasks go "Task title"' to create and run it.
-To write a description first, use 'tasks create "Task title"', then
-'tasks run NUMBER'. To review before merging, add --no-merge to 'tasks run',
-then use 'tasks merge NUMBER' when ready.
-
-Options:
-  -h, --help  Show this help.
-  --version   Print the version and exit.
-
-Use 'tasks help COMMAND' or 'tasks COMMAND --help' for options.
-For setup, see README.md in the github.com/wincent/tasks source repository.
-`)
+		fmt.Fprint(&text, "\nWithout a command, show recent tasks. Use 123 or PREFIX-123. The prefix\n"+
+			"comes from .tasks.yml on local main.\n\n"+
+			"For a quick task, use `tasks go \"Task title\"` to create and run it.\n"+
+			"To write a description first, use `tasks create \"Task title\"`, then\n"+
+			"`tasks run NUMBER`. To review before merging, use `tasks run NUMBER --no-merge`,\n"+
+			"then use `tasks merge NUMBER` when ready.\n\n"+
+			"Options:\n"+
+			"  -h, --help  Show this help.\n"+
+			"  --version   Print the version and exit.\n\n"+
+			"Use `tasks help COMMAND` or `tasks COMMAND --help` for options.\n"+
+			"For setup, see README.md in the github.com/wincent/tasks source repository.\n")
 	}
 	_, err := io.WriteString(out, text.String())
 	return err

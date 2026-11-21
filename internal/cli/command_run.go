@@ -8,13 +8,12 @@ func init() {
 		options: map[string]optionKind{"--worktree": valueOption, "--no-merge": flagOption},
 		usage:   "NUMBER [--no-merge] [--worktree PATH]",
 		summary: "Run Pi non-interactively and merge into local main.",
-		details: `Uses a separate checkout and resumes the saved Pi session when available.
-If interrupted, run the same task again to continue. Pi must be on PATH.
-A successful run merges clean, committed work without pushing.
-
-Options:
-  --no-merge       Keep the work for review. Use 'tasks merge NUMBER' later.
-` + worktreeHelp,
+		details: "Uses a separate checkout and resumes the saved Pi session when available.\n" +
+			"If interrupted, run the same task again to continue. Pi must be on PATH.\n" +
+			"A successful run merges clean, committed work without pushing.\n\n" +
+			"Options:\n" +
+			"  --no-merge       Keep the work for review. Use `tasks merge NUMBER` later.\n" +
+			worktreeHelp,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			return launchTask(ctx, cwd, a, streams)
 		},

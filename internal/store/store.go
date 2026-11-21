@@ -53,7 +53,7 @@ func Open(repository *git.Repository) (*Store, error) {
 	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("task checkout must be a real directory at %s; preserve obstructions and run tasks init", path)
+		return nil, fmt.Errorf("task checkout must be a real directory at %s; preserve obstructions and run `tasks init`", path)
 	}
 	worktrees, err := repository.Worktrees()
 	if err != nil {

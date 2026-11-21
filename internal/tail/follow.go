@@ -154,10 +154,10 @@ func Follow(ctx context.Context, file *os.File, worktree, sessionID string, colo
 			return err
 		}
 		if !os.SameFile(identity, current) {
-			return errors.New("saved Pi session was replaced; restart tasks tail to inspect it")
+			return errors.New("saved Pi session was replaced; restart `tasks tail` to inspect it")
 		}
 		if current.Size() < offset {
-			return errors.New("saved Pi session was truncated; restart tasks tail to inspect it")
+			return errors.New("saved Pi session was truncated; restart `tasks tail` to inspect it")
 		}
 		timer := time.NewTimer(100 * time.Millisecond)
 		select {

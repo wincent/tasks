@@ -98,7 +98,7 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 		if query != "" {
 			fmt.Fprintln(streams.Err, "No tasks match the search query and status filter.")
 		} else if listing.recent {
-			fmt.Fprintln(streams.Out, "No tasks yet. Create one with: tasks create \"Task title\"")
+			fmt.Fprintln(streams.Out, "No tasks yet. Create one with: `tasks create \"Task title\"`")
 		} else if status == "" || status == "open" {
 			active, blocked := false, false
 			for _, task := range scanned {

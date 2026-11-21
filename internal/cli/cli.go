@@ -85,10 +85,10 @@ func parse(args []string) (arguments, error) {
 		return arguments{action: "help", positional: []string{a.action}}, nil
 	}
 	if len(a.positional) < spec.min && spec.min != spec.max {
-		return a, fmt.Errorf("%s expects at least %d positional argument(s)", a.action, spec.min)
+		return a, fmt.Errorf("`tasks %s` expects at least %d positional argument(s)", a.action, spec.min)
 	}
 	if len(a.positional) < spec.min || len(a.positional) > spec.max {
-		return a, fmt.Errorf("%s expects %d positional argument(s)", a.action, spec.max)
+		return a, fmt.Errorf("`tasks %s` expects %d positional argument(s)", a.action, spec.max)
 	}
 	if len(a.values["--body"]) > 0 && len(a.values["--body-file"]) > 0 {
 		return a, errors.New("--body and --body-file are mutually exclusive (--body-file is not allowed with argument --body)")
