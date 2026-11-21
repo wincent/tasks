@@ -19,9 +19,9 @@ func validateGo(a arguments) error {
 	}
 	n, err := strconv.Atoi(match[1])
 	if err != nil || n == 0 {
-		return errors.New("tasks go expects a title, not a task reference; use 'tasks run NUMBER' with a valid positive task number")
+		return errors.New("`tasks go` expects a title, not a task reference; use `tasks run NUMBER` with a valid positive task number")
 	}
-	return fmt.Errorf("tasks go expects a title, not a task reference; use 'tasks run %d' instead", n)
+	return fmt.Errorf("`tasks go` expects a title, not a task reference; use `tasks run %d` instead", n)
 }
 
 func init() {
@@ -29,9 +29,9 @@ func init() {
 		name: "go", min: 1, max: 1,
 		usage:   "TITLE",
 		summary: "Create and run a task from its title alone.",
-		details: `Quote a title that contains spaces. Create a task with "None provided." as its
-description, then run Pi non-interactively and merge successful work into local
-main. Pi must be on PATH. To run an existing task, use 'tasks run NUMBER'.`,
+		details: "Quote a title that contains spaces. Create a task with \"None provided.\" as its\n" +
+			"description, then run Pi non-interactively and merge successful work into local\n" +
+			"main. Pi must be on PATH. To run an existing task, use `tasks run NUMBER`.",
 		validate: validateGo,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			n, err := createTask(ctx, cwd, a, streams, false)

@@ -53,6 +53,23 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestExecutableGoReferenceError(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(executable, "go", "18")
+	command.Dir = t.TempDir()
+	command.Env = append(os.Environ(), "TASK_TEST_MAIN_HELPER=1")
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	stdout, err := command.Output()
+	const want = "tasks: `tasks go` expects a title, not a task reference; use `tasks run 18` instead\n"
+	if command.ProcessState.ExitCode() != 2 || len(stdout) != 0 || stderr.String() != want {
+		t.Fatalf("stdout = %q, stderr = %q, error = %v; want exit 2 and stderr %q", stdout, stderr.String(), err, want)
+	}
+}
+
 func TestExecutableVersionOutsideRepository(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {

@@ -401,7 +401,8 @@ func TestMergeConflictRetainsTaskAndRetryUsesCurrentTip(t *testing.T) {
 		commitImplementation(t, root, "conflict", "main\n")
 		return process.Result{}
 	}, "run", "1")
-	if err == nil || !strings.Contains(err.Error(), "merge conflict; main is unchanged") {
+	if err == nil || !strings.Contains(err.Error(), "merge conflict; main is unchanged") ||
+		!strings.Contains(err.Error(), "\nRetry with `tasks merge 1`\n") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	assertStatus(t, root, "blocked")

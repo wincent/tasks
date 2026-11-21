@@ -55,7 +55,7 @@ func TestGoKeepsTaskWhenRunFails(t *testing.T) {
 	out, err := invokePi(ctx, root, func(context.Context, process.Command) process.Result {
 		return process.Result{Code: 17}
 	}, "go", "Fix later")
-	if err == nil || ExitCode(err) != 17 || !strings.Contains(err.Error(), "Continue with tasks run 1") {
+	if err == nil || ExitCode(err) != 17 || !strings.Contains(err.Error(), "Continue with `tasks run 1`") {
 		t.Fatalf("expected Pi failure and retry instructions: %v\n%s", err, out)
 	}
 	assertStatus(t, root, "blocked")
@@ -78,8 +78,13 @@ func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
 			t.Fatalf("go %q launched Pi", tc.title)
 			return process.Result{}
 		}, "go", tc.title)
-		if out != "" || err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "tasks run "+tc.number+"'") {
-			t.Errorf("go %q output %q and error %v; want usage error with tasks run %s hint", tc.title, out, err, tc.number)
+		ending := " instead"
+		if tc.number == "NUMBER" {
+			ending = " with a valid positive task number"
+		}
+		want := "`tasks go` expects a title, not a task reference; use `tasks run " + tc.number + "`" + ending
+		if out != "" || err == nil || ExitCode(err) != 2 || err.Error() != want {
+			t.Errorf("go %q output %q and error %v; want usage error %q", tc.title, out, err, want)
 		}
 	}
 	if after := systemGit(t, root, "rev-parse", "refs/heads/tasks"); after != before {
@@ -90,8 +95,8 @@ func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
 func TestGoRejectsInvalidArgumentsWithoutCreatingTask(t *testing.T) {
 	_, root := fixture(t)
 	before := systemGit(t, root, "rev-parse", "refs/heads/tasks")
-	fails(t, root, "go expects 1 positional argument(s)", "go")
-	fails(t, root, "go expects 1 positional argument(s)", "go", "Two", "arguments")
+	fails(t, root, "`tasks go` expects 1 positional argument(s)", "go")
+	fails(t, root, "`tasks go` expects 1 positional argument(s)", "go", "Two", "arguments")
 	fails(t, root, "unrecognized argument: --body", "go", "Title", "--body", "text")
 	fails(t, root, "title must be nonempty", "go", " ")
 	fails(t, root, "without path separators", "go", "bad/title")

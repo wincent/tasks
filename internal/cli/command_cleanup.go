@@ -133,7 +133,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	if inside(caller, target) {
-		return errors.New("current directory is inside this checkout; run cleanup elsewhere")
+		return errors.New("current directory is inside this checkout; run `tasks cleanup` elsewhere")
 	}
 	base, err := repo.ResolveCommit(mainRef)
 	if err != nil {

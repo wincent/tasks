@@ -80,7 +80,7 @@ func (p *piProgress) event(line []byte) error {
 		output = "Running " + e.ToolName + "..."
 	case "tool_execution_end":
 		if e.IsError {
-			output = e.ToolName + " reported an error (see tasks tail)."
+			output = e.ToolName + " reported an error (see `tasks tail`)."
 		}
 	case "message_end":
 		if e.Message.Role != "assistant" {

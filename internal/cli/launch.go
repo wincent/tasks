@@ -67,7 +67,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	prefix, n := a.prefix, a.number()
 	interactive := a.action == "pi"
 	if interactive && (!terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Out)) {
-		return errors.New("tasks pi requires a terminal; use tasks run for headless work")
+		return errors.New("`tasks pi` requires a terminal; use `tasks run` for headless work")
 	}
 	if _, supplied := a.values["--worktree"]; supplied && a.value("--worktree") == "" {
 		return errors.New("--worktree requires a nonempty path")
@@ -273,7 +273,7 @@ func launchBlocked(repo *git.Repository, directory string, prefix store.Prefix, 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	record.Reason = shortResult(cause.Error())
-	return errors.Join(fmt.Errorf("%s needs attention: %w\nCheckout: %s; session: %s\nContinue with tasks run %d", prefix.ID(n), cause, record.Worktree, record.SessionFile, n),
+	return errors.Join(fmt.Errorf("%s needs attention: %w\nCheckout: %s; session: %s\nContinue with `tasks run %d`", prefix.ID(n), cause, record.Worktree, record.SessionFile, n),
 		writeTaskSession(directory, n, record), setResult(ctx, repo, prefix, n, "blocked", ""))
 }
 

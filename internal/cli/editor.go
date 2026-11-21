@@ -67,7 +67,7 @@ func openForEditor(ctx context.Context, cwd string, prefix store.Prefix) (*git.R
 
 func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (string, error) {
 	if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err) {
-		return "", errors.New("--body or --body-file is required outside an interactive terminal (use --body-file - for stdin)")
+		return "", errors.New("--body or --body-file is required outside an interactive terminal (use `--body-file -` for stdin)")
 	}
 	repo, session, tasks, err := openForEditor(ctx, cwd, a.prefix)
 	if err != nil {
@@ -129,7 +129,7 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 
 func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, streams IO) (err error) {
 	if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err) {
-		return errors.New("tasks edit requires an interactive terminal")
+		return errors.New("`tasks edit` requires an interactive terminal")
 	}
 	command, err := editorCommand()
 	if err != nil {

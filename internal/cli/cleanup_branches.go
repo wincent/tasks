@@ -54,7 +54,7 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 func checkBranchReservations(entries []checkout, name string) error {
 	for _, entry := range entries {
 		if entry.Invalid != "" {
-			return fmt.Errorf("cannot check branch use in invalid worktree %s; inspect git worktree list", entry.Paths.WorkDir)
+			return fmt.Errorf("cannot check branch use in invalid worktree %s; inspect `git worktree list`", entry.Paths.WorkDir)
 		}
 		if entry.Head.Branch == name {
 			return fmt.Errorf("still checked out at %s", entry.Paths.WorkDir)
