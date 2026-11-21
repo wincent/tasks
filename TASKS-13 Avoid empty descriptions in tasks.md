@@ -1,6 +1,6 @@
 # TASKS-13: Avoid empty descriptions in tasks
 
-Status: active
+Status: merged
 
 ## Description
 
