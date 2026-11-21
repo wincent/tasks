@@ -1,6 +1,6 @@
 # TASKS-19: Improve error output
 
-Status: active
+Status: merged
 
 ## Description
 
