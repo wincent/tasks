@@ -1,6 +1,6 @@
 # TASKS-15: Improve output styling
 
-Status: blocked
+Status: active
 
 ## Description
 
