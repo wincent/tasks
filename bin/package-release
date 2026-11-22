@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+commit=$1
+target=$2
+output=$3
+[[ "$(git rev-parse HEAD)" == "$commit" && -z "$(git status --porcelain --untracked-files=all)" ]] || fail 'Expected a clean checkout of the verified release commit'
+
+export CGO_ENABLED=1 GOTOOLCHAIN=local
+[[ "$(go env GOOS)-$(go env GOARCH)" == "$target" ]] || fail "This runner cannot build $target natively"
+libgit2=$(pkg-config --modversion libgit2)
+[[ "$libgit2" == 1.9.* ]] || fail "Expected libgit2 1.9.x; found $libgit2"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$output"
+go mod download
+go mod verify
+go build -mod=readonly -trimpath -o "$work/tasks" ./cmd/tasks
+{
+  printf 'Commit: %s\nTarget: %s\nlibgit2 (pkg-config): %s\n' "$commit" "$target" "$libgit2"
+  go version
+  "$(go env CC)" --version
+  pkg-config --version | awk '{print "pkg-config: " $0}'
+  go version -m "$work/tasks"
+  case "$target" in
+    linux-*)
+      dpkg-query -W gcc libc6 libgit2-1.9
+      ldd "$work/tasks"
+      ;;
+    darwin-*)
+      sw_vers
+      otool -L "$work/tasks"
+      ;;
+    *) fail "Unsupported release target: $target" ;;
+  esac
+} > "$work/BUILD-INFO.txt"
+cp UNLICENSE.md "$work/"
+archive="$output/tasks-$target.tar.gz"
+COPYFILE_DISABLE=1 tar -C "$work" -czf "$archive" tasks BUILD-INFO.txt UNLICENSE.md
+
+mkdir "$work/smoke"
+tar -C "$work/smoke" -xzf "$archive"
+"$work/smoke/tasks" --help >/dev/null

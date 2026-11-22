@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+check=$(cd "$(dirname "$0")" && pwd)/check-release-tag
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+mkdir "$work/mock"
+export PATH="$work/mock:$PATH"
+cat > "$work/mock/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  "api repos/test/tasks/git/ref/tags/${GITHUB_REF#refs/tags/} --jq "*)
+    git rev-parse --verify "$GITHUB_REF^{tag}" 2>/dev/null || :
+    ;;
+  'api repos/test/tasks/git/ref/heads/main --jq '*)
+    git rev-parse refs/heads/main
+    ;;
+  "api repos/test/tasks/compare/$GITHUB_SHA...$(git rev-parse refs/heads/main)?per_page=1 --jq .merge_base_commit.sha")
+    git merge-base "$GITHUB_SHA" refs/heads/main
+    ;;
+  "api --method GET --paginate repos/test/tasks/actions/workflows/ci.yml/runs -f branch=main -f event=push -f status=success -f head_sha=$GITHUB_SHA -F per_page=100")
+    printf '%s\n' "$CI_RUNS"
+    ;;
+  *) printf 'Unexpected gh call: %s\n' "$*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$work/mock/gh"
+ssh-keygen -q -t ed25519 -N '' -f "$work/approved"
+ssh-keygen -q -t ed25519 -N '' -f "$work/other"
+
+cd "$work"
+git init -q -b main repo
+cd repo
+git config user.name 'Release Test'
+git config user.email 'release@example.invalid'
+git -c commit.gpgsign=false commit -qm 'Release candidate' --allow-empty
+commit=$(git rev-parse HEAD)
+git -c commit.gpgsign=false commit -qm 'Main advances' --allow-empty
+git checkout -q --detach "$commit"
+
+tag() { git -c gpg.format=ssh -c user.signingkey="$work/$1" tag -sm 'Test tag' "$2"; }
+tag approved v1.0.0
+tag other v1.0.1
+git tag -am 'Unsigned tag' v1.0.2
+git tag v1.0.3
+git update-ref refs/tags/v1.0.4 "$(git rev-parse v1.0.0)"
+git -c commit.gpgsign=false commit -qm 'Not on main' --allow-empty
+outside=$(git rev-parse HEAD)
+tag approved v1.0.5
+git checkout -q --detach "$commit"
+
+export GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=test/tasks GITHUB_REPOSITORY_ID=123
+export GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH="$work/event.json" GITHUB_OUTPUT="$work/output"
+export RELEASE_REPOSITORY=test/tasks
+IFS= read -r pubkey < "$work/approved.pub"
+export RELEASE_ALLOWED_SIGNERS="release namespaces=\"git\" $pubkey"
+export CI_RUNS
+success=$(jq -nc --arg sha "$commit" '{workflow_runs:[{
+  head_sha:$sha, head_branch:"main", event:"push", status:"completed",
+  conclusion:"success", head_repository:{id:123}
+}]}')
+CI_RUNS=$success
+
+prepare() {
+  export GITHUB_REF="refs/tags/$1" GITHUB_SHA="$2"
+  object=$(git rev-parse "$GITHUB_REF")
+  jq -n --arg ref "$GITHUB_REF" --arg sha "${3:-$object}" \
+    '{created:true, deleted:false, ref:$ref, after:$sha}' > "$GITHUB_EVENT_PATH"
+  : > "$GITHUB_OUTPUT"
+}
+reject() {
+  local message=$1
+  if "$check" > "$work/log" 2>&1 || [[ $(<"$work/log") != *"$message"* ]] || [[ -s "$GITHUB_OUTPUT" ]]; then
+    printf 'Expected rejection: %s\n' "$message" >&2
+    head -50 "$work/log" >&2
+    exit 1
+  fi
+}
+
+prepare v1.0.0 "$commit"
+"$check"
+diff -u <(printf 'commit=%s\ntag_object=%s\n' "$commit" "$object") "$GITHUB_OUTPUT"
+prepare v1.0.0 "$commit" "$commit"
+"$check"
+prepare v1.0.0 "$commit" "$outside"
+reject 'does not match the push event'
+prepare v1.0.0 "$outside"
+reject 'does not point to the event source commit'
+prepare v1.0.1 "$commit"
+reject 'not signed by an approved release key'
+prepare v1.0.2 "$commit"
+reject 'not signed by an approved release key'
+prepare v1.0.3 "$commit"
+reject 'Expected an annotated release tag'
+prepare v1.0.4 "$commit"
+reject 'signed tag name differs from the pushed ref'
+git checkout -q --detach "$outside"
+prepare v1.0.5 "$outside"
+reject 'must be reachable from the current main tip'
+git checkout -q --detach "$commit"
+prepare v1.0.0 "$commit"
+for change in '.workflow_runs=[]' '.workflow_runs[].head_sha="different"' \
+  '.workflow_runs[].head_branch="other"' '.workflow_runs[].event="pull_request"' \
+  '.workflow_runs[].conclusion="failure"' '.workflow_runs[].head_repository.id=456'; do
+  CI_RUNS=$(jq -c "$change" <<< "$success")
+  reject 'needs a successful CI run from a push to main in this repository'
+done
+printf '%s\n' 'Release tag checks passed'

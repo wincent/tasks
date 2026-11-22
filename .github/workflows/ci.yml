@@ -37,6 +37,7 @@ jobs:
 
       - run: bin/test
       - run: bin/vet
+      - run: bin/test-release-tag
 
       - name: Install dprint
         run: |

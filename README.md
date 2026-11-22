@@ -12,6 +12,8 @@ Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
 
 ## Install
 
+When a prebuilt archive is available on [GitHub Releases](https://github.com/wincent/tasks/releases), [verify it before extracting](docs/adrs/0002-provenance-based-releases.md#verify-a-download). The binary still needs shared libgit2 1.9.x at runtime.
+
 From the root of this source repository:
 
 ```sh
