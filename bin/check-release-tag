@@ -17,14 +17,23 @@ tag_object=$(gh api "$repo/git/ref/tags/$tag" --jq '.object | select(.type == "t
 [[ "$tag_object" =~ ^[0-9a-f]{40}$ ]] || fail 'Expected an annotated release tag'
 [[ "$(git rev-parse --verify "$GITHUB_REF^{tag}")" == "$tag_object" ]] || fail 'The checked-out tag differs from the current remote tag'
 
-# Trust only the SSH allowlist supplied outside this checkout. Disable the other
-# signature backends so an unrelated system keyring cannot authorize a tag.
+# Only public keys supplied outside the checkout can authorize a tag. Do not
+# consult the user's keyring, Web of Trust, or a keyserver.
+: "${RELEASE_GPG_PUBLIC_KEYS:?Set RELEASE_GPG_PUBLIC_KEYS in the release environment}"
 umask 077
-signers=$(mktemp)
-trap 'rm -f "$signers"' EXIT
-printf '%s\n' "${RELEASE_ALLOWED_SIGNERS:?Set RELEASE_ALLOWED_SIGNERS in the release environment}" > "$signers"
-git -c gpg.ssh.allowedSignersFile="$signers" -c gpg.minTrustLevel=fully \
-  -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$tag_object" || fail 'The tag was not signed by an approved release key'
+keyring=$(mktemp -d)
+trap 'rm -rf "$keyring"' EXIT
+export GNUPGHOME="$keyring"
+printf '%s\n' batch no-autostart no-auto-key-import no-auto-key-retrieve 'trust-model always' > "$keyring/gpg.conf"
+printf '%s\n' "$RELEASE_GPG_PUBLIC_KEYS" | gpg --import || fail 'Could not import the release GPG public keys'
+# Git can report success for a signature made by a now-expired key. Require
+# GnuPG's GOODSIG status, rather than EXPKEYSIG, as well as Git's exit status.
+status="$keyring/tag-status"
+if ! git -c gpg.openpgp.program=gpg -c gpg.ssh.program=false -c gpg.x509.program=false \
+  -c gpg.minTrustLevel=undefined verify-tag --raw "$tag_object" 2> "$status" ||
+  ! awk '$1 == "[GNUPG:]" && $2 == "GOODSIG" { good = 1 } END { exit !good }' "$status"; then
+  fail 'The tag was not signed by an approved release key'
+fi
 [[ "$(git cat-file tag "$tag_object" | awk 'NR == 3 {print}')" == "tag $tag" ]] || fail 'The signed tag name differs from the pushed ref'
 
 commit=$(git rev-parse --verify "$tag_object^{commit}")

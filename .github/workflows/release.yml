@@ -34,7 +34,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPOSITORY: ${{ vars.RELEASE_REPOSITORY }}
-          RELEASE_ALLOWED_SIGNERS: ${{ vars.RELEASE_ALLOWED_SIGNERS }}
+          RELEASE_GPG_PUBLIC_KEYS: ${{ vars.RELEASE_GPG_PUBLIC_KEYS }}
         run: bin/check-release-tag
 
   build:

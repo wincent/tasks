@@ -14,24 +14,32 @@ Require two independent checks for each release asset: a maintainer-signed Git t
 
 ### Build and publish
 
-1. A maintainer selects a commit reachable from `main` that passed CI on `main` and is cleared for publication under [ADR-0001](0001-processes-for-ensuring-suitability-for-open-source.md). Review any release workflow changes before tagging. The maintainer creates and pushes an SSH-signed annotated version tag such as `v1.2.3`. Protect the release tag namespace so that only release maintainers can create tags and existing tags cannot be moved or deleted. Keep the private tag signing keys out of CI.
+1. A maintainer selects a commit reachable from `main` that passed CI on `main` and is cleared for publication under [ADR-0001](0001-processes-for-ensuring-suitability-for-open-source.md). Review any release workflow changes before tagging. The maintainer creates and pushes a GPG-signed annotated version tag such as `v1.2.3`. Protect the release tag namespace so that only release maintainers can create tags and existing tags cannot be moved or deleted. Keep the private tag signing keys out of CI.
 2. A version tag push triggers `.github/workflows/release.yml` on GitHub-hosted runners. Before building, verify that the tag is annotated, its signed name matches the event ref, and its signature matches the release key allowlist maintained independently of the tagged checkout. Peel the tag to its commit and require that it matches the event's source commit, is reachable from the canonical repository's current `main` tip, and has a successful run of `.github/workflows/ci.yml` triggered by a push to `main` in that repository for that exact commit. Build from a clean checkout of that commit, not the current `main` tip. Cover the release workflow's actions with the existing workflow lockfile verification.
 3. Build `./cmd/tasks` for each supported release target with Go, a C compiler, and shared libgit2 1.9.x. Record the build toolchain and dependency versions and state the runtime libgit2 requirement in the release notes. Package first, then attest the exact files users will download; for an archive, attest the archive, not only the binary inside it.
 4. Separate build and attestation permissions from release publication: the build job can read source and write attestations using OIDC, but cannot publish. The publish job can write release contents but cannot mint attestations. It takes only this run's packaged files, checks that the release tag still points to the verified tag object, and verifies that the complete expected asset set has attestations for that tag ref, commit, and workflow. Enable GitHub release immutability and publish the draft only after attaching the verified files. If a check fails, leave the release unpublished. To correct a published release, issue a new version instead of replacing assets or moving the tag.
 
 ### Verify a download
 
-Obtain the release maintainers' SSH public keys through a trusted channel, independent of the download and tagged checkout. Save them in an OpenSSH allowed signers file, with lines such as `release namespaces="git" ssh-ed25519 AAAA...`. In a local clone without a conflicting tag, fetch the version tag from the canonical `wincent/tasks` repository. Verify the signature and the signed tag name, then use the peeled commit ID to verify the downloaded archive before extracting or running it:
+Obtain the release maintainers' OpenPGP public keys through a trusted channel, independent of the download and tagged checkout. Confirm their full primary-key fingerprints and save only the approved public keys to an ASCII-armored file. In a local clone without a conflicting tag, fetch the version tag from the canonical `wincent/tasks` repository. Verify the signature and the signed tag name, then use the peeled commit ID to verify the downloaded archive before extracting or running it:
 
 ```sh
 tag=v1.2.3
 asset=tasks-linux-amd64.tar.gz
 ref="refs/tags/$tag"
-signers=/path/to/trusted-allowed-signers
+signers=/path/to/trusted-release-public-keys.asc
 
-git fetch --no-tags https://github.com/wincent/tasks.git "$ref:$ref" &&
-  git -c gpg.ssh.allowedSignersFile="$signers" -c gpg.minTrustLevel=fully \
-    -c gpg.openpgp.program=false -c gpg.x509.program=false verify-tag "$ref" &&
+(
+  GNUPGHOME=$(mktemp -d) || exit 1
+  export GNUPGHOME
+  trap 'rm -rf "$GNUPGHOME"' EXIT
+  printf '%s\n' batch no-autostart no-auto-key-import no-auto-key-retrieve 'trust-model always' > "$GNUPGHOME/gpg.conf" &&
+    gpg --import "$signers" &&
+    git fetch --no-tags https://github.com/wincent/tasks.git "$ref:$ref" &&
+    git -c gpg.openpgp.program=gpg -c gpg.ssh.program=false -c gpg.x509.program=false \
+      -c gpg.minTrustLevel=undefined verify-tag --raw "$ref" 2> "$GNUPGHOME/tag-status" &&
+    awk '$1 == "[GNUPG:]" && $2 == "GOODSIG" { good = 1 } END { exit !good }' "$GNUPGHOME/tag-status"
+) &&
   test "$(git cat-file tag "$ref" | awk 'NR == 3 {print}')" = "tag $tag" &&
   commit=$(git rev-parse --verify "$ref^{commit}") &&
   gh attestation verify "$asset" \

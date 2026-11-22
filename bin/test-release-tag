@@ -2,8 +2,14 @@
 set -euo pipefail
 
 check=$(cd "$(dirname "$0")" && pwd)/check-release-tag
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+work=$(mktemp -d /tmp/tasks-tag-test.XXXXXX)
+export GNUPGHOME="$work/keys"
+mkdir -m 700 "$GNUPGHOME"
+cleanup() {
+  gpgconf --kill gpg-agent 2>/dev/null || :
+  rm -rf "$work"
+}
+trap cleanup EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 mkdir "$work/mock"
 export PATH="$work/mock:$PATH"
@@ -27,8 +33,13 @@ case "$*" in
 esac
 EOF
 chmod +x "$work/mock/gh"
-ssh-keygen -q -t ed25519 -N '' -f "$work/approved"
-ssh-keygen -q -t ed25519 -N '' -f "$work/other"
+gpg_batch() { gpg --batch --pinentry-mode loopback --passphrase '' "$@"; }
+approved=approved@example.invalid
+other=other@example.invalid
+gpg_batch --quick-generate-key "Approved <$approved>" ed25519 cert 0
+fingerprint=$(gpg --batch --with-colons --list-keys "$approved" | awk -F: '$1 == "fpr" { print $10 }')
+gpg_batch --quick-add-key "$fingerprint" ed25519 sign 0
+gpg_batch --quick-generate-key "Other <$other>" ed25519 sign 0
 
 cd "$work"
 git init -q -b main repo
@@ -40,22 +51,22 @@ commit=$(git rev-parse HEAD)
 git -c commit.gpgsign=false commit -qm 'Main advances' --allow-empty
 git checkout -q --detach "$commit"
 
-tag() { git -c gpg.format=ssh -c user.signingkey="$work/$1" tag -sm 'Test tag' "$2"; }
-tag approved v1.0.0
-tag other v1.0.1
+tag() { git -c gpg.format=openpgp -c user.signingkey="$1" tag -sm 'Test tag' "$2"; }
+tag "$approved" v1.0.0
+tag "$other" v1.0.1
 git tag -am 'Unsigned tag' v1.0.2
 git tag v1.0.3
 git update-ref refs/tags/v1.0.4 "$(git rev-parse v1.0.0)"
 git -c commit.gpgsign=false commit -qm 'Not on main' --allow-empty
 outside=$(git rev-parse HEAD)
-tag approved v1.0.5
+tag "$approved" v1.0.5
 git checkout -q --detach "$commit"
 
 export GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=test/tasks GITHUB_REPOSITORY_ID=123
 export GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH="$work/event.json" GITHUB_OUTPUT="$work/output"
 export RELEASE_REPOSITORY=test/tasks
-IFS= read -r pubkey < "$work/approved.pub"
-export RELEASE_ALLOWED_SIGNERS="release namespaces=\"git\" $pubkey"
+RELEASE_GPG_PUBLIC_KEYS=$(gpg --batch --armor --export "$fingerprint")
+export RELEASE_GPG_PUBLIC_KEYS
 export CI_RUNS
 success=$(jq -nc --arg sha "$commit" '{workflow_runs:[{
   head_sha:$sha, head_branch:"main", event:"push", status:"completed",
@@ -80,6 +91,8 @@ reject() {
 }
 
 prepare v1.0.0 "$commit"
+(RELEASE_GPG_PUBLIC_KEYS='' reject 'Set RELEASE_GPG_PUBLIC_KEYS')
+(RELEASE_GPG_PUBLIC_KEYS='not a GPG public key' reject 'Could not import the release GPG public keys')
 "$check"
 diff -u <(printf 'commit=%s\ntag_object=%s\n' "$commit" "$object") "$GITHUB_OUTPUT"
 prepare v1.0.0 "$commit" "$commit"
