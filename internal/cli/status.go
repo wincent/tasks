@@ -23,12 +23,15 @@ func describeActivity(directory string, prefix store.Prefix, task store.Task) (t
 	if err != nil {
 		return result, nil, err
 	}
+	if record != nil {
+		result.Worktree, result.Session, result.Reason = record.Worktree, record.SessionFile, record.Reason
+	}
+	if task.Archived {
+		return result, record, nil
+	}
 	live, err := running(directory, prefix, task.Number, record)
 	if err != nil {
 		return result, nil, err
-	}
-	if record != nil {
-		result.Worktree, result.Session, result.Reason = record.Worktree, record.SessionFile, record.Reason
 	}
 	switch {
 	case live:
@@ -40,7 +43,7 @@ func describeActivity(directory string, prefix store.Prefix, task store.Task) (t
 }
 
 func statusTask(directory string, tasks *store.Store, a arguments, streams IO) error {
-	scanned, err := tasks.Scan()
+	scanned, err := tasks.Scan(false)
 	result := struct {
 		Tasks   []taskActivity `json:"tasks"`
 		Merging bool           `json:"merging"`

@@ -56,7 +56,7 @@ func (store *Store) ArtifactPresent(task Task, name string, existing []string) (
 	if store.prospective || !validArtifactName(name) {
 		return false, nil
 	}
-	if err := artifactParents(store.Path, task.artifactDirectory(), nil); err != nil {
+	if err := metadataParents(store.Path, task.artifactDirectory(), "artifact", nil); err != nil {
 		return false, err
 	}
 	info, err := os.Lstat(filepath.Join(store.Path, task.artifactDirectory(), name))
@@ -108,9 +108,12 @@ func (s *Session) CommitArtifacts(preview *Store, task Task, files map[string][]
 	return err
 }
 
-// artifactParents refuses symlinks and file obstructions. If creating, record
-// exactly which directories we own so a failed publication can remove them.
-func artifactParents(root, directory string, created *[]string) error {
+// metadataParents refuses symlinks and file obstructions. If creating,
+// record the directories a failed publication can remove.
+func metadataParents(root, directory, kind string, created *[]string) error {
+	if directory == "" {
+		return nil
+	}
 	path := root
 	for _, part := range strings.Split(directory, "/") {
 		path = filepath.Join(path, part)
@@ -129,7 +132,7 @@ func artifactParents(root, directory string, created *[]string) error {
 			return err
 		}
 		if !info.IsDir() {
-			return fmt.Errorf("artifact directory is obstructed: %s", path)
+			return fmt.Errorf("%s directory is obstructed: %s", kind, path)
 		}
 	}
 	return nil
@@ -137,14 +140,14 @@ func artifactParents(root, directory string, created *[]string) error {
 
 // The index and HEAD must not contain a file/directory conflict with any new
 // path, even if the corresponding file has been removed from the worktree.
-func (store *Store) requireNewArtifacts(directory string, names []string, head git.ID) error {
-	if err := artifactParents(store.Path, directory, nil); err != nil {
+func (store *Store) requireNewPaths(directory, kind string, names []string, head git.ID) error {
+	if err := metadataParents(store.Path, directory, kind, nil); err != nil {
 		return err
 	}
-	for _, parent := range []string{artifactStorage, directory} {
+	for parent := directory; parent != "" && parent != "."; parent = filepath.Dir(parent) {
 		entry, err := store.Repository.Entry(head, parent)
 		if err == nil && entry.Mode != 0040000 {
-			return fmt.Errorf("artifact directory is obstructed in tasks: %s", parent)
+			return fmt.Errorf("%s directory is obstructed in tasks: %s", kind, parent)
 		}
 		if err != nil && !git.HasCode(err, git.NotFound) {
 			return err
@@ -157,18 +160,18 @@ func (store *Store) requireNewArtifacts(directory string, names []string, head g
 	for _, name := range names {
 		if _, err := store.Repository.Entry(head, name); !git.HasCode(err, git.NotFound) {
 			if err == nil {
-				return fmt.Errorf("artifact already stored: %s", name)
+				return fmt.Errorf("%s path already committed: %s", kind, name)
 			}
 			return err
 		}
 		for _, entry := range index {
 			if entry.Path == name || strings.HasPrefix(entry.Path, name+"/") || strings.HasPrefix(name, entry.Path+"/") {
-				return fmt.Errorf("artifact path is obstructed in the task index: %s", entry.Path)
+				return fmt.Errorf("%s path is obstructed in the task index: %s", kind, entry.Path)
 			}
 		}
 		if _, err := os.Lstat(filepath.Join(store.Path, name)); !errors.Is(err, os.ErrNotExist) {
 			if err == nil {
-				return fmt.Errorf("artifact path already exists; preserve it before retrying: %s", name)
+				return fmt.Errorf("%s path already exists; preserve it before retrying: %s", kind, name)
 			}
 			return err
 		}

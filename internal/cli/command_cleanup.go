@@ -21,8 +21,9 @@ func init() {
 		usage:   "[NUMBER] [--apply]",
 		summary: "Preview removal of merged task checkouts and branches.",
 		details: `Omit NUMBER to consider all tasks. Run from outside any checkout you want
-to remove. Branch tips must be in the recorded topic (local main by default).
-Missing topics and branches still in use are kept. Saved sessions are kept.
+to remove. Branch tips must be in the recorded topic (local main by default),
+even for archived tasks. Missing topics and branches in use are kept.
+Saved sessions are kept.
 
 Options:
   --apply  Remove eligible branches and checkouts (including ignored files).`,
@@ -141,7 +142,7 @@ func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (desti
 	if err != nil {
 		return "", err
 	}
-	if err := tasks.RequireClean(filepath.Base(task.Path)); err != nil {
+	if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
 		return "", err
 	}
 	return taskDestination(prefix, n, task.Content)

@@ -17,7 +17,7 @@ type listingOptions struct {
 
 func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store.Store, listing listingOptions) (err error) {
 	directory, root := invocation.directory, invocation.root
-	scanned, scanErr := tasks.Scan()
+	scanned, scanErr := tasks.Scan(a.flags["--include-archived"])
 	// Preserve the normal error/exit-status contract while making valid results
 	// available on stdout. The executable reports errors on stderr, not in JSON.
 	defer func() {
@@ -95,8 +95,11 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 			afterStatus = strings.Repeat(" ", statusWidth-len(task.Status)+2)
 		}
 		suffix := ""
-		if marker := markers[filepath.Base(task.Path)]; marker != "" {
-			suffix = " (" + p.changeMarker(marker) + ")"
+		if task.Archived {
+			suffix = " (archived)"
+		}
+		if marker := markers[tasks.RelativePath(task)]; marker != "" {
+			suffix += " (" + p.changeMarker(marker) + ")"
 		}
 		fmt.Fprintf(streams.Out, "%s%s%s%s%s%s\n", p.paint(id, "4"), afterID, p.status(task.Status), afterStatus, p.paint(task.Title, "3"), suffix)
 		for _, activity := range task.Activity {

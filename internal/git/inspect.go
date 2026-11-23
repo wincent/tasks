@@ -310,13 +310,34 @@ func (r *Repository) Blob(id ID) ([]byte, error) {
 	return result, err
 }
 
-// HistoryPaths observes every root entry in every reachable commit. Visiting
-// trees (rather than simplified path-limited history) includes deleted files,
-// both sides of merges, and names absent from current worktrees. No callbacks
-// are invoked while holding the native handle's lock.
-func (r *Repository) HistoryPaths(tips []ID) ([]string, error) {
+// HistoryPaths observes every root entry in every reachable commit, plus
+// entries up to depth levels within directory (if nonempty). Visiting trees
+// includes deleted files and both sides of merges.
+func (r *Repository) HistoryPaths(tips []ID, directory string, depth int) ([]string, error) {
 	paths := make(map[string]bool)
 	err := r.call("read historical paths", func(repo *C.git_repository) error {
+		seen := make(map[TreeEntry]bool)
+		var visit func(TreeEntry, int) error
+		visit = func(entry TreeEntry, depth int) error {
+			paths[entry.Name] = true
+			if depth <= 0 || entry.Mode != 0040000 || seen[entry] {
+				return nil
+			}
+			seen[entry] = true
+			var tree *C.git_tree
+			id := nativeID(entry.ID)
+			if err := nativeError("read historical subtree", C.git_tree_lookup(&tree, repo, &id)); err != nil {
+				return err
+			}
+			defer C.git_tree_free(tree)
+			for _, child := range treeEntries(tree) {
+				child.Name = entry.Name + "/" + child.Name
+				if err := visit(child, depth-1); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 		var walk *C.git_revwalk
 		if err := nativeError("create history walker", C.git_revwalk_new(&walk, repo)); err != nil {
 			return err
@@ -341,10 +362,17 @@ func (r *Repository) HistoryPaths(tips []ID) ([]string, error) {
 			if err != nil {
 				return err
 			}
-			for _, entry := range treeEntries(tree) {
-				paths[entry.Name] = true
-			}
+			entries := treeEntries(tree)
 			C.git_tree_free(tree)
+			for _, entry := range entries {
+				if entry.Name == directory {
+					if err := visit(entry, depth); err != nil {
+						return err
+					}
+				} else {
+					paths[entry.Name] = true
+				}
+			}
 		}
 	})
 	result := make([]string, 0, len(paths))

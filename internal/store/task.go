@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -146,73 +147,99 @@ type Task struct {
 	Title    string     `json:"title"`
 	Status   string     `json:"status"`
 	Path     string     `json:"path"`
+	Archived bool       `json:"archived"`
 	Content  string     `json:"-"`
 	Activity []Activity `json:"activity,omitempty"`
 }
 
-// Read locates one task without requiring valid status, so show remains
-// available for diagnosis. It never follows symlinks or opens special files.
+// Read locates an explicit task number, including archived records, without
+// requiring valid status. It never follows symlinks or opens special files.
 func (store *Store) Read(number int) (Task, error) {
-	if store.prospective {
-		return store.readProspective(number)
-	}
-	entries, err := os.ReadDir(store.Path)
-	if err != nil {
-		return Task{}, err
-	}
-	paths := []string{}
-	for _, entry := range entries {
-		match := store.matchTicket(entry.Name())
-		if match == nil {
-			continue
-		}
-		n, err := decimalNumber(match[2])
-		if err != nil {
-			return Task{}, err
-		}
-		if n == number {
-			paths = append(paths, filepath.Join(store.Path, entry.Name()))
-		}
-	}
-	if len(paths) == 0 {
-		// A locally deleted record must not be mistaken for a task that has no
-		// record, especially when cleanup would default its destination to main.
-		head, err := store.Head()
-		if err != nil {
-			return Task{}, err
-		}
-		entries, err := store.Repository.Tree(head.ID)
-		if err != nil {
-			return Task{}, err
-		}
-		for _, entry := range entries {
-			if match := store.matchTicket(entry.Name); match != nil && match[2] == strconv.Itoa(number) {
-				return Task{}, fmt.Errorf("%s is missing from the shared checkout; restore it before retrying", entry.Name)
-			}
-		}
-		return Task{}, fmt.Errorf("expected one %s task in the shared store; found 0: %w", store.Prefix.ID(number), ErrTaskNotFound)
-	}
-	if len(paths) != 1 {
-		return Task{}, fmt.Errorf("expected one %s task in the shared store; found %d", store.Prefix.ID(number), len(paths))
-	}
-	data, err := regularContents(paths[0])
-	if err != nil {
-		return Task{}, err
-	}
-	if data == nil {
-		return Task{}, errors.New("task disappeared while reading")
-	}
-	if !utf8.Valid(data) {
-		return Task{}, fmt.Errorf("%s: task must be UTF-8", paths[0])
-	}
-	title := store.matchTicket(filepath.Base(paths[0]))[3]
-	return Task{Number: number, Title: title, Path: paths[0], Content: string(data)}, nil
+	return store.read(number, true)
 }
 
-// ReadLatest reads the highest-numbered task with the same diagnostic and
-// file-safety behavior as Read, without requiring valid task status.
+func (store *Store) read(number int, includeArchived bool) (Task, error) {
+	head, err := store.Head()
+	if err != nil {
+		return Task{}, err
+	}
+	dirs := []string{""}
+	if includeArchived {
+		dirs = append(dirs, archiveBucket(number))
+	}
+	var selected []taskEntry
+	for _, dir := range dirs {
+		entries, err := store.entries(dir, store.revision)
+		if err != nil {
+			return Task{}, err
+		}
+		selected = append(selected, store.matchNumber(entries, number)...)
+	}
+	missing := ""
+	if !store.prospective {
+		// A committed record missing locally is not a legacy task with no
+		// record. In particular, cleanup must not fall back to main.
+		for _, dir := range dirs {
+			entries, err := store.entries(dir, head.ID)
+			if err != nil {
+				return Task{}, err
+			}
+			for _, entry := range store.matchNumber(entries, number) {
+				if !slices.ContainsFunc(selected, func(other taskEntry) bool { return other.name == entry.name }) {
+					missing = entry.name
+				}
+			}
+		}
+	}
+	switch {
+	case len(selected) > 1:
+		return Task{}, fmt.Errorf("expected one %s task in the shared store; found %d", store.Prefix.ID(number), len(selected))
+	case len(selected) != 0 && missing != "":
+		return Task{}, fmt.Errorf("ambiguous %s: %s is committed but missing from the shared checkout", store.Prefix.ID(number), missing)
+	case missing != "":
+		return Task{}, fmt.Errorf("%s is missing from the shared checkout; restore it before retrying", missing)
+	case len(selected) == 0:
+		return Task{}, fmt.Errorf("expected one %s task in the shared store; found 0: %w", store.Prefix.ID(number), ErrTaskNotFound)
+	}
+	entry := selected[0]
+	path := filepath.Join(store.Path, entry.name)
+	data, err := store.readTaskEntry(entry, true)
+	if err != nil {
+		return Task{}, fmt.Errorf("%s: %w", path, err)
+	}
+	match := store.matchTicket(filepath.Base(entry.name))
+	return Task{Number: number, Title: match[3], Path: path, Content: string(data), Archived: filepath.Dir(entry.name) != "."}, nil
+}
+
+func (store *Store) matchNumber(entries []taskEntry, number int) []taskEntry {
+	var matches []taskEntry
+	for _, entry := range entries {
+		if match := store.matchTicket(filepath.Base(entry.name)); match != nil && match[2] == strconv.Itoa(number) {
+			matches = append(matches, entry)
+		}
+	}
+	return matches
+}
+
+// ReadWorking resolves a task for execution or mutation, not just inspection.
+func (store *Store) ReadWorking(number int) (Task, error) {
+	task, err := store.Read(number)
+	if err == nil && task.Archived {
+		return Task{}, fmt.Errorf("%s is archived; run 'tasks unarchive %s' first", task.ID(), task.ID())
+	}
+	return task, err
+}
+
+// RelativePath is the literal ticket path in the metadata checkout.
+func (store *Store) RelativePath(task Task) string {
+	path, _ := filepath.Rel(store.Path, task.Path)
+	return path
+}
+
+// ReadLatest reads the highest-numbered unarchived task without requiring
+// valid task status.
 func (store *Store) ReadLatest() (Task, error) {
-	entries, err := store.taskEntries()
+	entries, err := store.entries("", store.revision)
 	if err != nil {
 		return Task{}, err
 	}
@@ -226,31 +253,37 @@ func (store *Store) ReadLatest() (Task, error) {
 		if err != nil {
 			return Task{}, err
 		}
-		if n > latest {
-			latest = n
-		}
+		latest = max(latest, n)
 	}
 	if latest == 0 {
 		return Task{}, errors.New("no tasks in the shared store")
 	}
-	return store.Read(latest)
+	return store.read(latest, false)
 }
 
-func (store *Store) Scan() ([]Task, error) {
-	entries, err := store.taskEntries()
+func (store *Store) Scan(includeArchived bool) ([]Task, error) {
+	entries, err := store.entries("", store.revision)
 	if err != nil {
 		return nil, err
 	}
 	tasks := []Task{}
 	var failures []error
+	if includeArchived {
+		archived, err := store.archiveEntries(store.revision)
+		entries = append(entries, archived...)
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
 	seen := map[int]string{}
 	duplicates := map[int]bool{}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.name, ".") || (entry.name == artifactStorage && entry.directory) {
+		base := filepath.Base(entry.name)
+		if strings.HasPrefix(base, ".") || (entry.directory && (entry.name == artifactStorage || entry.name == archiveDirectory)) {
 			continue
 		}
 		path := filepath.Join(store.Path, entry.name)
-		match := store.matchTicket(entry.name)
+		match := store.matchTicket(base)
 		if match == nil {
 			failures = append(failures, fmt.Errorf("%s: expected '%s-<positive number> <title>.md'", path, store.Prefix))
 			continue
@@ -258,6 +291,11 @@ func (store *Store) Scan() ([]Task, error) {
 		n, err := decimalNumber(match[2])
 		if err != nil {
 			failures = append(failures, err)
+			continue
+		}
+		archived := entry.name != base
+		if !inTicketLocation(entry.name, n) {
+			failures = append(failures, fmt.Errorf("%s: expected archive bucket %s", path, archiveBucket(n)))
 			continue
 		}
 		if previous, ok := seen[n]; ok {
@@ -270,13 +308,7 @@ func (store *Store) Scan() ([]Task, error) {
 			failures = append(failures, fmt.Errorf("%s: invalid task title", path))
 			continue
 		}
-		data, err := store.readEntry(entry)
-		if err == nil && data == nil {
-			err = errors.New("task disappeared while scanning")
-		}
-		if err == nil && !utf8.Valid(data) {
-			err = errors.New("task must be UTF-8")
-		}
+		data, err := store.readTaskEntry(entry, false)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", path, err))
 			continue
@@ -290,7 +322,7 @@ func (store *Store) Scan() ([]Task, error) {
 			failures = append(failures, fmt.Errorf("%s: %w", path, err))
 			continue
 		}
-		tasks = append(tasks, Task{Number: n, Title: match[3], Status: status, Path: path, Content: string(data)})
+		tasks = append(tasks, Task{Number: n, Title: match[3], Status: status, Path: path, Content: string(data), Archived: archived})
 	}
 	// Neither side of an ambiguous ticket number is authoritative, including
 	// when a caller elects to display partial results alongside scan errors.
@@ -311,34 +343,79 @@ type taskEntry struct {
 	directory bool
 }
 
-func (store *Store) taskEntries() ([]taskEntry, error) {
+// entries reads one literal directory in the filesystem (zero revision)
+// or the given commit. A missing archive directory is an empty result.
+func (store *Store) entries(dir string, revision git.ID) ([]taskEntry, error) {
 	var result []taskEntry
-	if store.prospective {
-		entries, err := store.Repository.Tree(store.revision)
+	if revision != (git.ID{}) {
+		var entries []git.TreeEntry
+		var err error
+		if dir == "" {
+			entries, err = store.Repository.Tree(revision)
+		} else {
+			entries, err = store.Repository.TreeAt(revision, dir)
+			if git.HasCode(err, git.NotFound) {
+				if parent := filepath.Dir(dir); parent != "." {
+					entry, err := store.Repository.Entry(revision, parent)
+					if err != nil && !git.HasCode(err, git.NotFound) {
+						return nil, err
+					}
+					if err == nil && entry.Mode != 0040000 {
+						return nil, fmt.Errorf("archive directory is obstructed in tasks: %s", parent)
+					}
+				}
+				return nil, nil
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
 		for _, entry := range entries {
-			result = append(result, taskEntry{name: entry.Name, tree: entry, directory: entry.Mode == 0040000})
+			result = append(result, taskEntry{name: filepath.Join(dir, entry.Name), tree: entry, directory: entry.Mode == 0040000})
 		}
 	} else {
-		entries, err := os.ReadDir(store.Path)
+		if dir != "" {
+			if err := metadataParents(store.Path, dir, "archive", nil); err != nil {
+				return nil, err
+			}
+		}
+		entries, err := os.ReadDir(filepath.Join(store.Path, dir))
+		if dir != "" && errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
 		for _, entry := range entries {
-			result = append(result, taskEntry{name: entry.Name(), directory: entry.IsDir()})
+			result = append(result, taskEntry{name: filepath.Join(dir, entry.Name()), directory: entry.IsDir()})
 		}
 	}
 	return result, nil
 }
 
-func (store *Store) readEntry(entry taskEntry) ([]byte, error) {
+func (store *Store) readTaskEntry(entry taskEntry, smudge bool) ([]byte, error) {
+	var data []byte
+	var err error
 	if !store.prospective {
-		return regularContents(filepath.Join(store.Path, entry.name))
-	}
-	if entry.tree.Mode != 0100644 && entry.tree.Mode != 0100755 {
+		data, err = regularContents(filepath.Join(store.Path, entry.name))
+	} else if entry.tree.Mode != 0100644 && entry.tree.Mode != 0100755 {
 		return nil, errors.New("task must be a regular file")
+	} else if smudge {
+		err = store.withProspectiveView(func(view *git.Repository) error {
+			data, err = view.WorktreeBlob(entry.name, entry.tree.ID)
+			return err
+		})
+	} else {
+		data, err = store.Repository.Blob(entry.tree.ID)
 	}
-	return store.Repository.Blob(entry.tree.ID)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, errors.New("task disappeared while reading")
+	}
+	if !utf8.Valid(data) {
+		return nil, errors.New("task must be UTF-8")
+	}
+	return data, nil
 }

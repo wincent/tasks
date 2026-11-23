@@ -50,7 +50,7 @@ func readTask(ctx context.Context, repo *git.Repository, prefix store.Prefix, n 
 			return err
 		}
 		defer tasks.Close()
-		task, err = tasks.Read(n)
+		task, err = tasks.ReadWorking(n)
 		return err
 	})
 	return task, err

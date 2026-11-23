@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/wincent/tasks/internal/store"
 )
@@ -14,8 +15,9 @@ func init() {
 		options: map[string]optionKind{"--raw": flagOption},
 		usage:   "[NUMBER] [--raw]",
 		summary: "Show the Markdown for a task.",
-		details: `Omit NUMBER to show the highest-numbered task. On a terminal, use Glow
-if available; otherwise, and when piped, print the original Markdown.
+		details: `Omit NUMBER to show the highest-numbered task outside the archive.
+Pass NUMBER to show a specific task, even if archived. On a terminal, use
+Glow if available; otherwise print Markdown.
 
 Options:
   --raw  Print the original Markdown even on a terminal.`,
@@ -30,7 +32,16 @@ Options:
 			if err != nil {
 				return err
 			}
-			return renderMarkdown(ctx, cwd, task.Content, a.flags["--raw"], streams)
+			content := task.Content
+			if task.Archived {
+				notice := task.ID() + " is archived."
+				if a.flags["--raw"] {
+					fmt.Fprintln(streams.Err, notice)
+				} else {
+					content = "> " + notice + "\n\n" + content
+				}
+			}
+			return renderMarkdown(ctx, cwd, content, a.flags["--raw"], streams)
 		}),
 	})
 }

@@ -28,6 +28,7 @@ type CommitOptions struct {
 	BeforePublish   func() error
 
 	artifactDirectory string // Nonempty only for append-only artifact batches.
+	move              *archiveMove
 }
 
 // RecoveryError never promises rollback once reference publication has been
@@ -139,14 +140,17 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 	// Freeze caller-owned data before lock acquisition.
 	contents := make(map[string][]byte)
 	for name, content := range changes {
-		if options.artifactDirectory == "" && (name == "" || name == "." || name == ".." || strings.EqualFold(name, ".git") || strings.ContainsAny(name, "/\x00")) {
+		if options.move == nil && options.artifactDirectory == "" && (name == "" || name == "." || name == ".." || strings.EqualFold(name, ".git") || strings.ContainsAny(name, "/\x00")) {
 			return revision, fmt.Errorf("task commit requires a literal root filename: %q", name)
 		}
 		if content == nil {
-			return revision, errors.New("task metadata deletion is not supported")
+			if options.move == nil || name != options.move.source {
+				return revision, errors.New("task metadata deletion is not supported")
+			}
+		} else {
+			contents[name] = append([]byte{}, content...)
 		}
 		names = append(names, name)
-		contents[name] = append([]byte{}, content...)
 	}
 	sort.Strings(names)
 	expected := make(map[string]git.ID)
@@ -170,8 +174,12 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		return revision, err
 	}
 	checkSelected := func() error {
-		if options.artifactDirectory != "" {
-			if err := store.requireNewArtifacts(options.artifactDirectory, names, head.ID); err != nil {
+		if options.move != nil {
+			if err := options.move.check(store, head.ID); err != nil {
+				return err
+			}
+		} else if options.artifactDirectory != "" {
+			if err := store.requireNewPaths(options.artifactDirectory, "artifact", names, head.ID); err != nil {
 				return err
 			}
 		}
@@ -241,12 +249,22 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		base = git.ID{}
 	}
 	var edits []git.TreeEdit
-	for _, name := range names {
-		blob, err := store.Repository.WriteWorktreeBlob(name, contents[name])
+	if move := options.move; move != nil {
+		if data := originals[move.source]; data == nil || !equalContents(data, contents[move.destination]) {
+			return revision, fmt.Errorf("task changed during archive planning: %s; retry", move.source)
+		}
+		edits, err = move.treeEdits(store.Repository, head.ID, originals[move.source])
 		if err != nil {
 			return revision, err
 		}
-		edits = append(edits, git.TreeEdit{Path: name, ID: blob, Mode: 0100644})
+	} else {
+		for _, name := range names {
+			blob, err := store.Repository.WriteWorktreeBlob(name, contents[name])
+			if err != nil {
+				return revision, err
+			}
+			edits = append(edits, git.TreeEdit{Path: name, ID: blob, Mode: 0100644})
+		}
 	}
 	tree, err := store.Repository.EditTree(head.ID, edits)
 	if err != nil {
@@ -332,11 +350,16 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			}
 		}
 	}()
-	if options.artifactDirectory != "" {
-		if err := artifactParents(store.Path, options.artifactDirectory, &created); err != nil {
+	if options.move != nil {
+		if err := metadataParents(store.Path, options.move.directory(), "archive", &created); err != nil {
+			return revision, err
+		}
+	} else if options.artifactDirectory != "" {
+		if err := metadataParents(store.Path, options.artifactDirectory, "artifact", &created); err != nil {
 			return revision, err
 		}
 	}
+	var rollbackMove func() error
 	written := make([]string, 0, len(names))
 	defer func() {
 		if err == nil {
@@ -346,6 +369,12 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			retain = true
 			err = &RecoveryError{Revision: revision, Directory: temporary, Err: err}
 			return
+		}
+		if rollbackMove != nil {
+			if restoreErr := rollbackMove(); restoreErr != nil {
+				retain = true
+				err = errors.Join(err, fmt.Errorf("restore archive move (recovery in %s): %w", temporary, restoreErr))
+			}
 		}
 		for _, name := range written {
 			path := filepath.Join(store.Path, name)
@@ -365,7 +394,15 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			}
 		}
 	}()
-	for _, name := range names {
+	writeNames := names
+	if options.move != nil {
+		rollbackMove, err = options.move.install(store.Path)
+		if err != nil {
+			return revision, err
+		}
+		writeNames = nil
+	}
+	for _, name := range writeNames {
 		path := filepath.Join(store.Path, name)
 		if options.artifactDirectory != "" {
 			installed, err := state.AtomicCreate(path, contents[name])

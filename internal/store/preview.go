@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"unicode/utf8"
 
 	"github.com/wincent/tasks/internal/git"
 )
@@ -115,9 +113,8 @@ func (store *Store) ValidateContents(contents map[string][]byte) error {
 	return store.Repository.ValidateWorktreeContents(contents)
 }
 
-func (store *Store) readProspective(number int) (Task, error) {
-	var result Task
-	err := store.Repository.WithProspectiveWorktree("tasks", store.Path, Branch, func(view *git.Repository) error {
+func (store *Store) withProspectiveView(inspect func(*git.Repository) error) error {
+	return store.Repository.WithProspectiveWorktree("tasks", store.Path, Branch, func(view *git.Repository) error {
 		ref, err := view.Reference(Branch)
 		if err != nil {
 			return err
@@ -125,46 +122,8 @@ func (store *Store) readProspective(number int) (Task, error) {
 		if ref.ID != store.revision || ref.Symbolic != "" {
 			return errors.New("tasks changed during mutation planning; retry")
 		}
-		entries, err := view.Tree(store.revision)
-		if err != nil {
-			return err
-		}
-		var selected []git.TreeEntry
-		for _, entry := range entries {
-			match := store.matchTicket(entry.Name)
-			if match == nil {
-				continue
-			}
-			n, err := decimalNumber(match[2])
-			if err != nil {
-				return err
-			}
-			if n == number {
-				selected = append(selected, entry)
-			}
-		}
-		if len(selected) == 0 {
-			return fmt.Errorf("expected one %s task in the shared store; found 0: %w", store.Prefix.ID(number), ErrTaskNotFound)
-		}
-		if len(selected) != 1 {
-			return fmt.Errorf("expected one %s task in the shared store; found %d", store.Prefix.ID(number), len(selected))
-		}
-		entry := selected[0]
-		path := filepath.Join(store.Path, entry.Name)
-		if entry.Mode != 0100644 && entry.Mode != 0100755 {
-			return fmt.Errorf("task must be a regular file: %s", path)
-		}
-		data, err := view.WorktreeBlob(entry.Name, entry.ID)
-		if err != nil {
-			return err
-		}
-		if !utf8.Valid(data) {
-			return fmt.Errorf("%s: task must be UTF-8", path)
-		}
-		result = Task{Number: number, Title: store.matchTicket(entry.Name)[3], Path: path, Content: string(data)}
-		return nil
+		return inspect(view)
 	})
-	return result, err
 }
 
 // Prospective distinguishes missing-checkout snapshots from filesystem reads.

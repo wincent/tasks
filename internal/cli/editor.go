@@ -78,7 +78,7 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 	kind := "description"
 	operation := "task creation"
 	if a.action != "create" {
-		task, err := tasks.Read(a.number())
+		task, err := tasks.ReadWorking(a.number())
 		if err != nil {
 			tasks.Close()
 			session.Close()
@@ -128,19 +128,15 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 }
 
 func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, streams IO) (err error) {
-	if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err) {
-		return errors.New("`tasks edit` requires an interactive terminal")
-	}
-	command, err := editorCommand()
-	if err != nil {
-		return err
-	}
 	repo, session, tasks, err := openForEditor(ctx, cwd, prefix)
 	if err != nil {
 		return err
 	}
 	defer repo.Close()
-	task, err := tasks.Read(n)
+	task, err := tasks.ReadWorking(n)
+	if err == nil && (!terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err)) {
+		err = errors.New("`tasks edit` requires an interactive terminal")
+	}
 	if err == nil {
 		err = tasks.RequireClean(filepath.Base(task.Path))
 	}
@@ -150,6 +146,10 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 	}
 	tasks.Close()
 	session.Close()
+	if err != nil {
+		return err
+	}
+	command, err := editorCommand()
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 		return err
 	}
 	defer tasks.Close()
-	current, err := tasks.Read(n)
+	current, err := tasks.ReadWorking(n)
 	if err != nil {
 		return err
 	}

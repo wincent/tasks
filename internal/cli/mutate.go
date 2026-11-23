@@ -37,7 +37,7 @@ func updateTask(session *store.Session, prefix store.Prefix, n int, status, head
 		return store.Task{}, err
 	}
 	defer tasks.Close()
-	task, err := tasks.Read(n)
+	task, err := tasks.ReadWorking(n)
 	if err != nil {
 		return store.Task{}, err
 	}

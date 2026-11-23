@@ -14,6 +14,7 @@ import (
 
 type storeRequirements struct {
 	mutation bool
+	taskLock bool
 	body     bool
 	prepare  func(arguments) error
 }
@@ -96,6 +97,17 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 			if _, err := store.MetadataSignatures(repository); err != nil {
 				return err
 			}
+		}
+		if require.taskLock {
+			directory, err := operationState(repository)
+			if err != nil {
+				return err
+			}
+			lock, err := taskLock(directory, a.prefix, a.number())
+			if err != nil {
+				return err
+			}
+			defer lock.Close()
 		}
 		session, err := store.Begin(ctx, repository)
 		if err != nil {

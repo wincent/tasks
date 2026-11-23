@@ -370,6 +370,15 @@ func cleanWorktreeBuffer(repo *C.git_repository, path string, data []byte) (outp
 // WriteWorktreeBlob applies libgit2's native clean transformations, including
 // line endings. Raw object construction remains available through WriteBlob.
 func (r *Repository) WriteWorktreeBlob(path string, data []byte) (ID, error) {
+	return r.worktreeBlobID(path, data, true)
+}
+
+// WorktreeBlobID identifies the clean bytes without adding an object.
+func (r *Repository) WorktreeBlobID(path string, data []byte) (ID, error) {
+	return r.worktreeBlobID(path, data, false)
+}
+
+func (r *Repository) worktreeBlobID(path string, data []byte, write bool) (ID, error) {
 	var result ID
 	err := r.call("write worktree blob", func(repo *C.git_repository) error {
 		output, err := cleanWorktreeBuffer(repo, path, data)
@@ -378,7 +387,11 @@ func (r *Repository) WriteWorktreeBlob(path string, data []byte) (ID, error) {
 			return err
 		}
 		var id C.git_oid
-		if err := nativeError("write cleaned blob", C.git_blob_create_from_buffer(&id, repo, unsafe.Pointer(output.ptr), output.size)); err != nil {
+		if write {
+			if err := nativeError("write cleaned blob", C.git_blob_create_from_buffer(&id, repo, unsafe.Pointer(output.ptr), output.size)); err != nil {
+				return err
+			}
+		} else if err := nativeError("hash cleaned blob", C.git_odb_hash(&id, unsafe.Pointer(output.ptr), output.size, C.GIT_OBJECT_BLOB)); err != nil {
 			return err
 		}
 		result = objectID(&id)

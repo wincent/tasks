@@ -62,12 +62,16 @@ func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 			return nil, err
 		}
 		defer store.Close()
-		entries, err := os.ReadDir(path)
+		entries, err := store.entries("", git.ID{})
 		if err != nil {
 			return nil, err
 		}
-		for _, entry := range entries {
-			names = append(names, entry.Name())
+		archived, err := store.archiveEntries(git.ID{})
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range append(entries, archived...) {
+			names = append(names, entry.name)
 		}
 		index, err := store.Repository.IndexEntries()
 		if err != nil {
@@ -103,7 +107,7 @@ func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 		_ = ref
 		tips = append(tips, id)
 	}
-	history, err := s.Repository.HistoryPaths(tips)
+	history, err := s.Repository.HistoryPaths(tips, archiveDirectory, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -113,10 +117,10 @@ func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 	// don't treat an unrelated worktree or index file as an issued ticket.
 	numbers := []int{}
 	for i, name := range names {
-		if filepath.Base(name) != name {
+		if dir := filepath.Dir(name); dir != "." && !validArchiveBucket(dir) {
 			continue
 		}
-		match := ticketName.FindStringSubmatch(name)
+		match := ticketName.FindStringSubmatch(filepath.Base(name))
 		if match == nil {
 			continue
 		}
@@ -131,7 +135,9 @@ func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 			}
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		numbers = append(numbers, n)
+		if inTicketLocation(name, n) {
+			numbers = append(numbers, n)
+		}
 	}
 	return numbers, nil
 }

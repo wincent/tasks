@@ -221,7 +221,7 @@ func TestMergeBasesAndHistoricalNames(t *testing.T) {
 	right := makeCommit([]string{"EXAMPLE-3 right.md"}, first)
 	merge := makeCommit(nil, left, right)
 	orphan := makeCommit([]string{"EXAMPLE-99 orphan.md"})
-	paths, err := r.HistoryPaths([]ID{merge, orphan, first})
+	paths, err := r.HistoryPaths([]ID{merge, orphan, first}, "", 0)
 	want := []string{"EXAMPLE-1 old.md", "EXAMPLE-2 left.md", "EXAMPLE-3 right.md", "EXAMPLE-99 orphan.md"}
 	if err != nil || !reflect.DeepEqual(paths, want) {
 		t.Fatalf("history: %v %v", paths, err)
@@ -240,10 +240,10 @@ func TestMergeBasesAndHistoricalNames(t *testing.T) {
 	if _, err := r.MergeBases(ID{}, first); err == nil {
 		t.Fatal("missing object treated as independent history")
 	}
-	if _, err := r.HistoryPaths([]ID{{}}); err == nil {
+	if _, err := r.HistoryPaths([]ID{{}}, "", 0); err == nil {
 		t.Fatal("accepted missing history tip")
 	}
-	paths, err = r.HistoryPaths(nil)
+	paths, err = r.HistoryPaths(nil, "", 0)
 	if err != nil || len(paths) != 0 {
 		t.Fatalf("empty history: %v %v", paths, err)
 	}

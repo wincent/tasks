@@ -73,7 +73,7 @@ func saveArtifacts(_ context.Context, cwd string, a arguments, streams IO, invoc
 		return err
 	}
 	defer tasks.Close()
-	task, err := tasks.Read(a.number())
+	task, err := tasks.ReadWorking(a.number())
 	if err != nil {
 		return err
 	}

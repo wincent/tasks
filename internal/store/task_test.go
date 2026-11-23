@@ -46,7 +46,7 @@ func TestScanIgnoresDotfiles(t *testing.T) {
 	}{{"checkout", false}, {"tree", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := Store{Prefix: "EXAMPLE", Path: path, Repository: repo, prospective: tc.prospective, revision: revision}
-			tasks, err := store.Scan()
+			tasks, err := store.Scan(true)
 			if err != nil || len(tasks) != 1 || tasks[0].Number != 1 {
 				t.Fatalf("Scan() found %d tasks, err = %v; want only EXAMPLE-1", len(tasks), err)
 			}
@@ -55,7 +55,7 @@ func TestScanIgnoresDotfiles(t *testing.T) {
 
 	mustWrite(t, filepath.Join(path, "unexpected"), []byte("not a ticket\n"))
 	store := Store{Prefix: "EXAMPLE", Path: path}
-	if _, err := store.Scan(); err == nil || !strings.Contains(err.Error(), "unexpected") {
+	if _, err := store.Scan(true); err == nil || !strings.Contains(err.Error(), "unexpected") {
 		t.Fatalf("Scan() error = %v; want a diagnostic for unexpected", err)
 	}
 }
