@@ -1,6 +1,6 @@
 # TASKS-22: Document how to work on topic branches
 
-Status: done
+Status: merged
 
 ## Description
 
