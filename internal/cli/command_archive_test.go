@@ -110,6 +110,95 @@ func TestArchiveRoundTrip(t *testing.T) {
 	}
 }
 
+func TestArchiveMultipleTasks(t *testing.T) {
+	_, root := fixture(t)
+	var paths, archived, originals []string
+	for _, title := range []string{"First", "Second", "Third"} {
+		path := strings.TrimSpace(run(t, root, "create", title, "--body", "Original"))
+		paths = append(paths, path)
+		archived = append(archived, filepath.Join(root, "tasks", "archive", "0", filepath.Base(path)))
+		originals = append(originals, string(uiBytes(t, path)))
+	}
+	metadata := filepath.Join(root, "tasks")
+	before := systemGit(t, root, "rev-parse", "tasks")
+	want := strings.Join([]string{archived[2], archived[1], archived[0]}, "\n") + "\n"
+	if got := run(t, root, "archive", "3", "example-2", "1"); got != want {
+		t.Fatalf("archive output = %q, want %q", got, want)
+	}
+	archivedHead := systemGit(t, root, "rev-parse", "tasks")
+	if got := systemGit(t, root, "rev-parse", "tasks^"); got != before {
+		t.Fatalf("archive should write one commit on %s, got parent %s", before, got)
+	}
+	if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
+		t.Fatalf("archive left changes: %s", got)
+	}
+	for i, path := range archived {
+		if got, want := string(uiBytes(t, path)), originals[i]; got != want {
+			t.Fatalf("archive changed ticket contents: %q, want %q", got, want)
+		}
+	}
+
+	want = strings.Join([]string{paths[1], paths[0], paths[2]}, "\n") + "\n"
+	if got := run(t, root, "unarchive", "2", "EXAMPLE-1", "3"); got != want {
+		t.Fatalf("unarchive output = %q, want %q", got, want)
+	}
+	if got := systemGit(t, root, "rev-parse", "tasks^"); got != archivedHead {
+		t.Fatalf("unarchive should write one commit on %s, got parent %s", archivedHead, got)
+	}
+	if got := systemGit(t, root, "diff", "--name-status", before, "tasks", "--"); got != "" {
+		t.Fatalf("round trip changed the tasks tree: %s", got)
+	}
+	if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
+		t.Fatalf("round trip left changes: %s", got)
+	}
+}
+
+func TestArchiveBatchRejectsInvalidSelections(t *testing.T) {
+	repo, root := fixture(t)
+	run(t, root, "create", "First", "--body", "Original")
+	run(t, root, "create", "Second", "--body", "Original")
+	metadata := filepath.Join(root, "tasks")
+	assertUnchanged := func(before string) {
+		t.Helper()
+		if got := systemGit(t, root, "rev-parse", "tasks"); got != before {
+			t.Fatalf("rejected batch changed tasks ref: %s, want %s", got, before)
+		}
+		if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
+			t.Fatalf("rejected batch left changes: %s", got)
+		}
+	}
+	before := systemGit(t, root, "rev-parse", "tasks")
+	fails(t, root, "unexpected task prefix WRONG", "archive", "1", "WRONG-2")
+	fails(t, root, "positive ticket number", "archive", "1", "0")
+	fails(t, root, "duplicate task number: EXAMPLE-1", "archive", "1", "example-1")
+	fails(t, root, "EXAMPLE-3 task in the shared store; found 0", "archive", "1", "3")
+	fails(t, root, "mutually exclusive", "archive", "1", "2", "--query", "status:open")
+
+	directory, err := operationState(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := taskLock(directory, "EXAMPLE", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { lock.Close() })
+	fails(t, root, "EXAMPLE-2 already has a running agent or task operation", "archive", "1", "2")
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertUnchanged(before)
+
+	// This also checks that the failed batch released the first task's lock.
+	run(t, root, "archive", "1")
+	before = systemGit(t, root, "rev-parse", "tasks")
+	fails(t, root, "EXAMPLE-1 is already archived", "archive", "2", "1")
+	fails(t, root, "EXAMPLE-2 is not archived", "unarchive", "1", "2")
+	fails(t, root, "unexpected task prefix WRONG", "unarchive", "1", "WRONG-2")
+	fails(t, root, "duplicate task number: EXAMPLE-1", "unarchive", "1", "example-1")
+	assertUnchanged(before)
+}
+
 func assertTicketMove(t *testing.T, root, previous, from, to string) {
 	t.Helper()
 	if got := systemGit(t, root, "show", "-s", "--format=%P", store.Branch); got != previous {
@@ -131,8 +220,7 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 	original := uiBytes(t, path)
 	before := systemGit(t, root, "rev-parse", "tasks")
 	for _, action := range []string{"archive", "unarchive"} {
-		fails(t, root, "expects 1 positional", action)
-		fails(t, root, "expects 1 positional", action, "1", "2")
+		fails(t, root, "expects at least 1 positional", action)
 		fails(t, root, "positive ticket number", action, "0")
 		fails(t, root, "positive ticket number", action, "-1")
 		fails(t, root, "prefix", action, "WRONG-1")

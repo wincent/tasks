@@ -23,15 +23,19 @@ type IO struct {
 	Runner   process.Runner
 }
 
+type taskArgument struct {
+	prefix store.Prefix
+	number int
+}
+
 type arguments struct {
-	action      string
-	positional  []string
-	values      map[string][]string
-	flags       map[string]bool
-	prefix      store.Prefix
-	inputPrefix store.Prefix
-	taskNumber  int
-	query       *query.Expression
+	action     string
+	positional []string
+	values     map[string][]string
+	flags      map[string]bool
+	prefix     store.Prefix
+	tasks      []taskArgument
+	query      *query.Expression
 }
 
 // Match the prior argument parser's negative-number positional handling;
@@ -110,12 +114,19 @@ func parse(args []string) (arguments, error) {
 			return a, err
 		}
 	}
-	if spec.numbered && len(a.positional) != 0 {
-		var err error
-		a.inputPrefix, a.taskNumber, err = store.ParseNumber(a.positional[0])
+	var taskArgs []string
+	switch {
+	case spec.numberedAll:
+		taskArgs = a.positional
+	case spec.numbered && len(a.positional) != 0:
+		taskArgs = a.positional[:1]
+	}
+	for _, arg := range taskArgs {
+		prefix, number, err := store.ParseNumber(arg)
 		if err != nil {
 			return a, err
 		}
+		a.tasks = append(a.tasks, taskArgument{prefix, number})
 	}
 	if len(a.values["--query"]) != 0 {
 		var err error
@@ -132,6 +143,21 @@ func (a arguments) value(key string) string {
 		return v[0]
 	}
 	return ""
+}
+
+func (a arguments) number() int {
+	if len(a.tasks) == 0 {
+		return 0
+	}
+	return a.tasks[0].number
+}
+
+func (a arguments) numbers() []int {
+	numbers := make([]int, len(a.tasks))
+	for i, task := range a.tasks {
+		numbers[i] = task.number
+	}
+	return numbers
 }
 
 func encode(out io.Writer, value any) error {
@@ -169,8 +195,16 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 	if err != nil {
 		return err
 	}
-	if a.inputPrefix != "" && a.inputPrefix != a.prefix {
-		return &usageError{fmt.Errorf("unexpected task prefix %s; use %s or %d", a.inputPrefix, a.prefix.ID(a.number()), a.number())}
+	seen := make(map[int]bool, len(a.tasks))
+	for _, task := range a.tasks {
+		id := a.prefix.ID(task.number)
+		if task.prefix != "" && task.prefix != a.prefix {
+			return &usageError{fmt.Errorf("unexpected task prefix %s; use %s or %d", task.prefix, id, task.number)}
+		}
+		if seen[task.number] {
+			return &usageError{fmt.Errorf("duplicate task number: %s", id)}
+		}
+		seen[task.number] = true
 	}
 	return run(ctx, cwd, a, streams)
 }

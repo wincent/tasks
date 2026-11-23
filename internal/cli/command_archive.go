@@ -6,18 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
-	"github.com/wincent/tasks/internal/state"
 	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/terminal"
 )
 
 func init() {
-	single := withTaskStore(storeRequirements{mutation: true, taskLock: true}, moveTask)
+	explicit := withTaskStore(storeRequirements{mutation: true, taskLock: true}, moveTasks)
 	bulk := withTasks(archiveByQuery)
 	commands.register(commandSpec{
-		name: "archive", max: 1, numbered: true,
+		name: "archive", max: math.MaxInt, numberedAll: true,
 		options: map[string]optionKind{"--query": valueOption},
 		validate: func(a arguments) error {
 			hasQuery := len(a.values["--query"]) != 0
@@ -25,15 +25,16 @@ func init() {
 				return errors.New("NUMBER and --query are mutually exclusive")
 			}
 			if !hasQuery && len(a.positional) == 0 {
-				return errors.New("`tasks archive` expects 1 positional argument (NUMBER) or --query EXPR")
+				return errors.New("`tasks archive` expects at least 1 positional argument (NUMBER) or --query EXPR")
 			}
 			return nil
 		},
-		usage:   "NUMBER | --query EXPR",
-		summary: "Hide a task from the default working set.",
-		details: `Move one ticket to the archive in a local tasks-branch commit. The task's
-status, artifacts, checkout and session are unchanged. A running task cannot
-be archived. Use 'tasks unarchive NUMBER' to restore the ticket.
+		usage:   "NUMBER [NUMBER ...] | --query EXPR",
+		summary: "Hide tasks from the default working set.",
+		details: `Move one or more tickets to the archive in a single local tasks-branch
+commit. If any listed ticket cannot be moved, none are moved. A running task
+cannot be archived. Task status, artifacts, checkouts and sessions are
+unchanged. Use 'tasks unarchive NUMBER [NUMBER ...]' to restore tickets.
 
 Options:
   -q, --query EXPR  Preview matching unarchived tasks in list format.
@@ -46,16 +47,17 @@ terminal. Without a terminal, print the preview without changing any tickets.
 			if a.query != nil {
 				return bulk(ctx, cwd, a, streams)
 			}
-			return single(ctx, cwd, a, streams)
+			return explicit(ctx, cwd, a, streams)
 		},
 	})
 	commands.register(commandSpec{
-		name: "unarchive", min: 1, max: 1, numbered: true,
-		usage:   "NUMBER",
-		summary: "Restore an archived task to the working set.",
-		details: `Move one ticket back to the tasks-branch root in a local commit. The task's
-status, artifacts, checkout and session are unchanged.`,
-		run: withTaskStore(storeRequirements{mutation: true}, moveTask),
+		name: "unarchive", min: 1, max: math.MaxInt, numberedAll: true,
+		usage:   "NUMBER [NUMBER ...]",
+		summary: "Restore archived tasks to the working set.",
+		details: `Move one or more tickets back to the tasks-branch root in a single local
+commit. If any listed ticket cannot be moved, none are moved. Task status,
+artifacts, checkouts and sessions are unchanged.`,
+		run: withTaskStore(storeRequirements{mutation: true}, moveTasks),
 	})
 }
 
@@ -138,21 +140,15 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 	if err != nil {
 		return err
 	}
-	// Candidates are in ticket order. Take every lifetime lock before the
-	// metadata lock, and keep them all until the batch has finished.
-	var locks []*state.Lock
-	defer func() {
-		for _, lock := range locks {
-			lock.Close()
-		}
-	}()
-	for _, task := range selected {
-		lock, err := taskLock(directory, a.prefix, task.Number)
-		if err != nil {
-			return err
-		}
-		locks = append(locks, lock)
+	numbers := make([]int, len(selected))
+	for i, task := range selected {
+		numbers[i] = task.Number
 	}
+	unlock, err := lockTasks(directory, a.prefix, numbers)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	session, err := store.Begin(ctx, repo)
 	if err != nil {
 		return err
@@ -166,14 +162,20 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 	return err
 }
 
-func moveTask(_ context.Context, _ string, a arguments, streams IO, invocation storeInvocation) error {
-	task, err := invocation.session.MoveTask(a.prefix, a.number(), a.action == "archive")
+func moveTasks(_ context.Context, _ string, a arguments, streams IO, invocation storeInvocation) error {
+	archive := a.action == "archive"
+	tasks, err := invocation.session.MoveTasks(a.prefix, a.numbers(), archive)
 	if err != nil {
 		return err
 	}
 	action := "Unarchived"
-	if task.Archived {
+	if archive {
 		action = "Archived"
 	}
-	return taskResult(streams.Out, action, task.ID(), task.Title, task.Path)
+	for _, task := range tasks {
+		if err := taskResult(streams.Out, action, task.ID(), task.Title, task.Path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
