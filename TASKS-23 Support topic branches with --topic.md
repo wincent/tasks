@@ -1,6 +1,6 @@
 # TASKS-23: Support topic branches with --topic
 
-Status: open
+Status: active
 
 ## Description
 
