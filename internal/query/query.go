@@ -111,7 +111,7 @@ func (l *lexer) next(mode lexMode) token {
 	}
 	for l.pos < len(l.source) {
 		r, size := utf8.DecodeRuneInString(l.source[l.pos:])
-		if unicode.IsSpace(r) || strings.ContainsRune("()\"", r) || (mode == querySyntax && r == ':') {
+		if unicode.IsSpace(r) || strings.ContainsRune("()\"", r) || (mode == querySyntax && r == ':') || (mode == updatedValue && r == '\'') {
 			break
 		}
 		l.pos += size

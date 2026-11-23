@@ -14,7 +14,7 @@ func parseTest(t *testing.T, expr string) *Expression {
 	t.Helper()
 	e, err := Parse(expr, fixedNow, statusValid)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%q: %v", expr, err)
 	}
 	return e
 }
@@ -71,7 +71,16 @@ func TestUpdatedPeriods(t *testing.T) {
 			{">", [4]bool{false, false, false, true}},
 			{">=", [4]bool{false, true, true, true}},
 		} {
-			for _, form := range []string{cmp.op + tc.value, " " + cmp.op + " " + tc.value, `"` + cmp.op + tc.value + `"`, "\" \t" + cmp.op + " \t" + tc.value + " \""} {
+			forms := []string{
+				cmp.op + tc.value,
+				" " + cmp.op + " " + tc.value,
+				`"` + cmp.op + tc.value + `"`,
+				"\" \t" + cmp.op + " \t" + tc.value + " \"",
+			}
+			for _, quote := range []string{`"`, "'"} {
+				forms = append(forms, cmp.op+quote+tc.value+quote, cmp.op+" \t"+quote+" "+tc.value+" "+quote)
+			}
+			for _, form := range forms {
 				e := parseTest(t, "updated:"+form)
 				for i, at := range []time.Time{start.Add(-1), start, end.Add(-1), end} {
 					if got := e.Matches(Record{Updated: at}); got != cmp.want[i] {
@@ -149,6 +158,10 @@ func TestUpdatedNaturalDateForms(t *testing.T) {
 		`updated:'<3.days.ago'`,
 		`updated:<3.days.ago`,
 		`updated:"< 3 days ago"`,
+		`updated:<"3 days ago"`,
+		`updated:< "3 days ago"`,
+		`updated:<'3 days ago'`,
+		`updated:< '3 days ago'`,
 		`(updated: < 3 days ago AND status:merged)`,
 		`(updated: < 3 days ago) AND status:merged`,
 		`(updated: < 3 days ago OR status:open)`,
@@ -169,6 +182,28 @@ func TestUpdatedNaturalDateForms(t *testing.T) {
 	e := parseTest(t, `updated:>= 2026 days ago AND status:merged`)
 	if !e.Matches(Record{Status: "merged", Updated: yearCutoff}) || e.Matches(Record{Status: "merged", Updated: yearCutoff.Add(-1)}) {
 		t.Error("four-digit relative count was not evaluated as a relative date")
+	}
+}
+
+func TestUpdatedQuotedDateBooleanBoundaries(t *testing.T) {
+	e := parseTest(t, `(updated:<"3 days ago" AND status:merged) OR (NOT status:open AND updated:>= '3 days ago')`)
+	if !e.NeedsUpdated() {
+		t.Fatal("quoted dates must be detected in compound queries")
+	}
+	cutoff := fixedNow.Add(-3 * 24 * time.Hour)
+	for _, tc := range []struct {
+		status string
+		delta  time.Duration
+		want   bool
+	}{
+		{"merged", -1, true},
+		{"closed", -1, false},
+		{"open", 0, false},
+		{"closed", 0, true},
+	} {
+		if got := e.Matches(Record{Status: tc.status, Updated: cutoff.Add(tc.delta)}); got != tc.want {
+			t.Errorf("%s at cutoff + %v: got %t, want %t", tc.status, tc.delta, got, tc.want)
+		}
 	}
 }
 
@@ -193,9 +228,18 @@ func TestInvalid(t *testing.T) {
 		{"updated:>>2026", "invalid updated value"},
 		{"updated:<", "expected a date after '<'"},
 		{"updated: <= AND status:merged", "expected a date after '<='"},
+		{"updated:> OR status:merged", "byte 9: expected a date after '>'"},
+		{"updated:> NOT status:merged", "byte 9: expected a date after '>'"},
 		{"(updated: >)", "expected a date after '>'"},
 		{"updated:'>= '", "expected a date after '>='"},
 		{"updated:'< 3 days ago", "unterminated quoted value"},
+		{`updated:>=""`, "byte 11: expected a date after '>='"},
+		{`updated:< '  '`, "byte 11: expected a date after '<'"},
+		{`updated:>="3 days ago`, "byte 11: unterminated quoted value"},
+		{`updated:< '3 days ago`, "byte 11: unterminated quoted value"},
+		{`updated:>='2026-02-29'`, "byte 11: invalid updated value"},
+		{`updated:<"AND" OR status:merged`, `byte 10: invalid updated value "AND"`},
+		{`updated:>='2026' days ago`, "byte 18: expected AND, OR"},
 		{"updated: < 3 days", "invalid updated value"},
 		{"(updated: < 3 days AND status:merged)", "invalid updated value"},
 		{"updated: < 2026 days", "expected AND, OR"},

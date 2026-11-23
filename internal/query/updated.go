@@ -39,18 +39,25 @@ func (p *parser) updatedPredicate() (node, error) {
 		return nil, p.error("expected a nonempty date after 'updated:'")
 	}
 	op, date := splitUpdatedComparator(strings.TrimSpace(p.current.text))
-	if p.current.kind == 'w' {
-		if date == "" {
+	if p.current.kind == 'w' && date == "" {
+		lookahead := p.lexer
+		switch value := lookahead.next(updatedValue); value.kind {
+		case '!':
+			return nil, at(value.pos, value.text)
+		case '"':
+			p.lexer, p.current = lookahead, value
+			date = strings.TrimSpace(value.text)
+		default:
 			date = p.lexer.dateWord()
 		}
-		// Digits alone can be a calendar year. Only extend them into a
-		// relative expression if the complete "unit ago" suffix follows.
-		if date != "" && strings.Trim(date, "0123456789") == "" {
-			lookahead := p.lexer
-			if unit := lookahead.dateWord(); unit != "" && lookahead.dateWord() == "ago" {
-				date += " " + unit + " ago"
-				p.lexer = lookahead
-			}
+	}
+	// Digits alone can be a calendar year. Only extend an unquoted number
+	// into a relative expression if the complete "unit ago" suffix follows.
+	if p.current.kind == 'w' && date != "" && strings.Trim(date, "0123456789") == "" {
+		lookahead := p.lexer
+		if unit := lookahead.dateWord(); unit != "" && lookahead.dateWord() == "ago" {
+			date += " " + unit + " ago"
+			p.lexer = lookahead
 		}
 	}
 	if op != "" && date == "" {
