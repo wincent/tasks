@@ -1,6 +1,6 @@
 # TASKS-33: Add --prompt to tasks run for per-run instructions
 
-Status: active
+Status: merged
 
 ## Description
 
