@@ -22,9 +22,10 @@ func init() {
 		usage:       "[NUMBER] [--apply]",
 		summary:     "Preview removal of merged task checkouts and branches.",
 		details: `Omit NUMBER to consider all tasks. Run from outside any checkout you want
-to remove. Branch tips must be in the recorded topic (local main by default),
-even for archived tasks. Missing topics and branches in use are kept.
-Saved sessions are kept.
+to remove. The recorded topic (local main by default) must contain the task
+tip or an identical tracked snapshot in history not shared by the task branch.
+This applies even to archived tasks. Missing topics, branches in use, and saved
+sessions are kept.
 
 Options:
   --apply  Remove eligible branches and checkouts (including ignored files).`,
@@ -170,7 +171,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	if err != nil {
 		return err
 	}
-	ok, err := repo.IsAncestor(entry.Head.ID, base)
+	ok, err := repo.ContainsCommitOrTree(entry.Head.ID, base)
 	if err != nil {
 		return err
 	}
@@ -249,7 +250,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	if err != nil {
 		return err
 	}
-	ok, err = repo.IsAncestor(entry.Head.ID, base)
+	ok, err = repo.ContainsCommitOrTree(entry.Head.ID, base)
 	if err != nil {
 		return err
 	}

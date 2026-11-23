@@ -19,7 +19,7 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 	if err != nil {
 		return err
 	}
-	merged, err := repo.IsAncestor(ref.ID, tip)
+	merged, err := repo.ContainsCommitOrTree(ref.ID, tip)
 	if err != nil {
 		return err
 	}
@@ -30,8 +30,8 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 		return checkBranchReservations(retained, name)
 	}
 
-	// Verify both tips under ref locks: neither the branch gaining commits nor
-	// the destination moving may turn the ancestry check into a deletion.
+	// Verify both tips under ref locks so a concurrent update cannot
+	// invalidate the merge check before deletion.
 	tx, err := repo.Prepare(name, git.ID{}, map[string]git.ID{name: ref.ID, dest.ref(): tip}, git.Signature{}, "")
 	if err != nil {
 		return err

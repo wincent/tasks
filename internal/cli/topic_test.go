@@ -146,7 +146,9 @@ func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
 	systemGit(t, root, "worktree", "add", "-b", "task/example-1", worktree, "delivery")
 	implementation := commitImplementation(t, worktree, "topic-only.txt", "not in main\n")
 	systemGit(t, root, "branch", "task/example-2", implementation)
-	systemGit(t, root, "branch", "-f", "delivery", implementation)
+	tree := systemGit(t, root, "rev-parse", implementation+"^{tree}")
+	rewritten := systemGit(t, root, "commit-tree", tree, "-p", main, "-m", "integrate the task via a different commit")
+	systemGit(t, root, "branch", "-f", "delivery", rewritten)
 	for _, args := range [][]string{{"cleanup"}, {"cleanup", "--apply"}} {
 		out := run(t, root, args...)
 		action := "Would remove"
@@ -162,7 +164,7 @@ func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("topic checkout not removed: %v", err)
 	}
-	if systemGit(t, root, "branch", "--list", "task/example-1") != "" || systemGit(t, root, "rev-parse", "main") != main || systemGit(t, root, "rev-parse", "delivery") != implementation {
+	if systemGit(t, root, "branch", "--list", "task/example-1") != "" || systemGit(t, root, "rev-parse", "main") != main || systemGit(t, root, "rev-parse", "delivery") != rewritten {
 		t.Fatal("cleanup removed the wrong branch or changed a destination")
 	}
 }

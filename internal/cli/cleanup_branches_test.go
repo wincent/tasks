@@ -57,6 +57,65 @@ func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	}
 }
 
+func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
+	repo, root := fixture(t)
+	const rewritten = "task/example-7-rewritten"
+	const mode = "task/example-7-mode"
+	const revert = "task/example-7-revert"
+	base := systemGit(t, root, "rev-parse", "main")
+
+	systemGit(t, root, "switch", "-c", rewritten)
+	commitImplementation(t, root, "one.txt", "first task change\n")
+	commitImplementation(t, root, "two.txt", "second task change\n")
+	systemGit(t, root, "switch", "-c", mode)
+	if err := os.Chmod(filepath.Join(root, "one.txt"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	systemGit(t, root, "update-index", "--chmod=+x", "one.txt")
+	systemGit(t, root, "commit", "-m", "make one.txt executable")
+	systemGit(t, root, "switch", "main")
+
+	systemGit(t, root, "merge", "--squash", rewritten)
+	systemGit(t, root, "commit", "-m", "squash the task changes")
+	if got, want := systemGit(t, root, "rev-parse", "main^{tree}"), systemGit(t, root, "rev-parse", rewritten+"^{tree}"); got != want {
+		t.Fatalf("squash tree %s does not match task tree %s", got, want)
+	}
+	main := commitImplementation(t, root, "later.txt", "destination moved on\n")
+	systemGit(t, root, "switch", "-c", revert)
+	systemGit(t, root, "restore", "--source="+base, "--staged", "--worktree", "--", ".")
+	systemGit(t, root, "commit", "-m", "restore the old shared snapshot")
+	systemGit(t, root, "switch", "main")
+
+	for _, apply := range []bool{false, true} {
+		args, action := []string{"cleanup", "7"}, "Would remove"
+		if apply {
+			args, action = append(args, "--apply"), "Removed"
+		}
+		out := run(t, root, args...)
+		for _, want := range []string{
+			action + " branch " + rewritten,
+			"Keep branch " + mode + ": branch is not merged into local main",
+			"Keep branch " + revert + ": branch is not merged into local main",
+		} {
+			if !strings.Contains(out, want+"\n") {
+				t.Fatalf("missing %q in:\n%s", want, out)
+			}
+		}
+		_, err := repo.Reference("refs/heads/" + rewritten)
+		if (!apply && err != nil) || (apply && !git.HasCode(err, git.NotFound)) {
+			t.Fatalf("unexpected lookup for %s after %v: %v", rewritten, args, err)
+		}
+		for _, name := range []string{mode, revert} {
+			if _, err := repo.Reference("refs/heads/" + name); err != nil {
+				t.Fatalf("lost %s after %v: %v", name, args, err)
+			}
+		}
+		if got := systemGit(t, root, "rev-parse", "main"); got != main {
+			t.Fatalf("cleanup changed main from %s to %s", main, got)
+		}
+	}
+}
+
 func TestCleanupKeepsBranchesInUse(t *testing.T) {
 	repo, root := fixture(t)
 	for _, name := range []string{"task/example-7-current", "task/example-7-rebase", "task/example-7-rebase-update", "task/example-7-bisect", "task/example-7-unused", "task/example-8-running"} {
