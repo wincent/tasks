@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"syscall"
 
 	"github.com/wincent/tasks/internal/process"
@@ -75,10 +76,18 @@ func shellTask(ctx context.Context, cwd string, a arguments, streams IO, invocat
 	if runner == nil {
 		runner = process.Native{}
 	}
+	// Keep the shared flock alive in the foreground command even if
+	// the launcher dies before it can wait for the child.
+	loan, err := lease.Lend()
+	if err != nil {
+		return err
+	}
+	defer loan.Close()
 	argv := a.positional[1:]
 	result := runner.Run(ctx, process.Command{
 		Args: argv, Directory: source.Paths.WorkDir,
 		In: streams.In, Out: streams.Out, Err: streams.Err,
+		ExtraFiles: []*os.File{loan},
 	})
 	switch {
 	case result.Err != nil:

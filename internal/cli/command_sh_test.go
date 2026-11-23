@@ -1,15 +1,20 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/state"
 )
 
 func TestShRunsCommandInTaskCheckout(t *testing.T) {
@@ -143,6 +148,96 @@ func TestShKeepsCheckoutDuringCleanup(t *testing.T) {
 	}
 	if out := run(t, root, "cleanup", "1", "--apply"); !strings.Contains(out, "Removed "+source.Paths.WorkDir) {
 		t.Fatalf("checkout kept after shells exited: %s", out)
+	}
+}
+
+func TestShLeaseSurvivesLauncherDeath(t *testing.T) {
+	const helper = "TASKS_TEST_SH_LAUNCHER"
+	if os.Getenv(helper) == "1" {
+		cwd, err := os.Getwd()
+		if err == nil {
+			err = Run(context.Background(), cwd, []string{"sh", "1", "/bin/sh", "-c",
+				"echo ready; IFS= read -r line && pwd -P"}, IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	repo, root := fixture(t)
+	run(t, root, "create", "Keep checkout", "--body", "Fixture")
+	base, err := repo.ResolveCommit(mainRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := createCheckout(repo, "example-1-", base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, send, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	defer send.Close()
+	out, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	defer write.Close()
+	if err := out.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	launcher := exec.Command(os.Args[0], "-test.run=^TestShLeaseSurvivesLauncherDeath$")
+	launcher.Dir = root
+	launcher.Env = append(os.Environ(), helper+"=1")
+	launcher.Stdin, launcher.Stdout, launcher.Stderr = in, write, os.Stderr
+	if err := launcher.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if launcher.ProcessState == nil {
+			_ = launcher.Process.Kill()
+			_ = launcher.Wait()
+		}
+	}()
+	in.Close()
+	write.Close()
+	lines := bufio.NewReader(out)
+	if got, err := lines.ReadString('\n'); got != "ready\n" || err != nil {
+		t.Fatalf("foreground child did not start: %q, %v", got, err)
+	}
+	if err := launcher.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := launcher.Wait(); err == nil || launcher.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
+		t.Fatalf("launcher was not killed: %v", err)
+	}
+	if output := run(t, root, "cleanup", "1", "--apply"); !strings.Contains(output, "checkout is in use by tasks sh") {
+		t.Fatalf("cleanup ignored surviving child: %s", output)
+	}
+	if _, err := send.WriteString("exit now\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := lines.ReadString('\n'); got != source.Paths.WorkDir+"\n" || err != nil {
+		t.Fatalf("child did not survive at its checkout: %q, %v", got, err)
+	}
+	directory, err := operationState(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	lock, err := state.Acquire(ctx, checkoutUseLockPath(directory, "EXAMPLE", 1))
+	if err != nil {
+		t.Fatalf("child did not release lease: %v", err)
+	}
+	lock.Close()
+	if output := run(t, root, "cleanup", "1", "--apply"); !strings.Contains(output, "Removed "+source.Paths.WorkDir) {
+		t.Fatalf("cleanup kept checkout after last user exited: %s", output)
 	}
 }
 
