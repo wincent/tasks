@@ -1,6 +1,6 @@
 # TASKS-31: Find subcommands by edit distance
 
-Status: done
+Status: merged
 
 ## Description
 
