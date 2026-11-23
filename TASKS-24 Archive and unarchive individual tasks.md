@@ -1,6 +1,6 @@
 # TASKS-24: Archive and unarchive individual tasks
 
-Status: active
+Status: merged
 
 ## Description
 
