@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -223,6 +224,89 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 		t.Fatal("interactive run merged implementation work")
 	}
 	uiBytes(t, filepath.Join(worktree, "interactive.txt"))
+}
+
+func TestTopicEditRespectsTaskLock(t *testing.T) {
+	repo, root, _ := editorFixture(t)
+	run(t, root, "create", "Retarget me", "--topic", "before", "--body", "Original")
+	original := run(t, root, "show", "1", "--raw")
+	directory, err := operationState(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := taskLock(directory, "EXAMPLE", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+
+	revised := strings.Replace(original, "Topic: before", "Topic: after", 1)
+	t.Setenv("TASK_TEST_CONTENT", revised)
+	if _, err := runTerminal(t, root, "edit", "1"); err == nil || !strings.Contains(err.Error(), "change topic: EXAMPLE-1 already has a running") {
+		t.Fatalf("retarget under task lock: %v", err)
+	}
+	if got := run(t, root, "show", "1", "--raw"); got != original {
+		t.Fatalf("blocked edit changed task: %s", got)
+	}
+	t.Setenv("TASK_TEST_CONTENT", strings.Replace(original, "Original", "Revised body", 1))
+	if _, err := runTerminal(t, root, "edit", "1"); err != nil {
+		t.Fatalf("body-only edit unexpectedly blocked: %v", err)
+	}
+	lock.Close()
+	t.Setenv("TASK_TEST_CONTENT", revised)
+	if _, err := runTerminal(t, root, "edit", "1"); err != nil {
+		t.Fatalf("retarget after releasing lock: %v", err)
+	}
+	if got := run(t, root, "show", "1", "--raw"); got != revised {
+		t.Fatalf("retarget did not publish: %s", got)
+	}
+}
+
+func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
+	repo, root := fixture(t)
+	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
+	systemGit(t, root, "branch", "after")
+	systemGit(t, root, "switch", "-c", "before")
+	before := commitImplementation(t, root, "destination.txt", "destination change\n")
+	systemGit(t, root, "switch", "main")
+	worktree := filepath.Join(t.TempDir(), "task")
+	systemGit(t, root, "worktree", "add", "-b", "task/example-1", worktree, "main")
+	commitImplementation(t, worktree, "feature.txt", "task change\n")
+
+	hooks := t.TempDir()
+	systemGit(t, root, "config", "core.hooksPath", hooks)
+	if err := os.WriteFile(filepath.Join(hooks, "pre-merge-commit"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	var called bool
+	err := Run(context.Background(), root, []string{"merge", "1"}, IO{
+		Out: io.Discard, Err: io.Discard,
+		Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
+			if filepath.Base(child.Args[0]) != "pre-merge-commit" {
+				t.Fatalf("unexpected command: %q", child.Args)
+			}
+			called = true
+			// Simulate a direct Git edit, outside the tasks lock protocol.
+			writeSafetyFile(t, ticket, strings.Replace(string(uiBytes(t, ticket)), "Topic: before", "Topic: after", 1))
+			metadata := filepath.Dir(ticket)
+			systemGit(t, metadata, "add", "--", filepath.Base(ticket))
+			systemGit(t, metadata, "commit", "-m", "retarget task")
+			return process.Result{}
+		}),
+	})
+	if !called || err == nil || !strings.Contains(err.Error(), `topic changed from "before" to "after"`) {
+		t.Fatalf("merge did not reject the changed topic: %v (hook called: %v)", err, called)
+	}
+	if got := systemGit(t, root, "rev-parse", "before"); got != before {
+		t.Fatalf("old destination moved: %s", got)
+	}
+	if got := systemGit(t, root, "rev-parse", "after"); got != systemGit(t, root, "rev-parse", "main") {
+		t.Fatalf("new destination moved: %s", got)
+	}
+	if err := setResultForTopic(context.Background(), repo, "EXAMPLE", 1, "merged", "", "before"); err == nil || !strings.Contains(err.Error(), "topic changed") {
+		t.Fatalf("could record merged on a different topic: %v", err)
+	}
+	assertStatus(t, root, "open")
 }
 
 func TestTopicOptionRejectsTaskNamespace(t *testing.T) {

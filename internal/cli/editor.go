@@ -189,8 +189,22 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 	if _, err := store.Status(string(data)); err != nil {
 		return err
 	}
-	if _, err := taskDestination(string(data)); err != nil {
+	target, err := taskDestination(string(data))
+	if err != nil {
 		return err
+	}
+	previous, err := store.Topic(task.Content)
+	if previous == "" && err == nil {
+		previous = "main"
+	}
+	if err != nil || destination(previous) != target {
+		// Do not hold the lock while the editor runs. Take it before the
+		// metadata lock and recheck the original record below.
+		lock, err := taskLock(session.Directory, prefix, n)
+		if err != nil {
+			return fmt.Errorf("change topic: %w", err)
+		}
+		defer lock.Close()
 	}
 	session, err = store.Begin(ctx, repo)
 	if err != nil {

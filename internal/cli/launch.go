@@ -57,8 +57,12 @@ func readTask(ctx context.Context, repo *git.Repository, prefix store.Prefix, n 
 }
 
 func setResult(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, status, note string) error {
+	return setResultForTopic(ctx, repo, prefix, n, status, note, "")
+}
+
+func setResultForTopic(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, status, note string, topic destination) error {
 	return withMetadata(ctx, repo, func(session *store.Session) error {
-		_, err := updateTask(session, prefix, n, status, "Run result", note, "record "+status+" for")
+		_, err := updateTask(session, prefix, n, status, "Run result", note, "record "+status+" for", topic)
 		return err
 	})
 }

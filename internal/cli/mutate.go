@@ -24,14 +24,14 @@ func addNote(_ context.Context, _ string, a arguments, streams IO, invocation st
 		defer lock.Close()
 		target, heading, action = "closed", "Closed", "Closed"
 	}
-	task, err := updateTask(invocation.session, a.prefix, a.number(), target, heading, invocation.body, a.action)
+	task, err := updateTask(invocation.session, a.prefix, a.number(), target, heading, invocation.body, a.action, "")
 	if err != nil {
 		return err
 	}
 	return taskResult(streams.Out, action, task.ID(), task.Title, task.Path)
 }
 
-func updateTask(session *store.Session, prefix store.Prefix, n int, status, heading, note, action string) (store.Task, error) {
+func updateTask(session *store.Session, prefix store.Prefix, n int, status, heading, note, action string, expectedTopic destination) (store.Task, error) {
 	tasks, err := session.Preview(prefix)
 	if err != nil {
 		return store.Task{}, err
@@ -40,6 +40,11 @@ func updateTask(session *store.Session, prefix store.Prefix, n int, status, head
 	task, err := tasks.ReadWorking(n)
 	if err != nil {
 		return store.Task{}, err
+	}
+	if expectedTopic != "" {
+		if err := requireTaskDestination(task, expectedTopic); err != nil {
+			return store.Task{}, err
+		}
 	}
 	content := task.Content
 	if status != "" {

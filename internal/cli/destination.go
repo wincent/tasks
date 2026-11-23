@@ -39,6 +39,17 @@ func taskDestination(content string) (destination, error) {
 	return d, d.validate()
 }
 
+func requireTaskDestination(task store.Task, expected destination) error {
+	actual, err := taskDestination(task.Content)
+	if err != nil {
+		return fmt.Errorf("%s: %w", task.ID(), err)
+	}
+	if actual != expected {
+		return fmt.Errorf("%s: topic changed from %q to %q; review and retry", task.ID(), expected, actual)
+	}
+	return nil
+}
+
 func (d destination) validate() error {
 	if strings.HasPrefix(strings.ToLower(string(d)), "task/") {
 		return fmt.Errorf("topic %q is in the reserved task/ branch namespace", d)
