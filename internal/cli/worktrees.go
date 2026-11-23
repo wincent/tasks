@@ -261,6 +261,10 @@ func taskLockPath(directory string, prefix store.Prefix, n int) string {
 	return path
 }
 
+func checkoutUseLockPath(directory string, prefix store.Prefix, n int) string {
+	return filepath.Join(directory, "checkout-use-"+branchStem(prefix, n)+".lock")
+}
+
 func taskLock(directory string, prefix store.Prefix, n int) (*state.Lock, error) {
 	lock, err := state.TryLock(taskLockPath(directory, prefix, n))
 	if errors.Is(err, state.ErrBusy) {

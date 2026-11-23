@@ -38,9 +38,9 @@ func openLock(path string) (*os.File, error) {
 	return file, nil
 }
 
-func try(file *os.File) error {
+func try(file *os.File, mode int) error {
 	for {
-		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err := syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
 		if errors.Is(err, syscall.EINTR) {
 			continue
 		}
@@ -66,11 +66,20 @@ func try(file *os.File) error {
 }
 
 func TryLock(path string) (*Lock, error) {
+	return tryLock(path, syscall.LOCK_EX)
+}
+
+// TrySharedLock allows concurrent users while excluding an exclusive owner.
+func TrySharedLock(path string) (*Lock, error) {
+	return tryLock(path, syscall.LOCK_SH)
+}
+
+func tryLock(path string, mode int) (*Lock, error) {
 	file, err := openLock(path)
 	if err != nil {
 		return nil, err
 	}
-	if err := try(file); err != nil {
+	if err := try(file, mode); err != nil {
 		file.Close()
 		return nil, err
 	}
@@ -94,7 +103,7 @@ func Acquire(ctx context.Context, path string) (*Lock, error) {
 			file.Close()
 			return nil, err
 		}
-		err := try(file)
+		err := try(file, syscall.LOCK_EX)
 		if err == nil {
 			return &Lock{file: file}, nil
 		}

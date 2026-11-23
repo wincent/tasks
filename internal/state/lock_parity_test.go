@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func TestWaitingLockRejectsReplacedInode(t *testing.T) {
 	if err := os.WriteFile(path, []byte("new owner"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := try(file); err == nil {
+	if err := try(file, syscall.LOCK_EX); err == nil {
 		t.Fatal("acquired obsolete inode")
 	}
 	data, err := os.ReadFile(path)

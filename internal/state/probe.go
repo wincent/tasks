@@ -17,6 +17,15 @@ type Probe struct {
 }
 
 func ProbeLock(path string) (*Probe, error) {
+	return probeLock(path, syscall.LOCK_SH)
+}
+
+// ProbeExclusiveLock also detects shared owners, without creating the file.
+func ProbeExclusiveLock(path string) (*Probe, error) {
+	return probeLock(path, syscall.LOCK_EX)
+}
+
+func probeLock(path string, mode int) (*Probe, error) {
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return &Probe{}, nil
@@ -34,7 +43,7 @@ func ProbeLock(path string) (*Probe, error) {
 	}
 	var lockErr error
 	for {
-		lockErr = syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		lockErr = syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
 		if !errors.Is(lockErr, syscall.EINTR) {
 			break
 		}

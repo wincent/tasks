@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/state"
 	"github.com/wincent/tasks/internal/store"
 )
 
@@ -44,7 +45,21 @@ func shellTask(ctx context.Context, cwd string, a arguments, streams IO, invocat
 	if err != nil {
 		return err
 	}
-	saved, err := readTaskSession(invocation.directory, n)
+	directory, err := operationState(invocation.repository)
+	if err != nil {
+		return err
+	}
+	// Reserve before selecting a checkout so it cannot disappear between
+	// lookup and command start. The task lock remains available to Pi.
+	lease, err := state.TrySharedLock(checkoutUseLockPath(directory, a.prefix, n))
+	if errors.Is(err, state.ErrBusy) {
+		return fmt.Errorf("checkout cleanup in progress for %s; retry", task.ID())
+	}
+	if err != nil {
+		return err
+	}
+	defer lease.Close()
+	saved, err := readTaskSession(directory, n)
 	if err != nil {
 		return err
 	}

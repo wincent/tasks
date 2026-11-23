@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/wincent/tasks/internal/process"
 )
 
 func TestShRunsCommandInTaskCheckout(t *testing.T) {
@@ -94,6 +98,51 @@ func TestShSelectsExistingCheckout(t *testing.T) {
 	}
 	if out := run(t, root, "sh", "--worktree", relative, "1", "--", "/bin/pwd", "-P"); out != second.Paths.WorkDir+"\n" {
 		t.Errorf("explicit checkout: got %q", out)
+	}
+}
+
+func TestShKeepsCheckoutDuringCleanup(t *testing.T) {
+	repo, root := fixture(t)
+	run(t, root, "create", "Keep checkout", "--body", "Fixture")
+	base, err := repo.ResolveCommit(mainRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := createCheckout(repo, "example-1-", base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested := false
+	err = Run(context.Background(), root, []string{"sh", "1", "/bin/pwd"}, IO{
+		Out: io.Discard, Err: io.Discard,
+		Runner: piFixture(func(ctx context.Context, child process.Command) process.Result {
+			for _, args := range [][]string{{"cleanup", "1"}, {"cleanup", "1", "--apply"}} {
+				if out := run(t, root, args...); !strings.Contains(out, "checkout is in use by tasks sh") ||
+					strings.Contains(out, "Would remove") || strings.Contains(out, "Removed") {
+					t.Fatalf("%v ignored the lease: %s", args, out)
+				}
+			}
+			err := Run(ctx, root, []string{"sh", "1", "/bin/pwd"}, IO{
+				Out: io.Discard, Err: io.Discard,
+				Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
+					nested = child.Directory == source.Paths.WorkDir
+					return process.Result{}
+				}),
+			})
+			if err != nil {
+				t.Fatalf("second shell could not share the lease: %v", err)
+			}
+			if _, err := os.Stat(child.Directory); err != nil {
+				t.Fatalf("checkout disappeared during shell: %v", err)
+			}
+			return process.Result{}
+		}),
+	})
+	if err != nil || !nested {
+		t.Fatalf("shells did not both run: %v (nested: %v)", err, nested)
+	}
+	if out := run(t, root, "cleanup", "1", "--apply"); !strings.Contains(out, "Removed "+source.Paths.WorkDir) {
+		t.Fatalf("checkout kept after shells exited: %s", out)
 	}
 }
 

@@ -191,7 +191,8 @@ func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (desti
 // Eligibility uses actual Git history, not the status written in Markdown.
 // The caller holds the task lock whenever it requests removal.
 func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, dest destination, apply bool) error {
-	if entry.Name == "" || entry.Locked || entry.Invalid != "" || taskBranchNumber(prefix, entry.Head.Branch) == 0 {
+	n := taskBranchNumber(prefix, entry.Head.Branch)
+	if entry.Name == "" || entry.Locked || entry.Invalid != "" || n == 0 {
 		return errors.New("not an unlocked linked task checkout")
 	}
 	target, err := resolvePath(entry.Paths.WorkDir)
@@ -269,16 +270,33 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	}); err != nil {
 		return err
 	}
+	leasePath := checkoutUseLockPath(stateDirectory(entry.Paths), prefix, n)
 	if !apply {
+		probe, err := state.ProbeExclusiveLock(leasePath)
+		if err != nil {
+			return err
+		}
+		defer probe.Close()
+		if probe.Held {
+			return errors.New("checkout is in use by tasks sh or cleanup")
+		}
 		return nil
 	}
 
-	// Serialize removal with tasks merges. RemoveWorktree checks the exact
-	// registration, HEAD and cleanliness again before pruning.
+	// Serialize removal with tasks merges and keep out new shell commands
+	// until RemoveWorktree has rechecked and pruned the registration.
 	directory, err := operationState(repo)
 	if err != nil {
 		return err
 	}
+	lease, err := state.TryLock(checkoutUseLockPath(directory, prefix, n))
+	if errors.Is(err, state.ErrBusy) {
+		return errors.New("checkout is in use by tasks sh or cleanup")
+	}
+	if err != nil {
+		return err
+	}
+	defer lease.Close()
 	lock, err := state.TryLock(filepath.Join(directory, "merge.lock"))
 	if err != nil {
 		return err
