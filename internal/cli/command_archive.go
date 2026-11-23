@@ -85,10 +85,7 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 	if err != nil {
 		return fmt.Errorf("incomplete archive selection: %w", err)
 	}
-	matcher := queryMatcher{expr: a.query}
-	if a.query.NeedsUpdated() {
-		matcher.history = tasks.TaskHistory(head.ID)
-	}
+	matcher := queryMatcher{expr: a.query, tasks: tasks, head: head.ID}
 	var selected []store.Task
 	updates := make(map[int]store.TaskUpdate)
 	for _, task := range candidates {
@@ -98,7 +95,7 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		}
 		if match {
 			selected = append(selected, task)
-			if matcher.history != nil {
+			if update != (store.TaskUpdate{}) {
 				updates[task.Number] = update
 			}
 		}

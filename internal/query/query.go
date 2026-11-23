@@ -20,47 +20,67 @@ type Expression struct {
 	needsUpdated bool
 }
 
-func (e *Expression) NeedsUpdated() bool    { return e != nil && e.needsUpdated }
-func (e *Expression) Matches(r Record) bool { return e == nil || e.root.matches(r) }
+func (e *Expression) NeedsUpdated() bool { return e != nil && e.needsUpdated }
+
+func (e *Expression) Matches(r Record) bool {
+	match, _ := e.Evaluate(r, nil)
+	return match
+}
+
+// Evaluate resolves the update timestamp only if an updated predicate is
+// reached. The caller may memoize the lookup across predicates of a record.
+func (e *Expression) Evaluate(r Record, updated func() (time.Time, error)) (bool, error) {
+	if e == nil {
+		return true, nil
+	}
+	return e.root.matches(r, updated)
+}
 
 type node interface {
-	matches(Record) bool
+	matches(Record, func() (time.Time, error)) (bool, error)
 }
 
 type statusIs string
 
-func (n statusIs) matches(r Record) bool { return r.Status == string(n) }
+func (n statusIs) matches(r Record, _ func() (time.Time, error)) (bool, error) {
+	return r.Status == string(n), nil
+}
 
 type titleContains string
 
-func (n titleContains) matches(r Record) bool {
-	return strings.Contains(strings.ToLower(r.Title), string(n))
+func (n titleContains) matches(r Record, _ func() (time.Time, error)) (bool, error) {
+	return strings.Contains(strings.ToLower(r.Title), string(n)), nil
 }
 
 type not struct{ inner node }
 
-func (n not) matches(r Record) bool { return !n.inner.matches(r) }
+func (n not) matches(r Record, updated func() (time.Time, error)) (bool, error) {
+	match, err := n.inner.matches(r, updated)
+	return !match && err == nil, err
+}
 
 type all []node
 
-func (n all) matches(r Record) bool {
+func (n all) matches(r Record, updated func() (time.Time, error)) (bool, error) {
 	for _, child := range n {
-		if !child.matches(r) {
-			return false
+		match, err := child.matches(r, updated)
+		if err != nil || !match {
+			return false, err
 		}
 	}
-	return true
+	return true, nil
 }
 
 type anyOf []node
 
-func (n anyOf) matches(r Record) bool {
+func (n anyOf) matches(r Record, updated func() (time.Time, error)) (bool, error) {
 	for _, child := range n {
-		if child.matches(r) {
-			return true
+		match, err := child.matches(r, updated)
+		if err != nil || match {
+			return match, err
 		}
 	}
-	return false
+	return false, nil
 }
 
 type token struct {

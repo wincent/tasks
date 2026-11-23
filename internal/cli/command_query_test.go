@@ -96,7 +96,28 @@ func TestQueryUpdatedUsesCommittedRecordHistory(t *testing.T) {
 	if got := run(t, root, "search", "uncommitted", "--query", "status:open"); !strings.Contains(got, "EXAMPLE-2\t") {
 		t.Fatalf("non-history query lost uncommitted ticket: %q", got)
 	}
-	fails(t, root, "EXAMPLE-2: updated history unavailable", "search", "uncommitted", "--query", "status:open OR updated:today")
+	for _, tc := range []struct {
+		query string
+		match bool
+	}{
+		{"title:uncommitted OR updated:today", true},
+		{"title:draft AND updated:today", false},
+	} {
+		out := run(t, root, "search", "uncommitted", "--query", tc.query)
+		if strings.Contains(out, "EXAMPLE-2\t") != tc.match {
+			t.Fatalf("%q: unexpected result %q", tc.query, out)
+		}
+	}
+	for _, expr := range []string{
+		"title:draft OR updated:today",
+		"title:uncommitted AND updated:today",
+		"updated:today OR title:uncommitted",
+	} {
+		fails(t, root, "EXAMPLE-2: updated history unavailable", "search", "uncommitted", "--query", expr)
+	}
+	// A short-circuited history predicate does not turn an uncommitted
+	// candidate into a valid archive source.
+	fails(t, root, "cannot preview an uncommitted or missing archive source", "archive", "-q", "title:uncommitted OR (title:absent AND updated:today)")
 }
 
 type archivePromptOutput struct {

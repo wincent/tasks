@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"time"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/query"
 	"github.com/wincent/tasks/internal/store"
 )
@@ -24,17 +26,32 @@ Example:
 
 type queryMatcher struct {
 	expr    *query.Expression
+	tasks   *store.Store
+	head    git.ID
 	history *store.TaskHistory
 }
 
-func (m queryMatcher) match(ctx context.Context, task store.Task) (bool, store.TaskUpdate, error) {
+func (m *queryMatcher) match(ctx context.Context, task store.Task) (bool, store.TaskUpdate, error) {
 	var update store.TaskUpdate
-	if m.history != nil {
+	loaded := false
+	match, err := m.expr.Evaluate(query.Record{Status: task.Status, Title: task.Title}, func() (time.Time, error) {
+		if loaded {
+			return update.Time, nil
+		}
+		if m.history == nil {
+			if m.head == (git.ID{}) {
+				head, err := m.tasks.Head()
+				if err != nil {
+					return time.Time{}, err
+				}
+				m.head = head.ID
+			}
+			m.history = m.tasks.TaskHistory(m.head)
+		}
 		var err error
 		update, err = m.history.LastUpdate(ctx, task.Number)
-		if err != nil {
-			return false, update, err
-		}
-	}
-	return m.expr.Matches(query.Record{Status: task.Status, Title: task.Title, Updated: update.Time}), update, nil
+		loaded = err == nil
+		return update.Time, err
+	})
+	return match, update, err
 }

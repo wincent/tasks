@@ -18,14 +18,7 @@ type listingOptions struct {
 
 func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInvocation, tasks *store.Store, listing listingOptions) (err error) {
 	directory, root := invocation.directory, invocation.root
-	matcher := queryMatcher{expr: a.query}
-	if a.query.NeedsUpdated() {
-		head, err := tasks.Head()
-		if err != nil {
-			return err
-		}
-		matcher.history = tasks.TaskHistory(head.ID)
-	}
+	matcher := queryMatcher{expr: a.query, tasks: tasks}
 	scanned, scanErr := tasks.Scan(a.flags["--include-archived"])
 	// Preserve the normal error/exit-status contract while making valid results
 	// available on stdout. The executable reports errors on stderr, not in JSON.

@@ -14,8 +14,19 @@ type updated struct {
 	instant    bool
 }
 
-func (n updated) matches(r Record) bool {
+func (n updated) matches(r Record, lookup func() (time.Time, error)) (bool, error) {
 	t := r.Updated
+	if lookup != nil {
+		var err error
+		t, err = lookup()
+		if err != nil {
+			return false, err
+		}
+	}
+	return n.contains(t), nil
+}
+
+func (n updated) contains(t time.Time) bool {
 	switch n.comparator {
 	case "<":
 		return t.Before(n.start)
