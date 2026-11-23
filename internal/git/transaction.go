@@ -60,6 +60,16 @@ func (r *Repository) Prepare(ref string, next ID, expected map[string]ID, who Si
 	if _, ok := expected[ref]; !ok {
 		return nil, errors.New("publication target requires an explicit expected value")
 	}
+	return r.prepareRefs(ref, next, expected, who, message)
+}
+
+// LockRefs verifies and holds the expected direct refs without queuing an
+// update. Close the returned guard after the operation.
+func (r *Repository) LockRefs(expected map[string]ID) (*Transaction, error) {
+	return r.prepareRefs("", ID{}, expected, Signature{}, "")
+}
+
+func (r *Repository) prepareRefs(ref string, next ID, expected map[string]ID, who Signature, message string) (*Transaction, error) {
 	names := make([]string, 0, len(expected))
 	for name := range expected {
 		if name != "HEAD" && !strings.HasPrefix(name, "refs/heads/") {
@@ -114,6 +124,9 @@ func (r *Repository) Prepare(ref string, next ID, expected map[string]ID, who Si
 				return &ChangedError{Name: name, Expected: expected[name], Actual: actual}
 			}
 		}
+		if ref == "" {
+			return nil
+		}
 		name, err := cstring(ref)
 		if err != nil {
 			return err
@@ -162,6 +175,9 @@ func (tx *Transaction) Commit() error {
 	defer tx.mu.Unlock()
 	if tx.repo == nil {
 		return ErrClosed
+	}
+	if tx.target == nil {
+		return errors.New("reference guard has no update to publish")
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

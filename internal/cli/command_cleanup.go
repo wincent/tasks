@@ -23,7 +23,7 @@ func init() {
 		summary:     "Preview removal of merged task checkouts and branches.",
 		details: `Omit NUMBER to consider all tasks. Run from outside any checkout you want
 to remove. The recorded topic (local main by default) must contain the task
-tip or an identical tracked snapshot in history not shared by the task branch.
+tip or remain unchanged after a conflict-free merge of the task tip.
 This applies even to archived tasks. Missing topics, branches in use, and saved
 sessions are kept.
 
@@ -230,7 +230,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	if err != nil {
 		return err
 	}
-	ok, err := repo.ContainsCommitOrTree(entry.Head.ID, base)
+	ok, err := cleanupIntegrated(repo, entry.Head.ID, base, dest)
 	if err != nil {
 		return err
 	}
@@ -322,16 +322,31 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	defer lock.Close()
-	base, err = dest.tip(repo)
+	refs, err := repo.LockRefs(map[string]git.ID{entry.Head.Branch: entry.Head.ID, dest.ref(): base})
 	if err != nil {
 		return err
 	}
-	ok, err = repo.ContainsCommitOrTree(entry.Head.ID, base)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("local %s changed; branch is no longer merged", dest)
-	}
+	defer refs.Close()
 	return repo.RemoveWorktree(entry.Name, entry.Paths, entry.Head, true)
+}
+
+func cleanupIntegrated(repo *git.Repository, source, tip git.ID, dest destination) (bool, error) {
+	if reachable, err := repo.IsAncestor(source, tip); err != nil || reachable {
+		return reachable, err
+	}
+	entry, err := destinationCheckout(repo, dest)
+	if err != nil {
+		return false, err
+	}
+	if entry != nil {
+		if entry.Head.ID != tip {
+			return false, fmt.Errorf("local %s changed during cleanup", dest)
+		}
+		repo, err = openCheckout(*entry)
+		if err != nil {
+			return false, err
+		}
+		defer repo.Close()
+	}
+	return repo.MergeWouldKeepTree(source, tip, dest.ref())
 }

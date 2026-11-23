@@ -19,7 +19,7 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 	if err != nil {
 		return err
 	}
-	merged, err := repo.ContainsCommitOrTree(ref.ID, tip)
+	merged, err := cleanupIntegrated(repo, ref.ID, tip, dest)
 	if err != nil {
 		return err
 	}

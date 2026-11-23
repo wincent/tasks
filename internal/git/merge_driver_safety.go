@@ -239,7 +239,7 @@ func attachReadOnlyObjects(target *C.git_odb, source *C.git_repository) error {
 // configuration snapshot. Its object cache and all merge writes are disposable;
 // swapping an ODB on the live handle would leave quarantined objects cached.
 // The caller holds both the repository and merge-driver registry locks.
-func preflightMergeDrivers(source *C.git_repository, tip ID, driver *C.char) (err error) {
+func withMergeQuarantine(source *C.git_repository, run func(*C.git_repository) error) (err error) {
 	directory, err := os.MkdirTemp("", "tasktool-merge-preflight-")
 	if err != nil {
 		return fmt.Errorf("create merge quarantine: %w", err)
@@ -278,77 +278,5 @@ func preflightMergeDrivers(source *C.git_repository, tip ID, driver *C.char) (er
 	if err := nativeError("select preflight configuration", C.git_repository_set_config(repo, config)); err != nil {
 		return err
 	}
-	return preflightMergeIndex(repo, tip, driver)
-}
-
-// Compute the native merge before git_merge can write operation markers or the
-// real index/worktree. This uses libgit2's exact rename/content/driver selection,
-// rather than guessing from an intersection of changed path names.
-func preflightMergeIndex(repo *C.git_repository, tip ID, driver *C.char) error {
-	var head *C.git_reference
-	if err := nativeError("read merge HEAD", C.git_repository_head(&head, repo)); err != nil {
-		return err
-	}
-	defer C.git_reference_free(head)
-	var ours, theirs *C.git_commit
-	if err := nativeError("read merge ours", C.git_commit_lookup(&ours, repo, C.git_reference_target(head))); err != nil {
-		return err
-	}
-	defer C.git_commit_free(ours)
-	id := nativeID(tip)
-	if err := nativeError("read merge theirs", C.git_commit_lookup(&theirs, repo, &id)); err != nil {
-		return err
-	}
-	defer C.git_commit_free(theirs)
-	var options C.git_merge_options
-	if err := nativeError("initialize merge options", C.git_merge_options_init(&options, C.GIT_MERGE_OPTIONS_VERSION)); err != nil {
-		return err
-	}
-	options.default_driver = driver
-	var index *C.git_index
-	if err := nativeError("preflight merge drivers", C.git_merge_commits(&index, repo, ours, theirs, &options)); err != nil {
-		return err
-	}
-	defer C.git_index_free(index)
-	var tree *C.git_tree
-	if err := nativeError("read merge baseline", C.git_commit_tree(&tree, ours)); err != nil {
-		return err
-	}
-	defer C.git_tree_free(tree)
-	var baseline *C.git_index
-	if err := nativeError("create merge baseline", C.git_index_new(&baseline)); err != nil {
-		return err
-	}
-	defer C.git_index_free(baseline)
-	if err := nativeError("read merge baseline index", C.git_index_read_tree(baseline, tree)); err != nil {
-		return err
-	}
-	var paths []string
-	for i := C.size_t(0); i < C.git_index_entrycount(index); i++ {
-		entry := C.git_index_get_byindex(index, i)
-		if entry.mode != 0100644 && entry.mode != 0100755 {
-			continue
-		}
-		old := C.git_index_get_bypath(baseline, entry.path, 0)
-		if C.git_index_entry_stage(entry) == 0 && old != nil && old.mode == entry.mode && C.git_oid_equal(&old.id, &entry.id) != 0 {
-			continue
-		}
-		paths = append(paths, C.GoString(entry.path))
-	}
-	smudgePaths := append([]string(nil), paths...)
-	for i := C.size_t(0); i < C.git_index_entrycount(baseline); i++ {
-		entry := C.git_index_get_byindex(baseline, i)
-		if (entry.mode == 0100644 || entry.mode == 0100755) && C.git_index_get_bypath(index, entry.path, 0) == nil {
-			paths = append(paths, C.GoString(entry.path))
-		}
-	}
-	if err := validateOperationPaths(repo, paths, "clean", false); err != nil {
-		return err
-	}
-	var original *C.git_index
-	if err := nativeError("read merge attribute index", C.git_repository_index(&original, repo)); err != nil {
-		return err
-	}
-	defer C.git_index_free(original)
-	return withAttributeIndex(repo, original, index, func() error { return validateOperationPaths(repo, smudgePaths, "smudge", true) })
+	return run(repo)
 }

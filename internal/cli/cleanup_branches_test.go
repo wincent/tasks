@@ -290,3 +290,68 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 		t.Fatalf("branch changed: %+v, %v", actual, err)
 	}
 }
+
+func TestCleanupUsesCurrentMergeResult(t *testing.T) {
+	for _, scenario := range []string{"ancestral-revert", "historical-tree", "conflict", "ours-strategy", "custom-attribute"} {
+		t.Run(scenario, func(t *testing.T) {
+			_, root := fixture(t)
+			const branch = "task/example-9"
+			commitImplementation(t, root, "feature.txt", "base\n")
+			systemGit(t, root, "branch", branch)
+			switch scenario {
+			case "historical-tree":
+				commitImplementation(t, root, "feature.txt", "incoming\n")
+				systemGit(t, root, "revert", "--no-edit", "HEAD")
+			case "conflict":
+				commitImplementation(t, root, "feature.txt", "destination\n")
+			}
+			dir, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkout := filepath.Join(dir, "task")
+			systemGit(t, root, "worktree", "add", checkout, branch)
+			systemGit(t, checkout, "commit", "--allow-empty", "-m", "distinct task history")
+			tip := commitImplementation(t, checkout, "feature.txt", "incoming\n")
+			switch scenario {
+			case "ancestral-revert":
+				systemGit(t, root, "merge", "--ff-only", branch)
+				systemGit(t, root, "revert", "--no-edit", "HEAD")
+			case "ours-strategy", "custom-attribute":
+				systemGit(t, root, "cherry-pick", tip)
+				commitImplementation(t, root, "unrelated.txt", "different tree\n")
+				if scenario == "ours-strategy" {
+					systemGit(t, root, "config", "branch.main.mergeOptions", "-s ours")
+				} else {
+					commitImplementation(t, root, ".gitattributes", "feature.txt merge=ours\n")
+				}
+			}
+
+			for _, apply := range []bool{false, true} {
+				args, action := []string{"cleanup", "9"}, "Would remove"
+				if apply {
+					args, action = append(args, "--apply"), "Removed"
+				}
+				if scenario != "ancestral-revert" {
+					action = "Keep"
+				}
+				out := run(t, root, args...)
+				for _, label := range []string{checkout, "branch " + branch} {
+					if !strings.Contains(out, action+" "+label) {
+						t.Fatalf("missing %s %s in %s", action, label, out)
+					}
+				}
+			}
+			if scenario != "ancestral-revert" {
+				if got := systemGit(t, checkout, "rev-parse", "HEAD"); got != tip {
+					t.Fatalf("checkout changed to %s", got)
+				}
+				if got := systemGit(t, root, "rev-parse", branch); got != tip {
+					t.Fatalf("branch changed to %s", got)
+				}
+			} else if _, err := os.Stat(checkout); !os.IsNotExist(err) {
+				t.Fatalf("checkout not removed: %v", err)
+			}
+		})
+	}
+}

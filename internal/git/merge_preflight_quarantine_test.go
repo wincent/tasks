@@ -292,3 +292,26 @@ func TestNativeMergePreflightTargetNestedAttributes(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanupMergeQuarantinesTreeAndBlob(t *testing.T) {
+	repo, root := fixture(t, false)
+	base := safetyTip(t, repo, ID{}, map[string]string{"file": "one\ntwo\nthree\nfour\nfive\n"})
+	ours := safetyTip(t, repo, base, map[string]string{"file": "left\ntwo\nthree\nfour\nfive\n"})
+	theirs := safetyTip(t, repo, base, map[string]string{"file": "one\ntwo\nthree\nfour\nright\n"})
+	publish(t, repo, "refs/heads/main", ours, ID{})
+	publish(t, repo, "refs/heads/source", theirs, ID{})
+	if err := repo.CheckoutMetadata(ID{}, ours); err != nil {
+		t.Fatal(err)
+	}
+	before := mergePreflightSnapshot(t, root)
+	if same, err := repo.MergeWouldKeepTree(theirs, ours, "refs/heads/main"); same || err != nil {
+		t.Fatalf("expected a clean but different result, got %v, %v", same, err)
+	}
+	if after := mergePreflightSnapshot(t, root); !reflect.DeepEqual(before, after) {
+		t.Fatal("simulation changed ODB/index/worktree/refs/operation state")
+	}
+	id := mergePreflightBlobID("left\ntwo\nthree\nfour\nright\n")
+	if _, err := repo.Blob(id); !HasCode(err, NotFound) {
+		t.Fatalf("merged blob accessible in live ODB: %v", err)
+	}
+}
