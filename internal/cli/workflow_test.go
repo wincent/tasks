@@ -296,6 +296,72 @@ func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 	}
 }
 
+func TestRunPromptIsPerInvocation(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	path := strings.TrimSpace(run(t, root, "create", "Per-run instructions", "--body", "requirements"))
+	base := systemGit(t, root, "rev-parse", "main")
+	const first = "Run the unit tests first."
+	const retry = "- Don't run Chrome tests.\n- Run the worker suite."
+	var worktree, session, standard string
+	for i, hint := range []string{first, retry, ""} {
+		args := []string{"run", "1", "--no-merge"}
+		if hint != "" {
+			args = append(args, "--prompt", hint)
+		}
+		out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+			checkout := piWorktree(t, child)
+			if i == 0 {
+				worktree, session = checkout, child.Args[2]
+			} else if checkout != worktree || child.Args[2] != session {
+				t.Fatalf("did not resume checkout %q and session %q: %v", worktree, session, child.Args)
+			}
+			if len(child.Args) != 7 || child.Args[5] != "--" {
+				t.Fatalf("expected a single prompt argument after --: %v", child.Args)
+			}
+			prompt := child.Args[6]
+			if hint != "" {
+				var ok bool
+				prompt, ok = strings.CutSuffix(prompt, "\n\nAdditional instructions for this run:\n"+hint)
+				if !ok {
+					t.Fatalf("expected hint appended verbatim, got %q", child.Args[6])
+				}
+			}
+			if i == 0 {
+				standard = prompt
+				if !strings.HasPrefix(standard, fmt.Sprintf("Read EXAMPLE-1 at %q.", path)) ||
+					!strings.Contains(standard, "Needs attention:") || !strings.Contains(standard, "Do not merge;") {
+					t.Fatalf("missing standard instructions: %q", standard)
+				}
+			} else if prompt != standard {
+				t.Fatalf("standard prompt changed: got %q, want %q", prompt, standard)
+			}
+			if i == 0 {
+				fmt.Fprintln(child.Out, `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Needs attention: which checks should I run?"}]}}`)
+			} else if i == 1 {
+				commitImplementation(t, worktree, "implementation", "keep\n")
+			}
+			return process.Result{}
+		}, args...)
+		if i == 0 {
+			if err == nil || !strings.Contains(err.Error(), "needs attention") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			assertStatus(t, root, "blocked")
+		} else {
+			if err != nil || !strings.Contains(out, "ready for review") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			assertStatus(t, root, "done")
+		}
+		if task := run(t, root, "show", "1", "--raw"); strings.Contains(task, first) || strings.Contains(task, retry) {
+			t.Fatalf("hint leaked into task file: %q", task)
+		}
+	}
+	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+		t.Fatal("review run merged")
+	}
+}
+
 func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 	repo, root := taskWorkflowFixture(t)
 	t.Setenv("PI_CODING_AGENT_DIR", "~/custom-agent")

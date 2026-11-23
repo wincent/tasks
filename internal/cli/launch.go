@@ -198,6 +198,9 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	diagnostics := terminalPresentation(streams.Err)
 	fmt.Fprintf(streams.Err, "%s\nTopic: %s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), target, root, record.SessionFile)
 	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path, attentionLabel)
+	if hint := a.value("--prompt"); hint != "" {
+		prompt += "\n\nAdditional instructions for this run:\n" + hint
+	}
 	argv := []string{executable, "--session", record.SessionFile}
 	progress := &piProgress{out: streams.Out}
 	child := process.Command{Directory: scope, Environment: os.Environ(), Out: streams.Out, Err: streams.Err, ExtraFiles: []*os.File{loan, live}}
