@@ -1,6 +1,6 @@
 # TASKS-26: Improve preview of batch commands
 
-Status: active
+Status: merged
 
 ## Description
 
