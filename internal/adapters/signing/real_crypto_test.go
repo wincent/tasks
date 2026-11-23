@@ -493,18 +493,20 @@ func TestRealCryptoOpenPGPExpirationGitMergeParity(t *testing.T) {
 			p := f.policy("openpgp")
 			// Generate/sign in the past, then verify at the real current time. No machine
 			// clock changes or sleeps, and expiration is proved by the real status stream.
-			past := fmt.Sprint(time.Now().Add(-72 * time.Hour).Unix())
+			past := time.Now().Add(-72 * time.Hour)
 			expiry := "0"
 			if kind == "key" {
 				expiry = "1d"
 			}
-			f.run("gpg", "--batch", "--faked-system-time", past, "--pinentry-mode", "loopback", "--passphrase", "", "--quick-generate-key", "Expired Fixture <expired@example.invalid>", "ed25519", "sign", expiry)
+			f.run("gpg", "--batch", "--faked-system-time", fmt.Sprint(past.Unix()), "--pinentry-mode", "loopback", "--passphrase", "", "--quick-generate-key", "Expired Fixture <expired@example.invalid>", "ed25519", "sign", expiry)
 			p.Key = fingerprint(f.run("gpg", "--batch", "--with-colons", "--list-secret-keys"))
 			if p.Key == "" {
 				t.Fatal("missing expired fixture key")
 			}
 			data := f.payload()
-			args := []string{"--batch", "--faked-system-time", past, "--pinentry-mode", "loopback", "--passphrase", "", "--armor", "--detach-sign", "--local-user", p.Key}
+			// GnuPG's offset clock can advance during key generation. Sign
+			// after the resulting creation time, but before the fake expiry.
+			args := []string{"--batch", "--faked-system-time", fmt.Sprint(past.Add(time.Hour).Unix()), "--pinentry-mode", "loopback", "--passphrase", "", "--armor", "--detach-sign", "--local-user", p.Key}
 			if kind == "signature" {
 				args = append(args, "--default-sig-expire", "1d")
 			}
