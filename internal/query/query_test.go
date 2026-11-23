@@ -38,6 +38,12 @@ func TestLogic(t *testing.T) {
 			t.Errorf("%q: wanted %t", tc.expr, tc.want)
 		}
 	}
+	for _, expr := range []string{`title:can't`, `title:'ship'`, `title:"can't"`} {
+		e := parseTest(t, expr)
+		if !e.Matches(Record{Title: "Can't 'ship'"}) || e.Matches(Record{Title: "Can ship"}) {
+			t.Errorf("%q: apostrophes must be matched literally", expr)
+		}
+	}
 	if !parseTest(t, `status:merged OR NOT updated:today`).NeedsUpdated() {
 		t.Fatal("updated must be detected anywhere in the tree")
 	}
@@ -65,7 +71,7 @@ func TestUpdatedPeriods(t *testing.T) {
 			{">", [4]bool{false, false, false, true}},
 			{">=", [4]bool{false, true, true, true}},
 		} {
-			for _, form := range []string{cmp.op + tc.value, `"` + cmp.op + tc.value + `"`, "\" \t" + cmp.op + " \t" + tc.value + " \""} {
+			for _, form := range []string{cmp.op + tc.value, " " + cmp.op + " " + tc.value, `"` + cmp.op + tc.value + `"`, "\" \t" + cmp.op + " \t" + tc.value + " \""} {
 				e := parseTest(t, "updated:"+form)
 				for i, at := range []time.Time{start.Add(-1), start, end.Add(-1), end} {
 					if got := e.Matches(Record{Updated: at}); got != cmp.want[i] {
@@ -96,7 +102,12 @@ func TestUpdatedRelative(t *testing.T) {
 			cutoff := fixedNow.Add(-n.steps * tc.step)
 			start := cutoff.Truncate(tc.bucket)
 			end := start.Add(tc.bucket)
-			forms := []string{n.count + "." + n.unit + ".ago", `"` + n.count + "." + n.unit + `.ago"`, "\"" + n.count + " \t " + n.unit + "   ago\""}
+			forms := []string{
+				n.count + "." + n.unit + ".ago",
+				"\t" + n.count + " \t " + n.unit + "   ago",
+				`"` + n.count + "." + n.unit + `.ago"`,
+				"\"" + n.count + " \t " + n.unit + "   ago\"",
+			}
 			for _, form := range forms {
 				for _, cmp := range []struct {
 					op   string
@@ -128,6 +139,39 @@ func TestUpdatedRelative(t *testing.T) {
 	}
 }
 
+func TestUpdatedNaturalDateForms(t *testing.T) {
+	cutoff := fixedNow.Add(-3 * 24 * time.Hour)
+	for _, expr := range []string{
+		`updated: < 3 days ago`,
+		`updated:< 3 days ago`,
+		`updated:'< 3 days ago'`,
+		`updated:'< 3.days.ago'`,
+		`updated:'<3.days.ago'`,
+		`updated:<3.days.ago`,
+		`updated:"< 3 days ago"`,
+		`(updated: < 3 days ago AND status:merged)`,
+		`(updated: < 3 days ago) AND status:merged`,
+		`(updated: < 3 days ago OR status:open)`,
+	} {
+		e := parseTest(t, expr)
+		for _, delta := range []time.Duration{-1, 0, 1} {
+			if got := e.Matches(Record{Status: "merged", Updated: cutoff.Add(delta)}); got != (delta < 0) {
+				t.Errorf("%q: got %t at cutoff + %v", expr, got, delta)
+			}
+		}
+	}
+	if parseTest(t, `(updated: < 3 days ago AND status:merged)`).Matches(Record{Status: "open", Updated: cutoff.Add(-1)}) {
+		t.Error("compound query matched an open record")
+	}
+
+	// A four-digit count is a year only when it is not part of a phrase.
+	yearCutoff := fixedNow.Add(-2026 * 24 * time.Hour)
+	e := parseTest(t, `updated:>= 2026 days ago AND status:merged`)
+	if !e.Matches(Record{Status: "merged", Updated: yearCutoff}) || e.Matches(Record{Status: "merged", Updated: yearCutoff.Add(-1)}) {
+		t.Error("four-digit relative count was not evaluated as a relative date")
+	}
+}
+
 func TestInvalid(t *testing.T) {
 	for _, tc := range []struct{ expr, errorPart string }{
 		{"", "byte 1"},
@@ -147,7 +191,15 @@ func TestInvalid(t *testing.T) {
 		{"updated:2026-02-29", "invalid updated value"},
 		{"updated:2026-13", "invalid updated value"},
 		{"updated:>>2026", "invalid updated value"},
-		{"updated:< 2026", "invalid updated value"},
+		{"updated:<", "expected a date after '<'"},
+		{"updated: <= AND status:merged", "expected a date after '<='"},
+		{"(updated: >)", "expected a date after '>'"},
+		{"updated:'>= '", "expected a date after '>='"},
+		{"updated:'< 3 days ago", "unterminated quoted value"},
+		{"updated: < 3 days", "invalid updated value"},
+		{"(updated: < 3 days AND status:merged)", "invalid updated value"},
+		{"updated: < 2026 days", "expected AND, OR"},
+		{"updated: < 3 days ago ago", "expected AND, OR"},
 		{"updated:1.year.ago", "invalid relative updated unit"},
 		{"updated:-1.day.ago", "invalid or overflowing"},
 		{"updated:1.5.hours.ago", "invalid updated value"},

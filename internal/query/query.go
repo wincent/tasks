@@ -74,7 +74,15 @@ type lexer struct {
 	pos    int
 }
 
-func (l *lexer) next(value bool) token {
+type lexMode byte
+
+const (
+	querySyntax lexMode = iota
+	predicateValue
+	updatedValue
+)
+
+func (l *lexer) next(mode lexMode) token {
 	for l.pos < len(l.source) {
 		r, size := utf8.DecodeRuneInString(l.source[l.pos:])
 		if !unicode.IsSpace(r) {
@@ -88,40 +96,48 @@ func (l *lexer) next(value bool) token {
 	}
 	switch ch := l.source[l.pos]; ch {
 	case ':':
-		if value {
+		if mode != querySyntax {
 			break
 		}
 		fallthrough
 	case '(', ')':
 		l.pos++
 		return token{kind: ch, pos: start}
-	case '"':
-		l.pos++
-		var value strings.Builder
-		for l.pos < len(l.source) {
-			ch := l.source[l.pos]
-			l.pos++
-			switch ch {
-			case '"':
-				return token{kind: '"', text: value.String(), pos: start}
-			case '\\':
-				if l.pos < len(l.source) && (l.source[l.pos] == '"' || l.source[l.pos] == '\\') {
-					ch = l.source[l.pos]
-					l.pos++
-				}
-			}
-			value.WriteByte(ch)
+	case '\'', '"':
+		if ch == '\'' && mode != updatedValue {
+			break
 		}
-		return token{kind: '!', text: "unterminated quoted value", pos: start}
+		return l.quoted(ch)
 	}
 	for l.pos < len(l.source) {
 		r, size := utf8.DecodeRuneInString(l.source[l.pos:])
-		if unicode.IsSpace(r) || strings.ContainsRune("()\"", r) || (!value && r == ':') {
+		if unicode.IsSpace(r) || strings.ContainsRune("()\"", r) || (mode == querySyntax && r == ':') {
 			break
 		}
 		l.pos += size
 	}
 	return token{kind: 'w', text: l.source[start:l.pos], pos: start}
+}
+
+func (l *lexer) quoted(quote byte) token {
+	start := l.pos
+	l.pos++
+	var value strings.Builder
+	for l.pos < len(l.source) {
+		ch := l.source[l.pos]
+		l.pos++
+		switch ch {
+		case quote:
+			return token{kind: '"', text: value.String(), pos: start}
+		case '\\':
+			if l.pos < len(l.source) && (l.source[l.pos] == quote || l.source[l.pos] == '\\') {
+				ch = l.source[l.pos]
+				l.pos++
+			}
+		}
+		value.WriteByte(ch)
+	}
+	return token{kind: '!', text: "unterminated quoted value", pos: start}
 }
 
 type parser struct {
@@ -147,7 +163,7 @@ func Parse(source string, now time.Time, validStatus func(string) bool) (*Expres
 	return &Expression{root: root, needsUpdated: p.needsUpdated}, nil
 }
 
-func (p *parser) advance()                 { p.current = p.lexer.next(false) }
+func (p *parser) advance()                 { p.current = p.lexer.next(querySyntax) }
 func (p *parser) keyword(word string) bool { return p.current.kind == 'w' && p.current.text == word }
 
 func at(pos int, message string) error {
@@ -233,8 +249,11 @@ func (p *parser) predicate() (node, error) {
 	if p.current.kind != ':' || p.current.pos != field.pos+len(field.text) {
 		return nil, p.error("expected ':' immediately after field name")
 	}
+	if field.text == "updated" {
+		return p.updatedPredicate()
+	}
 	colon := p.current.pos
-	p.current = p.lexer.next(true)
+	p.current = p.lexer.next(predicateValue)
 	value := p.current
 	if (value.kind != 'w' && value.kind != '"') || value.pos != colon+1 || value.text == "" {
 		return nil, p.error("expected a nonempty value immediately after ':'")
@@ -248,13 +267,6 @@ func (p *parser) predicate() (node, error) {
 		n = statusIs(value.text)
 	case "title":
 		n = titleContains(strings.ToLower(value.text))
-	case "updated":
-		test, err := parseUpdated(value.text, p.now)
-		if err != nil {
-			return nil, p.error(err.Error())
-		}
-		p.needsUpdated = true
-		n = test
 	}
 	p.advance()
 	return n, nil

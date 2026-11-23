@@ -33,16 +33,59 @@ func (n updated) matches(r Record) bool {
 	}
 }
 
-func parseUpdated(value string, now time.Time) (updated, error) {
-	value = strings.TrimSpace(value)
-	var n updated
-	for _, op := range []string{"<=", ">=", "<", ">"} {
-		if rest, ok := strings.CutPrefix(value, op); ok {
-			n.comparator, value = op, strings.TrimSpace(rest)
-			break
+func (p *parser) updatedPredicate() (node, error) {
+	p.current = p.lexer.next(updatedValue)
+	if (p.current.kind != 'w' && p.current.kind != '"') || p.current.text == "" {
+		return nil, p.error("expected a nonempty date after 'updated:'")
+	}
+	op, date := splitUpdatedComparator(strings.TrimSpace(p.current.text))
+	if p.current.kind == 'w' {
+		if date == "" {
+			date = p.lexer.dateWord()
+		}
+		// Digits alone can be a calendar year. Only extend them into a
+		// relative expression if the complete "unit ago" suffix follows.
+		if date != "" && strings.Trim(date, "0123456789") == "" {
+			lookahead := p.lexer
+			if unit := lookahead.dateWord(); unit != "" && lookahead.dateWord() == "ago" {
+				date += " " + unit + " ago"
+				p.lexer = lookahead
+			}
 		}
 	}
+	if op != "" && date == "" {
+		return nil, p.error(fmt.Sprintf("expected a date after '%s'", op))
+	}
+	test, err := parseUpdated(op, date, p.now)
+	if err != nil {
+		return nil, p.error(err.Error())
+	}
+	p.needsUpdated = true
+	p.advance()
+	return test, nil
+}
 
+func (l *lexer) dateWord() string {
+	next := *l
+	t := next.next(predicateValue)
+	if t.kind != 'w' || t.text == "AND" || t.text == "OR" || t.text == "NOT" {
+		return ""
+	}
+	*l = next
+	return t.text
+}
+
+func splitUpdatedComparator(value string) (op, date string) {
+	for _, op := range []string{"<=", ">=", "<", ">"} {
+		if rest, ok := strings.CutPrefix(value, op); ok {
+			return op, strings.TrimSpace(rest)
+		}
+	}
+	return "", value
+}
+
+func parseUpdated(comparator, value string, now time.Time) (updated, error) {
+	n := updated{comparator: comparator}
 	switch value {
 	case "today", "yesterday":
 		n.start = now.Truncate(24 * time.Hour)
