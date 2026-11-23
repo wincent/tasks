@@ -9,9 +9,11 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/query"
 	"github.com/wincent/tasks/internal/store"
 )
 
@@ -29,6 +31,7 @@ type arguments struct {
 	prefix      store.Prefix
 	inputPrefix store.Prefix
 	taskNumber  int
+	query       *query.Expression
 }
 
 // Match the prior argument parser's negative-number positional handling;
@@ -61,6 +64,12 @@ func parse(args []string) (arguments, error) {
 			continue
 		}
 		key, value, hasValue := strings.Cut(arg, "=")
+		if key == "-q" && spec.options["--query"] == valueOption {
+			key = "--query"
+		}
+		if key == "-v" && spec.options["--verbose"] == flagOption {
+			key = "--verbose"
+		}
 		if (key == "--help" || key == "-h" || spec.options[key] == flagOption) && !hasValue {
 			a.flags[key] = true
 			continue
@@ -84,6 +93,9 @@ func parse(args []string) (arguments, error) {
 	if a.flags["--help"] || a.flags["-h"] {
 		return arguments{action: "help", positional: []string{a.action}}, nil
 	}
+	if spec.positionalError != "" && (len(a.positional) < spec.min || len(a.positional) > spec.max) {
+		return a, errors.New(spec.positionalError)
+	}
 	if len(a.positional) < spec.min && spec.min != spec.max {
 		return a, fmt.Errorf("`tasks %s` expects at least %d positional argument(s)", a.action, spec.min)
 	}
@@ -93,6 +105,11 @@ func parse(args []string) (arguments, error) {
 	if len(a.values["--body"]) > 0 && len(a.values["--body-file"]) > 0 {
 		return a, errors.New("--body and --body-file are mutually exclusive (--body-file is not allowed with argument --body)")
 	}
+	if spec.validate != nil {
+		if err := spec.validate(a); err != nil {
+			return a, err
+		}
+	}
 	if spec.numbered && len(a.positional) != 0 {
 		var err error
 		a.inputPrefix, a.taskNumber, err = store.ParseNumber(a.positional[0])
@@ -100,8 +117,10 @@ func parse(args []string) (arguments, error) {
 			return a, err
 		}
 	}
-	if spec.validate != nil {
-		if err := spec.validate(a); err != nil {
+	if len(a.values["--query"]) != 0 {
+		var err error
+		a.query, err = query.Parse(a.value("--query"), time.Now(), store.ValidStatus)
+		if err != nil {
 			return a, err
 		}
 	}

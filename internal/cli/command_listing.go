@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -11,12 +12,20 @@ import (
 )
 
 type listingOptions struct {
-	status, query string
-	recent        bool
+	status, pattern string
+	recent          bool
 }
 
-func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store.Store, listing listingOptions) (err error) {
+func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInvocation, tasks *store.Store, listing listingOptions) (err error) {
 	directory, root := invocation.directory, invocation.root
+	matcher := queryMatcher{expr: a.query}
+	if a.query.NeedsUpdated() {
+		head, err := tasks.Head()
+		if err != nil {
+			return err
+		}
+		matcher.history = tasks.TaskHistory(head.ID)
+	}
 	scanned, scanErr := tasks.Scan(a.flags["--include-archived"])
 	// Preserve the normal error/exit-status contract while making valid results
 	// available on stdout. The executable reports errors on stderr, not in JSON.
@@ -25,19 +34,30 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 			err = errors.Join(err, fmt.Errorf("incomplete task results: %w", scanErr))
 		}
 	}()
-	status, query := listing.status, listing.query
+	status, pattern := listing.status, listing.pattern
 	if status != "" && status != "all" && !store.ValidStatus(status) {
 		return fmt.Errorf("invalid status: %s", status)
 	}
 	selected := []store.Task{}
-	verbose := a.flags["--verbose"] || a.flags["-v"]
+	verbose := a.flags["--verbose"]
 	for _, task := range scanned {
-		if query != "" && !strings.Contains(strings.ToLower(task.Title), query) {
+		if pattern != "" && !strings.Contains(strings.ToLower(task.Title), pattern) {
 			continue
 		}
 		info, record, err := describeActivity(directory, tasks.Prefix, task)
 		if err != nil {
 			return err
+		}
+		if !listing.recent && status != "all" && status != info.Status &&
+			!(status == "" && (info.Status == "open" || info.Status == "active" || info.Status == "blocked")) {
+			continue
+		}
+		match, _, err := matcher.match(ctx, task)
+		if err != nil {
+			return err
+		}
+		if !match {
+			continue
 		}
 		task.Status = info.Status
 		if verbose && record != nil {
@@ -47,9 +67,7 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 			}
 			task.Activity = []store.Activity{{Worktree: relative, SessionID: record.SessionID, SessionFile: record.SessionFile}}
 		}
-		if listing.recent || status == "all" || status == task.Status || (status == "" && (task.Status == "open" || task.Status == "active" || task.Status == "blocked")) {
-			selected = append(selected, task)
-		}
+		selected = append(selected, task)
 	}
 	if a.flags["--json"] {
 		return encode(streams.Out, selected)
@@ -113,8 +131,8 @@ func listTasks(a arguments, streams IO, invocation storeInvocation, tasks *store
 		}
 	}
 	if len(selected) == 0 && scanErr == nil {
-		if query != "" {
-			fmt.Fprintln(streams.Err, "No tasks match the search query and status filter.")
+		if a.query != nil || pattern != "" {
+			fmt.Fprintln(streams.Err, "No tasks match the specified filters.")
 		} else if listing.recent {
 			fmt.Fprintln(streams.Out, "No tasks yet. Create one with: `tasks create \"Task title\"`")
 		} else if status == "" || status == "open" {

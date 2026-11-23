@@ -88,40 +88,59 @@ func (s *Session) MoveTask(prefix Prefix, number int, archive bool) (Task, error
 		}
 		return Task{}, fmt.Errorf("%s is not archived", task.ID())
 	}
-	destination := filepath.Base(task.Path)
-	verb := "unarchive"
-	if archive {
-		destination = filepath.Join(archiveBucket(number), destination)
-		verb = "archive"
-	}
-	source := tasks.RelativePath(task)
-	move := &archiveMove{prefix: prefix, number: number, source: source, destination: destination}
 	head, err := tasks.Head()
 	if err != nil {
 		return Task{}, err
 	}
-	changes := map[string][]byte{source: nil, destination: []byte(task.Content)}
+	verb := "archive"
+	if !archive {
+		verb = "unarchive"
+	}
+	moved, err := s.moveTasks(tasks, head.ID, []Task{task}, archive, "chore: "+verb+" "+task.ID())
+	if err != nil {
+		return Task{}, err
+	}
+	return moved[0], nil
+}
+
+func (s *Session) moveTasks(tasks *Store, head git.ID, selected []Task, archive bool, message string) ([]Task, error) {
+	moves := make([]archiveMove, 0, len(selected))
+	changes := make(map[string][]byte, 2*len(selected))
+	moved := make([]Task, 0, len(selected))
+	for _, task := range selected {
+		source, destination := tasks.RelativePath(task), filepath.Base(task.Path)
+		if archive {
+			destination = filepath.Join(archiveBucket(task.Number), destination)
+		}
+		moves = append(moves, archiveMove{prefix: tasks.Prefix, number: task.Number, source: source, destination: destination})
+		changes[source], changes[destination] = nil, []byte(task.Content)
+		task.Path, task.Archived = filepath.Join(tasks.Path, destination), archive
+		moved = append(moved, task)
+	}
 	if tasks.Prospective() {
 		if err := tasks.withProspectiveView(func(view *git.Repository) error {
-			_, err := move.treeEdits(view, head.ID, changes[destination])
-			return err
+			for _, move := range moves {
+				if _, err := move.treeEdits(view, head, changes[move.destination]); err != nil {
+					return err
+				}
+			}
+			return nil
 		}); err != nil {
-			return Task{}, err
+			return nil, err
 		}
 		opened, err := s.Ensure(git.Signature{})
 		if err != nil {
-			return Task{}, err
+			return nil, err
 		}
 		opened.Close()
 	}
 	if _, err := s.CommitFiles(changes, CommitOptions{
-		FromEnvironment: true, Message: "chore: " + verb + " " + task.ID(),
-		ExpectedRefs: map[string]git.ID{Branch: head.ID}, move: move,
+		FromEnvironment: true, Message: message,
+		ExpectedRefs: map[string]git.ID{Branch: head}, moves: moves,
 	}); err != nil {
-		return Task{}, err
+		return nil, err
 	}
-	task.Path, task.Archived = filepath.Join(tasks.Path, destination), archive
-	return task, nil
+	return moved, nil
 }
 
 func (move *archiveMove) check(store *Store, head git.ID) error {

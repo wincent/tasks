@@ -28,7 +28,7 @@ type CommitOptions struct {
 	BeforePublish   func() error
 
 	artifactDirectory string // Nonempty only for append-only artifact batches.
-	move              *archiveMove
+	moves             []archiveMove
 }
 
 // RecoveryError never promises rollback once reference publication has been
@@ -139,12 +139,16 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 	names := make([]string, 0, len(changes))
 	// Freeze caller-owned data before lock acquisition.
 	contents := make(map[string][]byte)
+	sources := make(map[string]bool, len(options.moves))
+	for _, move := range options.moves {
+		sources[move.source] = true
+	}
 	for name, content := range changes {
-		if options.move == nil && options.artifactDirectory == "" && (name == "" || name == "." || name == ".." || strings.EqualFold(name, ".git") || strings.ContainsAny(name, "/\x00")) {
+		if len(options.moves) == 0 && options.artifactDirectory == "" && (name == "" || name == "." || name == ".." || strings.EqualFold(name, ".git") || strings.ContainsAny(name, "/\x00")) {
 			return revision, fmt.Errorf("task commit requires a literal root filename: %q", name)
 		}
 		if content == nil {
-			if options.move == nil || name != options.move.source {
+			if !sources[name] {
 				return revision, errors.New("task metadata deletion is not supported")
 			}
 		} else {
@@ -174,11 +178,12 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		return revision, err
 	}
 	checkSelected := func() error {
-		if options.move != nil {
-			if err := options.move.check(store, head.ID); err != nil {
+		for _, move := range options.moves {
+			if err := move.check(store, head.ID); err != nil {
 				return err
 			}
-		} else if options.artifactDirectory != "" {
+		}
+		if options.artifactDirectory != "" {
 			if err := store.requireNewPaths(options.artifactDirectory, "artifact", names, head.ID); err != nil {
 				return err
 			}
@@ -249,13 +254,17 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		base = git.ID{}
 	}
 	var edits []git.TreeEdit
-	if move := options.move; move != nil {
-		if data := originals[move.source]; data == nil || !equalContents(data, contents[move.destination]) {
-			return revision, fmt.Errorf("task changed during archive planning: %s; retry", move.source)
-		}
-		edits, err = move.treeEdits(store.Repository, head.ID, originals[move.source])
-		if err != nil {
-			return revision, err
+	if len(options.moves) != 0 {
+		for _, move := range options.moves {
+			data := originals[move.source]
+			if data == nil || !equalContents(data, contents[move.destination]) {
+				return revision, fmt.Errorf("task changed during archive planning: %s; retry", move.source)
+			}
+			moveEdits, err := move.treeEdits(store.Repository, head.ID, data)
+			if err != nil {
+				return revision, err
+			}
+			edits = append(edits, moveEdits...)
 		}
 	} else {
 		for _, name := range names {
@@ -350,16 +359,17 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			}
 		}
 	}()
-	if options.move != nil {
-		if err := metadataParents(store.Path, options.move.directory(), "archive", &created); err != nil {
+	for _, move := range options.moves {
+		if err := metadataParents(store.Path, move.directory(), "archive", &created); err != nil {
 			return revision, err
 		}
-	} else if options.artifactDirectory != "" {
+	}
+	if options.artifactDirectory != "" {
 		if err := metadataParents(store.Path, options.artifactDirectory, "artifact", &created); err != nil {
 			return revision, err
 		}
 	}
-	var rollbackMove func() error
+	var rollbackMoves []func() error
 	written := make([]string, 0, len(names))
 	defer func() {
 		if err == nil {
@@ -370,8 +380,8 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			err = &RecoveryError{Revision: revision, Directory: temporary, Err: err}
 			return
 		}
-		if rollbackMove != nil {
-			if restoreErr := rollbackMove(); restoreErr != nil {
+		for i := len(rollbackMoves) - 1; i >= 0; i-- {
+			if restoreErr := rollbackMoves[i](); restoreErr != nil {
 				retain = true
 				err = errors.Join(err, fmt.Errorf("restore archive move (recovery in %s): %w", temporary, restoreErr))
 			}
@@ -395,8 +405,11 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		}
 	}()
 	writeNames := names
-	if options.move != nil {
-		rollbackMove, err = options.move.install(store.Path)
+	for _, move := range options.moves {
+		rollback, err := move.install(store.Path)
+		if rollback != nil {
+			rollbackMoves = append(rollbackMoves, rollback)
+		}
 		if err != nil {
 			return revision, err
 		}

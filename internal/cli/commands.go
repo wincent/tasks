@@ -16,16 +16,17 @@ const (
 type commandHandler func(context.Context, string, arguments, IO) error
 
 type commandSpec struct {
-	name     string
-	min, max int
-	options  map[string]optionKind
-	numbered bool // The first positional argument is a task number, if given.
-	validate func(arguments) error
-	usage    string // Arguments and options, after the command name.
-	summary  string // Shown in both the command list and the command's help.
-	details  string
-	hidden   bool
-	run      commandHandler
+	name            string
+	min, max        int
+	options         map[string]optionKind
+	numbered        bool // The first positional argument is a task number, if given.
+	validate        func(arguments) error
+	positionalError string
+	usage           string // Arguments and options, after the command name.
+	summary         string // Shown in both the command list and the command's help.
+	details         string
+	hidden          bool
+	run             commandHandler
 }
 
 type commandRegistry map[string]commandSpec
