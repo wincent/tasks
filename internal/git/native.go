@@ -173,6 +173,12 @@ type Repository struct {
 var ErrClosed = errors.New("Git handle is closed")
 
 func (r *Repository) call(operation string, f func(*C.git_repository) error) error {
+	return r.callNative(operation, true, f)
+}
+
+// An operation over already identified immutable objects can skip refreshing
+// repository configuration, but still needs the same handle and thread guard.
+func (r *Repository) callNative(operation string, configured bool, f func(*C.git_repository) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.ptr == nil {
@@ -180,7 +186,7 @@ func (r *Repository) call(operation string, f func(*C.git_repository) error) err
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if r.configuration != nil {
+	if configured && r.configuration != nil {
 		return r.configuration.call(r.ptr, operation, f)
 	}
 	return f(r.ptr)

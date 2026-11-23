@@ -186,9 +186,35 @@ func TestTaskHistoryDenseFallback(t *testing.T) {
 		f.check(h, i+1, base, 0)
 	}
 	delta := h.deltas[historyEdge{mode, base}]
-	if !delta.fallback || len(delta.changes) != 0 || h.fallbackIndex.revision != base {
-		t.Fatalf("dense edge should use a bounded fallback snapshot, got %+v", delta)
+	if !delta.fallback || len(delta.changes) != 0 {
+		t.Fatalf("dense edge should use bounded point lookups, got %+v", delta)
 	}
+}
+
+func TestTaskHistoryPointLookupKeepsLiteralRecordRules(t *testing.T) {
+	f := newTaskHistoryFixture(t)
+	blob := f.blob("record")
+	record := git.TreeEntry{Name: "EXAMPLE-1 Record.md", ID: blob, Mode: 0100644}
+	malformed := git.TreeEntry{Name: "EXAMPLE-1 Line\nbreak.md", ID: blob, Mode: 0100644}
+	dir := git.TreeEntry{Name: "EXAMPLE-1", ID: f.tree(), Mode: 0040000}
+	other := git.TreeEntry{Name: "EXAMPLE-10 Other.md", ID: blob, Mode: 0100644}
+	root := f.tree(record, malformed, dir, other)
+	archived := f.tree(f.archive("0", record, malformed, dir, other))
+	initial := f.commit(archived, 0)
+	moved := f.commit(root, 1, initial)
+	for _, tree := range []git.ID{root, archived} {
+		got, err := f.Repository.HistoryRecord(tree, "archive/0", "EXAMPLE-1 ")
+		if err != nil || got != record {
+			t.Fatalf("lookup: %+v, %v", got, err)
+		}
+	}
+	// A dense edge taking the fallback must still follow archive moves.
+	var fillers []git.TreeEntry
+	for i := 0; i <= historyDeltaLimit; i++ {
+		fillers = append(fillers, git.TreeEntry{Name: fmt.Sprintf("file-%d", i), ID: blob, Mode: 0100644})
+	}
+	head := f.commit(f.tree(append(fillers, record)...), 2, moved)
+	f.check(f.TaskHistory(head), 1, initial, 0)
 }
 
 // Sparse edits across a wide root, with one bucket of archived tickets. Half
@@ -245,13 +271,46 @@ func TestTaskHistoryScale(t *testing.T) {
 	f, head, tips := wideTaskHistory(t, tickets, commits)
 	h := f.TaskHistory(head)
 	checkWideTaskHistory(t, h, tips)
-	if len(h.deltas) != commits || h.fallbackIndex.dirs != nil {
-		t.Fatalf("got %d deltas, fallback snapshot used: %t", len(h.deltas), h.fallbackIndex.dirs != nil)
+	if len(h.deltas) != commits {
+		t.Fatalf("got %d deltas, want %d", len(h.deltas), commits)
 	}
 	for edge, delta := range h.deltas {
 		if len(delta.changes) != 1 || delta.fallback {
 			t.Fatalf("edge %+v should retain one record change, got %+v", edge, delta)
 		}
+	}
+}
+
+func denseTaskHistory(t testing.TB) (taskHistoryFixture, git.ID, []git.ID) {
+	t.Helper()
+	const tickets, commits, changed = 300, 12, 150
+	f := newTaskHistoryFixture(t)
+	blob := f.blob("record")
+	entries := make([]git.TreeEntry, tickets)
+	for i := range entries {
+		entries[i] = git.TreeEntry{Name: fmt.Sprintf("EXAMPLE-%d Record.md", i+1), ID: blob, Mode: 0100644}
+	}
+	head := f.commit(f.tree(entries...), 0)
+	tips := make([]git.ID, tickets+1)
+	for i := range tips {
+		tips[i] = head
+	}
+	for i := 1; i <= commits; i++ {
+		for j := 0; j < changed; j++ {
+			// Each edge has 150 mode changes, with distinct snapshots.
+			entries[(i*7+j)%tickets].Mode ^= 0111
+		}
+		head = f.commit(f.tree(entries...), i, head)
+	}
+	return f, head, tips
+}
+
+func BenchmarkTaskHistoryDense(b *testing.B) {
+	f, head, tips := denseTaskHistory(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		checkWideTaskHistory(b, f.TaskHistory(head), tips)
 	}
 }
 

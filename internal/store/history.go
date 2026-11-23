@@ -25,13 +25,9 @@ type TaskHistory struct {
 	trees   map[git.ID]git.ID
 	deltas  map[historyEdge]historyDelta
 
-	// Full indexes are reserved for the head and one fallback snapshot.
-	headIndex, fallbackIndex historyIndex
-}
-
-type historyIndex struct {
-	revision git.ID
-	dirs     map[string]map[int]git.TreeEntry
+	// Full indexes are reserved for the head. Dense edges use point
+	// lookups rather than keeping or repeatedly building whole indexes.
+	headIndex map[string]map[int]git.TreeEntry
 }
 
 type historyEdge struct{ child, parent git.ID }
@@ -248,16 +244,23 @@ func (h *TaskHistory) ticketNumber(name string) (int, bool) {
 }
 
 func (h *TaskHistory) record(revision git.ID, number int) (git.TreeEntry, error) {
-	cache := &h.fallbackIndex
-	if revision == h.head {
-		cache = &h.headIndex
+	if revision != h.head {
+		root, err := h.rootTree(revision)
+		if err != nil {
+			return git.TreeEntry{}, err
+		}
+		entry, err := h.store.Repository.HistoryRecord(root, archiveBucket(number), h.store.Prefix.ID(number)+" ")
+		if err != nil {
+			return entry, fmt.Errorf("at %s: %w", revision, err)
+		}
+		return entry, nil
 	}
-	if cache.dirs == nil || cache.revision != revision {
-		*cache = historyIndex{revision: revision, dirs: make(map[string]map[int]git.TreeEntry)}
+	if h.headIndex == nil {
+		h.headIndex = make(map[string]map[int]git.TreeEntry)
 	}
 	var found git.TreeEntry
 	for _, dir := range []string{"", archiveBucket(number)} {
-		index, ok := cache.dirs[dir]
+		index, ok := h.headIndex[dir]
 		if !ok {
 			entries, err := h.store.entries(dir, revision)
 			if err != nil {
@@ -276,7 +279,7 @@ func (h *TaskHistory) record(revision git.ID, number int) (git.TreeEntry, error)
 					index[n] = entry.tree
 				}
 			}
-			cache.dirs[dir] = index
+			h.headIndex[dir] = index
 		}
 		if entry, exists := index[number]; exists {
 			if entry.Name == "" || found.Name != "" {

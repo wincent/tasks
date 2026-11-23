@@ -54,7 +54,7 @@ func commitTreeID(repo *C.git_repository, id *C.git_oid) (ID, error) {
 // commit can still be inspected as a candidate parent.
 func (r *Repository) RootTreeID(revision ID) (ID, error) {
 	var tree ID
-	err := r.call("read root tree ID", func(repo *C.git_repository) error {
+	err := r.callNative("read root tree ID", false, func(repo *C.git_repository) error {
 		id := nativeID(revision)
 		var err error
 		tree, err = commitTreeID(repo, &id)
@@ -75,7 +75,7 @@ func (r *Repository) TreeChanges(before, after ID, limit int) (changes []TreeCha
 	if before == after {
 		return nil, true, nil
 	}
-	err = r.call("compare history trees", func(repo *C.git_repository) error {
+	err = r.callNative("compare history trees", false, func(repo *C.git_repository) error {
 		lookup := func(id ID) (*C.git_tree, error) {
 			if id == (ID{}) {
 				return nil, nil
@@ -135,7 +135,7 @@ type CommitInfo struct {
 // checkout or invoking Git. A shallow boundary is not a root commit.
 func (r *Repository) CommitInfo(revision ID) (CommitInfo, error) {
 	var result CommitInfo
-	err := r.call("read commit history", func(repo *C.git_repository) error {
+	err := r.callNative("read commit history", false, func(repo *C.git_repository) error {
 		id := nativeID(revision)
 		var commit *C.git_commit
 		if err := nativeError("lookup history commit", C.git_commit_lookup(&commit, repo, &id)); err != nil {
