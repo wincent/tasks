@@ -152,15 +152,23 @@ func TestTaskStatusPresentation(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 
 	want := "\x1b[4mEXAMPLE-1\x1b[0m  \x1b[33mblocked\x1b[0m  \x1b[3mNeeds input\x1b[0m\n"
-	got, diagnostic, err := outputTerminal(t, root, "status")
-	if err != nil || diagnostic != "" || got != want {
-		t.Fatalf("status = %q, %q, %v; want %q", got, diagnostic, err, want)
-	}
-	if got := run(t, root, "status"); got != "EXAMPLE-1  blocked  Needs input\n" {
-		t.Fatalf("plain status = %q", got)
-	}
-	got, diagnostic, err = outputTerminal(t, root, "status", "--json")
-	if piped := run(t, root, "status", "--json"); err != nil || diagnostic != "" || got != piped {
-		t.Fatalf("JSON status = %q, %q, %v; want %q", got, diagnostic, err, piped)
+	wantJSON := run(t, root, "status", "--json")
+	for _, name := range []string{"status", "st"} {
+		t.Run(name, func(t *testing.T) {
+			got, diagnostic, err := outputTerminal(t, root, name)
+			if err != nil || diagnostic != "" || got != want {
+				t.Fatalf("terminal output = %q, %q, %v; want %q", got, diagnostic, err, want)
+			}
+			if got := run(t, root, name); got != "EXAMPLE-1  blocked  Needs input\n" {
+				t.Fatalf("plain output = %q", got)
+			}
+			got, diagnostic, err = outputTerminal(t, root, name, "--json")
+			if err != nil || diagnostic != "" || got != wantJSON {
+				t.Fatalf("terminal JSON = %q, %q, %v; want %q", got, diagnostic, err, wantJSON)
+			}
+			if got := run(t, root, name, "--json"); got != wantJSON {
+				t.Fatalf("plain JSON = %q; want %q", got, wantJSON)
+			}
+		})
 	}
 }
