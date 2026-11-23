@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/testutil"
 )
 
@@ -307,6 +310,48 @@ func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 		t.Fatalf("could record merged on a different topic: %v", err)
 	}
 	assertStatus(t, root, "open")
+}
+
+func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
+	ctx := context.Background()
+	repo, root := fixture(t)
+	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
+	systemGit(t, root, "branch", "before")
+	base, err := destination("before").tip(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := createCheckout(repo, "example-1-", base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitImplementation(t, source.Paths.WorkDir, "feature.txt", "task change\n")
+	ref, err := repo.Reference(source.Head.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.Head.ID = ref.ID
+	actor, err := repo.CommitterSignature()
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := confirmMergeDestination(ctx, repo, "EXAMPLE", 1, "before")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSafetyFile(t, ticket, strings.Replace(string(uiBytes(t, ticket)), "Topic: before", "Topic: after", 1))
+	systemGit(t, filepath.Dir(ticket), "commit", "-am", "retarget after confirmation")
+	tx, err := prepareMergePublication(repo, "before", source.Head.ID, base, metadata, source.Head, actor)
+	if tx != nil {
+		tx.Close()
+	}
+	var changed *git.ChangedError
+	if !errors.As(err, &changed) || changed.Name != store.Branch || changed.Expected != metadata {
+		t.Fatalf("expected rejection of stale metadata, got %v", err)
+	}
+	if tip, err := destination("before").tip(repo); err != nil || tip != base {
+		t.Fatalf("old destination moved: %s, %v", tip, err)
+	}
 }
 
 func TestTopicOptionRejectsTaskNamespace(t *testing.T) {

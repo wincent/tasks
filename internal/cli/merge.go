@@ -105,7 +105,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			return fmt.Errorf("no implementation branch for %s; use `tasks run %d`", task.ID(), n)
 		}
 	}
-	if err := confirmMergeDestination(ctx, repo, prefix, n, target); err != nil {
+	if _, err := confirmMergeDestination(ctx, repo, prefix, n, target); err != nil {
 		return err
 	}
 
@@ -167,13 +167,18 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	return nil
 }
 
-func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, target destination) error {
-	return withMetadata(ctx, repo, func(session *store.Session) error {
+func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, target destination) (git.ID, error) {
+	var confirmed git.ID
+	err := withMetadata(ctx, repo, func(session *store.Session) error {
 		tasks, err := session.Preview(prefix)
 		if err != nil {
 			return err
 		}
 		defer tasks.Close()
+		head, err := tasks.Head()
+		if err != nil {
+			return err
+		}
 		task, err := tasks.ReadWorking(n)
 		if err != nil {
 			return err
@@ -181,8 +186,26 @@ func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix s
 		if err := requireTaskDestination(task, target); err != nil {
 			return err
 		}
-		return tasks.RequireClean(filepath.Base(task.Path))
+		if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
+			return err
+		}
+		current, err := tasks.Head()
+		if err != nil {
+			return err
+		}
+		if head.Branch != store.Branch || head != current {
+			return errors.New("task metadata changed during destination confirmation; retry")
+		}
+		confirmed = head.ID
+		return nil
 	})
+	return confirmed, err
+}
+
+func prepareMergePublication(repo *git.Repository, target destination, merged, base, metadata git.ID, source git.Head, actor git.Signature) (*git.Transaction, error) {
+	return repo.Prepare(target.ref(), merged, map[string]git.ID{
+		target.ref(): base, source.Branch: source.ID, store.Branch: metadata,
+	}, actor, "task merge")
 }
 
 func publishMerge(ctx context.Context, repo *git.Repository, source checkout, task store.Task, prefix store.Prefix, target destination, base git.ID, streams IO) error {
@@ -256,10 +279,13 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 	}
 	// Hooks and validators can take time or use Git directly. Check the
 	// record again before publishing, even though tasks edit takes our lock.
-	if err := confirmMergeDestination(ctx, repo, prefix, task.Number, target); err != nil {
+	metadata, err := confirmMergeDestination(ctx, repo, prefix, task.Number, target)
+	if err != nil {
 		return err
 	}
-	tx, err := repo.Prepare(target.ref(), merged, map[string]git.ID{target.ref(): base, source.Head.Branch: source.Head.ID}, actor, "task merge")
+	// A raw commit to the metadata branch bypasses the task and metadata
+	// locks. Verify and hold the confirmed ref through publication.
+	tx, err := prepareMergePublication(repo, target, merged, base, metadata, source.Head, actor)
 	if err != nil {
 		return err
 	}
