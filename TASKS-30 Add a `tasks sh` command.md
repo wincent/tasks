@@ -1,6 +1,6 @@
 # TASKS-30: Add a `tasks sh` command
 
-Status: open
+Status: active
 
 ## Description
 
