@@ -97,6 +97,14 @@ git config --local --add remote.origin.push refs/heads/main:refs/heads/main
 git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 ```
 
+## Shared-store upgrades and rollbacks
+
+Before anyone records a topic or archives a ticket, pause writes to the shared store, reconcile and back up the current task history, and upgrade every client that uses it, including CI jobs, scripts, and users with separate clones. Verify the version each caller actually runs before resuming. Keep using root-level tickets without topics until everyone is ready.
+
+Do not use v0.1.0 on a store with topic or archive records. v0.1.0 ignores `Topic:` and can successfully merge into `main` instead. Its listings can write valid but incomplete JSON and then exit nonzero when they encounter the archive directory. Automation must check the exit status. A minimum-version check in the new client would not stop an already-installed v0.1.0 client; even server-side push rules cannot prevent it from updating local branches. Coordination is required.
+
+If you must roll back after using these features, stop task operations and prefer keeping a compatible client for this repository. To return to v0.1.0, first use a compatible client to unarchive all tickets and resolve every non-main topic. Finish or preserve pending topic work and its branches before removing topic fields; do not retarget outstanding work to `main` unless that is where it belongs. Commit these changes on top of the shared `tasks` branch and synchronize them normally. Do not reset to a pre-upgrade commit, force-push, or create a new store. Verify a clean checkout of the resulting branch with v0.1.0 in a disposable clone before switching clients. Old commits, including the topic and archive records, stay in history; collaborators must not merge old copies of those records back into the working store.
+
 ## Work on a topic branch
 
 Use `--topic BRANCH` when filing a task that should land somewhere other than local `main`:

@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+[[ $# == 2 && $1 == /* && $2 == /* && -x $1 && -x $2 ]] ||
+  fail "Usage: $0 /absolute/path/to/tasks-v0.1.0 /absolute/path/to/new-tasks"
+old=$1
+new=$2
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM
+export HOME="$work/home" XDG_CONFIG_HOME="$work/xdg"
+mkdir "$HOME" "$XDG_CONFIG_HOME"
+
+git init -q -b main "$work/repo"
+cd "$work/repo"
+git config user.name 'Compatibility test'
+git config user.email test@example.invalid
+git config commit.gpgsign false
+git config core.hooksPath "$work/no-hooks"
+printf 'prefix: EXAMPLE\n' >.tasks.yml
+git add .tasks.yml
+git commit -qm 'initialize implementation'
+tree=$(git mktree </dev/null)
+git update-ref refs/heads/tasks "$(git commit-tree "$tree" -m 'initialize shared store')"
+"$new" init
+"$new" create 'New client' --topic delivery --body 'Merge into delivery.'
+"$new" create 'Old client' --topic delivery --body 'Do not merge into main.'
+main=$(git rev-parse main)
+git branch delivery
+for n in 1 2; do
+  checkout="$work/task-$n"
+  git worktree add -q -b "task/example-$n" "$checkout" main
+  printf 'Task %s\n' "$n" >"$checkout/task-$n.txt"
+  git -C "$checkout" add "task-$n.txt"
+  git -C "$checkout" commit -qm "implement task $n"
+done
+first=$(git rev-parse task/example-1)
+second=$(git rev-parse task/example-2)
+"$new" merge 1
+[[ $(git rev-parse main) == "$main" && $(git rev-parse delivery) == "$first" ]] ||
+  fail 'The new client did not merge only into delivery'
+
+# This is a real incompatibility, not a diagnostic that an old client emits.
+"$old" merge 2
+[[ $(git rev-parse main) == "$second" && $(git rev-parse delivery) == "$first" ]] ||
+  fail 'Expected v0.1.0 to ignore Topic and advance main'
+printf 'Observed: v0.1.0 merged topic work into main.\n'
+
+"$new" archive 1
+"$new" list all --include-archived --json >"$work/new.json"
+if "$old" list all --json >"$work/old.json" 2>"$work/old.err"; then
+  fail 'Expected v0.1.0 to fail listing the new archive layout'
+else
+  old_status=$?
+fi
+python3 - "$work/new.json" "$work/old.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as new, open(sys.argv[2]) as old:
+    new_rows = json.load(new)
+    old_rows = json.load(old)
+assert len(new_rows) == 2, new_rows
+assert len(old_rows) == 1, old_rows
+assert old_rows[0]["title"] == "Old client", old_rows
+PY
+if [[ $(<"$work/old.err") != *archive* ]]; then
+  fail 'Missing v0.1.0 archive diagnostic'
+fi
+printf 'Observed: v0.1.0 wrote partial JSON and exited %s.\n' "$old_status"
+
+# Restore an old-client-compatible tip with forward commits, not a reset.
+# Both fixture tasks are already resolved; no pending work is retargeted.
+incompatible=$(git rev-parse tasks)
+"$new" unarchive 1
+head1='EXAMPLE-1 New client.md'
+head2='EXAMPLE-2 Old client.md'
+python3 - "tasks/$head1" "tasks/$head2" <<'PY'
+from pathlib import Path
+import sys
+
+for path in map(Path, sys.argv[1:]):
+    path.write_bytes(path.read_bytes().replace(b"Topic: delivery\n", b""))
+PY
+git -C tasks add -- "$head1" "$head2"
+git -C tasks commit -qm 'restore a compatible store tip without rewriting history'
+git merge-base --is-ancestor "$incompatible" tasks
+git clone -q --no-tags "$work/repo" "$work/rollback"
+cd "$work/rollback"
+git fetch -q origin refs/heads/tasks:refs/heads/tasks
+"$old" init
+"$old" list all --json >"$work/rollback.json"
+python3 - "$work/rollback.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as result:
+    assert len(json.load(result)) == 2
+PY
+printf 'Verified: v0.1.0 read the compatible tip; incompatible commits remain ancestors.\n'
