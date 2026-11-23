@@ -1,6 +1,6 @@
 # TASKS-34: Add --prompt to tasks pi for one-off instructions
 
-Status: open
+Status: active
 
 ## Description
 
