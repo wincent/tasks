@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -359,6 +360,65 @@ func TestRunPromptIsPerInvocation(t *testing.T) {
 	}
 	if got := systemGit(t, root, "rev-parse", "main"); got != base {
 		t.Fatal("review run merged")
+	}
+}
+
+func TestPiPromptIsPerInvocation(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	path := strings.TrimSpace(run(t, root, "create", "Interactive instructions", "--body", "requirements"))
+	base := systemGit(t, root, "rev-parse", "main")
+	const first = "Skip Chrome tests."
+	const retry = "- Skip the browser suite.\n- Still run the worker suite."
+	fails(t, root, "`tasks pi` requires a terminal", "pi", "1", "--prompt", first)
+
+	master, slave, err := testutil.OpenPTY()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	go io.Copy(io.Discard, master) // Keep repeated launches from filling the terminal buffer.
+
+	var worktree, session, standard string
+	for i, hint := range []string{first, retry, ""} {
+		args := []string{"pi", "1"}
+		if hint != "" {
+			args = append(args, "--prompt", hint)
+		}
+		runner := piFixture(func(_ context.Context, child process.Command) process.Result {
+			if child.In != slave || child.Out != slave || len(child.Args) != 5 || child.Args[3] != "--" {
+				t.Fatalf("expected an interactive launch with one prompt argument: %+v", child)
+			}
+			checkout, prompt := piWorktree(t, child), child.Args[4]
+			if hint != "" {
+				var ok bool
+				prompt, ok = strings.CutSuffix(prompt, "\n\nAdditional instructions for this run:\n"+hint)
+				if !ok {
+					t.Fatalf("expected hint appended verbatim, got %q", child.Args[4])
+				}
+			}
+			if i == 0 {
+				worktree, session, standard = checkout, child.Args[2], prompt
+				if !strings.HasPrefix(standard, fmt.Sprintf("Read EXAMPLE-1 at %q.", path)) ||
+					!strings.Contains(standard, "Needs attention:") || !strings.Contains(standard, "Do not merge;") {
+					t.Fatalf("missing standard instructions: %q", standard)
+				}
+				commitImplementation(t, checkout, "implementation", "keep\n")
+			} else if checkout != worktree || child.Args[2] != session || prompt != standard {
+				t.Fatalf("expected checkout %q, session %q and standard prompt %q, got %q: %v", worktree, session, standard, checkout, child.Args)
+			}
+			return process.Result{}
+		})
+		if err := Run(context.Background(), root, args, IO{In: slave, Out: slave, Runner: runner}); err != nil {
+			t.Fatal(err)
+		}
+		assertStatus(t, root, "done")
+		if task := run(t, root, "show", "1", "--raw"); strings.Contains(task, first) || strings.Contains(task, retry) {
+			t.Fatalf("hint leaked into task file: %q", task)
+		}
+		if got := systemGit(t, root, "rev-parse", "main"); got != base {
+			t.Fatal("interactive launch merged")
+		}
 	}
 }
 
