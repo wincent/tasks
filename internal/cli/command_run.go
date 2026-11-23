@@ -14,7 +14,7 @@ func init() {
 			"A successful run merges clean, committed work there without pushing.\n\n" +
 			"Options:\n" +
 			"  --no-merge       Keep the work for review. Use `tasks merge NUMBER` later.\n" +
-			"  --prompt TEXT    Append instructions to Pi for this run only.\n" +
+			promptHelp +
 			worktreeHelp,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			return launchTask(ctx, cwd, a, streams)
