@@ -1,6 +1,6 @@
 # TASKS-29: Let `tasks archive` accept multiple numeric arguments
 
-Status: open
+Status: active
 
 ## Description
 
