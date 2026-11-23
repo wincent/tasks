@@ -21,6 +21,38 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$output"
 go mod download
 go mod verify
+modules=$(go list -mod=readonly -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}} {{.Module.Version}}{{end}}' ./cmd/tasks)
+[[ $(printf '%s\n' "$modules" | awk 'NF' | LC_ALL=C sort -u) == 'github.com/rivo/uniseg v0.4.7' ]] ||
+  fail 'Review third-party notices for the linked Go modules'
+uniseg=$(go list -mod=readonly -m -f '{{.Dir}}' github.com/rivo/uniseg)
+goroot=$(go env GOROOT)
+go_license="$goroot/LICENSE"
+# Homebrew installs LICENSE at the versioned formula root.
+if [[ ! -s "$go_license" && $(basename "$goroot") == libexec ]]; then
+  go_license="$goroot/../LICENSE"
+fi
+for notice in "$uniseg/LICENSE.txt" "$go_license" "$goroot/PATENTS" \
+  licenses/Go-math-notices.txt licenses/Unicode-DFS-2016.txt licenses/Unicode-3.0.txt; do
+  [[ -s "$notice" ]] || fail "Missing release notice: $notice"
+done
+{
+  printf '%s\n\n' 'Third-party notices for code and data included in tasks.'
+  printf '%s\n\n' 'github.com/rivo/uniseg v0.4.7 (MIT)'
+  cat "$uniseg/LICENSE.txt"
+  printf '\nGo runtime and standard library (%s)\n\n' "$(go env GOVERSION)"
+  cat "$go_license"
+  printf '\nGo patent grant\n\n'
+  cat "$goroot/PATENTS"
+  printf '\n'
+  cat licenses/Go-math-notices.txt
+  printf '\nUnicode Character Database and Emoji data used by uniseg and Go\n'
+  printf 'Unicode 15.0.0 data: Copyright © 2022 Unicode, Inc.\n\n'
+  cat licenses/Unicode-DFS-2016.txt
+  printf '\n'
+  cat licenses/Unicode-3.0.txt
+  printf '\n%s\n' 'External runtime dependency (not included): shared libgit2 1.9.x.'
+  printf '%s\n' 'libgit2: GPL-2.0-only with linking exception; see https://github.com/libgit2/libgit2/blob/main/COPYING.'
+} > "$work/THIRD-PARTY-NOTICES.txt"
 go build -mod=readonly -trimpath \
   -ldflags "-X github.com/wincent/tasks/internal/cli.releaseVersion=$tag" \
   -o "$work/tasks" ./cmd/tasks
@@ -43,14 +75,17 @@ go build -mod=readonly -trimpath \
   esac
 } > "$work/BUILD-INFO.txt"
 cp UNLICENSE.md "$work/"
-archive="$output/tasks-$target.tar.gz"
-COPYFILE_DISABLE=1 tar -C "$work" -czf "$archive" tasks BUILD-INFO.txt UNLICENSE.md
+archive="$work/tasks-$target.tar.gz"
+COPYFILE_DISABLE=1 tar -C "$work" -czf "$archive" tasks BUILD-INFO.txt UNLICENSE.md THIRD-PARTY-NOTICES.txt
 
 mkdir "$work/smoke"
 tar -C "$work/smoke" -xzf "$archive"
+cmp "$work/THIRD-PARTY-NOTICES.txt" "$work/smoke/THIRD-PARTY-NOTICES.txt"
+cmp UNLICENSE.md "$work/smoke/UNLICENSE.md"
 "$work/smoke/tasks" --help >/dev/null
 printf '%s\n' "$tag" > "$work/expected-version"
 for arg in version --version; do
   "$work/smoke/tasks" "$arg" > "$work/actual-version"
   diff -u "$work/expected-version" "$work/actual-version" || fail "Expected tasks $arg to report $tag"
 done
+mv "$archive" "$output/"
