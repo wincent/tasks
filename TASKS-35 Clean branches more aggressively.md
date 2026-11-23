@@ -1,6 +1,6 @@
 # TASKS-35: Clean branches more aggressively
 
-Status: open
+Status: active
 
 ## Description
 
