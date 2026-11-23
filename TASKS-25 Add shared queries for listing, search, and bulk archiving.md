@@ -1,6 +1,6 @@
 # TASKS-25: Add shared queries for listing, search, and bulk archiving
 
-Status: active
+Status: merged
 
 ## Description
 
