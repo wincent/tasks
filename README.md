@@ -112,6 +112,8 @@ The task records `Topic: feature/export`. Filing alone does not create the topic
 
 A successful `tasks run` merges into the recorded topic, not the branch you have checked out. To review first, use `tasks run 42 --no-merge` or `tasks pi 42`, then `tasks merge 42` when ready. `tasks cleanup` keeps work if the recorded destination is missing. Otherwise, a task branch is eligible when its tip is reachable from the destination or when the destination contains an identical tracked snapshot outside their shared history.
 
+Branch names under `task/` are reserved for implementation branches. If an older ticket records one as its topic, cleanup keeps that branch until the ticket is retargeted.
+
 Without `--topic` (or with `--topic main`), the task starts from and merges into local `main`. The task prefix always comes from `.tasks.yml` on local `main`.
 
 ## License

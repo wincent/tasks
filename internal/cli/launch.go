@@ -100,7 +100,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if err != nil {
 		return err
 	}
-	target, err := taskDestination(prefix, n, task.Content)
+	target, err := taskDestination(task.Content)
 	if err != nil {
 		return fmt.Errorf("%s: %w", task.ID(), err)
 	}

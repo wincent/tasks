@@ -51,9 +51,6 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 		}
 		var topicLine string
 		if topic := a.value("--topic"); topic != "" && topic != "main" {
-			if err := destination(topic).validate(a.prefix, n); err != nil {
-				return err
-			}
 			topicLine = "\nTopic: " + topic
 		}
 		content := fmt.Sprintf("# %s: %s\n\nStatus: open%s\n\n## Description\n\n%s\n", id, title, topicLine, description)

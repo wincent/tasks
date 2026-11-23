@@ -225,6 +225,16 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 	uiBytes(t, filepath.Join(worktree, "interactive.txt"))
 }
 
+func TestTopicOptionRejectsTaskNamespace(t *testing.T) {
+	for _, topic := range []string{"task/example-2", "Task/other-1-build", "task/nested/branch"} {
+		for _, args := range [][]string{{"go", "Title"}, {"create", "Title"}} {
+			if _, err := parse(append(args, "--topic", topic)); err == nil || !strings.Contains(err.Error(), "reserved task/") {
+				t.Errorf("%s accepted %q: %v", args[0], topic, err)
+			}
+		}
+	}
+}
+
 func TestTopicOptionRejectsNonBranchValues(t *testing.T) {
 	for _, value := range []string{"", "HEAD", "main^", "-name", "@{-1}", "refs/heads/topic", "one two", "line\nbreak", "tasks"} {
 		for _, args := range [][]string{{"go", "Title"}, {"create", "Title", "--body", "Description"}} {

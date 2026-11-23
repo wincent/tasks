@@ -60,6 +60,21 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		return err
 	}
 	matches := func(n int) bool { return n != 0 && (a.number() == 0 || a.number() == n) }
+	// Check destinations across all tickets, even for numbered cleanup.
+	var protected map[string]string
+	var protectErr error
+	if len(refs) != 0 {
+		protected, protectErr = cleanupProtectedTopics(repo, a.prefix)
+	}
+	checkTopicUse := func(ref string) error {
+		if protectErr != nil {
+			return fmt.Errorf("cannot verify task destinations: %w", protectErr)
+		}
+		if id := protected[strings.ToLower(ref)]; id != "" {
+			return fmt.Errorf("branch is the recorded destination for %s; retarget that task first", id)
+		}
+		return nil
+	}
 	attempt := func(n int, label string, clean func() error) bool {
 		err := func() error {
 			if apply {
@@ -98,6 +113,9 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, entry.Head.Branch)
 		if !matches(n) || entry.Name == "" || !attempt(n, entry.Paths.WorkDir, func() error {
+			if err := checkTopicUse(entry.Head.Branch); err != nil {
+				return err
+			}
 			target, err := cleanupDestination(repo, a.prefix, n)
 			if err != nil {
 				return err
@@ -120,6 +138,9 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, name)
 		attempt(n, "branch "+strings.TrimPrefix(name, "refs/heads/"), func() error {
+			if err := checkTopicUse(name); err != nil {
+				return err
+			}
 			target, err := cleanupDestination(repo, a.prefix, n)
 			if err != nil {
 				return err
@@ -128,6 +149,23 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		})
 	}
 	return nil
+}
+
+func cleanupProtectedTopics(repo *git.Repository, prefix store.Prefix) (map[string]string, error) {
+	tasks, err := store.Inspect(repo, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer tasks.Close()
+	topics, err := tasks.RecordedTopics()
+	if err != nil {
+		return nil, err
+	}
+	protected := make(map[string]string)
+	for topic, id := range topics {
+		protected[strings.ToLower(destination(topic).ref())] = id
+	}
+	return protected, nil
 }
 
 func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (destination, error) {
@@ -147,7 +185,7 @@ func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (desti
 	if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
 		return "", err
 	}
-	return taskDestination(prefix, n, task.Content)
+	return taskDestination(task.Content)
 }
 
 // Eligibility uses actual Git history, not the status written in Markdown.

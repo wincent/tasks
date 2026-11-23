@@ -18,13 +18,16 @@ type destination string
 func (d destination) ref() string { return "refs/heads/" + string(d) }
 
 func validateTopicOption(a arguments) error {
-	if topic, supplied := a.values["--topic"]; supplied && !store.ValidTopic(topic[0]) {
-		return fmt.Errorf("--topic requires a local implementation branch name; got %q", topic[0])
+	if topic, supplied := a.values["--topic"]; supplied {
+		if !store.ValidTopic(topic[0]) {
+			return fmt.Errorf("--topic requires a local implementation branch name; got %q", topic[0])
+		}
+		return destination(topic[0]).validate()
 	}
 	return nil
 }
 
-func taskDestination(prefix store.Prefix, n int, content string) (destination, error) {
+func taskDestination(content string) (destination, error) {
 	topic, err := store.Topic(content)
 	if err != nil {
 		return "", err
@@ -33,12 +36,12 @@ func taskDestination(prefix store.Prefix, n int, content string) (destination, e
 		return "main", nil
 	}
 	d := destination(topic)
-	return d, d.validate(prefix, n)
+	return d, d.validate()
 }
 
-func (d destination) validate(prefix store.Prefix, n int) error {
-	if taskBranchNumber(prefix, strings.ToLower(d.ref())) == n {
-		return fmt.Errorf("topic %q cannot be this task's implementation branch", d)
+func (d destination) validate() error {
+	if strings.HasPrefix(strings.ToLower(string(d)), "task/") {
+		return fmt.Errorf("topic %q is in the reserved task/ branch namespace", d)
 	}
 	return nil
 }

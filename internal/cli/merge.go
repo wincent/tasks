@@ -81,7 +81,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	if _, err := store.Status(task.Content); err != nil {
 		return err
 	}
-	target, err := taskDestination(prefix, n, task.Content)
+	target, err := taskDestination(task.Content)
 	if err != nil {
 		return fmt.Errorf("%s: %w", task.ID(), err)
 	}

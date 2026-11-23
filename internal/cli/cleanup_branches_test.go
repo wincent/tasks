@@ -57,6 +57,52 @@ func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	}
 }
 
+func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
+	_, root := fixture(t)
+	const parent = "task/example-2"
+	const child = "task/example-1"
+	ticket := run(t, root, "create", "Child", "--body", "Land on the legacy topic")
+	run(t, root, "create", "Parent", "--body", "Land on main")
+	path := strings.TrimSpace(ticket)
+	metadata := filepath.Dir(path)
+	content := strings.Replace(string(uiBytes(t, path)), "Status: open\n", "Status: open\nTopic: "+parent+"\n", 1)
+	writeSafetyFile(t, path, content)
+	systemGit(t, metadata, "add", "--", filepath.Base(path))
+	systemGit(t, metadata, "commit", "-m", "record legacy topic")
+	run(t, root, "archive", "1")
+
+	systemGit(t, root, "switch", "-c", child)
+	childTip := commitImplementation(t, root, "child.txt", "child changes\n")
+	systemGit(t, root, "switch", "-c", parent, "main")
+	systemGit(t, root, "merge", "--squash", child)
+	systemGit(t, root, "commit", "-m", "squash child")
+	parentTip := commitImplementation(t, root, "parent.txt", "parent changes\n")
+	systemGit(t, root, "switch", "main")
+	systemGit(t, root, "merge", "--squash", parent)
+	systemGit(t, root, "commit", "-m", "squash parent")
+
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree := filepath.Join(directory, "parent")
+	systemGit(t, root, "worktree", "add", worktree, parent)
+	for _, args := range [][]string{{"cleanup", "2"}, {"cleanup", "--apply"}} {
+		out := run(t, root, args...)
+		for _, label := range []string{worktree, "branch " + parent} {
+			if !strings.Contains(out, "Keep "+label+": branch is the recorded destination for EXAMPLE-1") {
+				t.Fatalf("%v did not protect %s:\n%s", args, label, out)
+			}
+		}
+	}
+	if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != parentTip {
+		t.Fatalf("parent checkout moved: %s", got)
+	}
+	if got := systemGit(t, root, "rev-parse", child); got != childTip {
+		t.Fatalf("child branch moved: %s", got)
+	}
+}
+
 func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 	repo, root := fixture(t)
 	const rewritten = "task/example-7-rewritten"

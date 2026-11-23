@@ -189,7 +189,7 @@ func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, strea
 	if _, err := store.Status(string(data)); err != nil {
 		return err
 	}
-	if _, err := taskDestination(prefix, n, string(data)); err != nil {
+	if _, err := taskDestination(string(data)); err != nil {
 		return err
 	}
 	session, err = store.Begin(ctx, repo)
