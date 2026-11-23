@@ -57,6 +57,54 @@ func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	}
 }
 
+func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
+	for _, mode := range []string{"absent", "configured remote", "tracking ref", "previous store", "obstructed checkout"} {
+		t.Run(mode, func(t *testing.T) {
+			repo, root := fixture(t)
+			const branch = "task/example-7"
+			storePath := filepath.Join(root, "tasks")
+			switch mode {
+			case "configured remote":
+				// A remote restricted to main may still have task history.
+				systemGit(t, root, "remote", "add", "-t", "main", "origin", "https://example.invalid/repo.git")
+			case "tracking ref":
+				systemGit(t, root, "update-ref", "refs/remotes/old/tasks", "tasks")
+			case "previous store":
+				run(t, root, "init")
+				systemGit(t, root, "worktree", "remove", storePath)
+			case "obstructed checkout":
+				writeSafetyFile(t, storePath, "not a tasks checkout\n")
+			}
+			systemGit(t, root, "branch", "-D", "tasks")
+			systemGit(t, root, "branch", branch)
+			for _, apply := range []bool{false, true} {
+				args := []string{"cleanup", "7"}
+				want := "Keep branch " + branch
+				if !apply && mode == "absent" {
+					want = "Would remove branch " + branch
+				}
+				if apply {
+					args = append(args, "--apply")
+					if mode == "absent" {
+						want = "Removed branch " + branch
+					}
+				}
+				if out := run(t, root, args...); !strings.Contains(out, want) {
+					t.Fatalf("%v: want %q, got %s", args, want, out)
+				}
+				_, err := repo.Reference("refs/heads/" + branch)
+				if apply && mode == "absent" {
+					if !git.HasCode(err, git.NotFound) {
+						t.Fatalf("expected branch removal: %v", err)
+					}
+				} else if err != nil {
+					t.Fatalf("lost branch: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 	_, root := fixture(t)
 	const parent = "task/example-2"

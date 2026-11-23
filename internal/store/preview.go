@@ -66,7 +66,7 @@ func inspect(repo *git.Repository) (*Store, error) {
 		return nil, err
 	}
 	if git.HasCode(err, git.NotFound) {
-		return nil, errors.New(localHistorySetup)
+		return nil, ErrMissingLocalHistory
 	} else if ref.Symbolic != "" {
 		return nil, errors.New("tasks must be a direct branch")
 	}

@@ -151,9 +151,26 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 	return nil
 }
 
-func cleanupProtectedTopics(repo *git.Repository, prefix store.Prefix) (map[string]string, error) {
+// A nil store permits legacy main-only cleanup. An unavailable store must
+// never turn an unknown topic into main.
+func inspectCleanupStore(repo *git.Repository, prefix store.Prefix) (*store.Store, error) {
 	tasks, err := store.Inspect(repo, prefix)
-	if err != nil {
+	if !errors.Is(err, store.ErrMissingLocalHistory) {
+		return tasks, err
+	}
+	mayExist, evidenceErr := store.MayHaveSharedHistory(repo)
+	if evidenceErr != nil {
+		return nil, evidenceErr
+	}
+	if mayExist {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func cleanupProtectedTopics(repo *git.Repository, prefix store.Prefix) (map[string]string, error) {
+	tasks, err := inspectCleanupStore(repo, prefix)
+	if err != nil || tasks == nil {
 		return nil, err
 	}
 	defer tasks.Close()
@@ -169,9 +186,12 @@ func cleanupProtectedTopics(repo *git.Repository, prefix store.Prefix) (map[stri
 }
 
 func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (destination, error) {
-	tasks, err := store.Inspect(repo, prefix)
+	tasks, err := inspectCleanupStore(repo, prefix)
 	if err != nil {
 		return "", err
+	}
+	if tasks == nil {
+		return "main", nil
 	}
 	defer tasks.Close()
 	task, err := tasks.Read(n)
