@@ -4,6 +4,42 @@ A command-line task tracker that stores tickets on a separate branch in your Git
 
 Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
 
+## Usage
+
+### Common commands
+
+| Command        | Description                                                 |
+| -------------- | ----------------------------------------------------------- |
+| `tasks create` | Create a task.                                              |
+| `tasks show`   | Show the Markdown for a task.                               |
+| `tasks list`   | List tasks by status.                                       |
+| `tasks run`    | Run Pi non-interactively and merge into the recorded topic. |
+| `tasks pi`     | Open a task in interactive Pi without merging.              |
+| `tasks merge`  | Merge into the recorded topic without pushing.              |
+
+### Other commands
+
+| Command           | Description                                                   |
+| ----------------- | ------------------------------------------------------------- |
+| `tasks archive`   | Hide tasks from the default working set.                      |
+| `tasks check`     | Check task files for errors.                                  |
+| `tasks cleanup`   | Preview removal of merged task checkouts and branches.        |
+| `tasks close`     | Close a task with a note, without merging or discarding work. |
+| `tasks comment`   | Add a Markdown comment to a task.                             |
+| `tasks edit`      | Edit a task's Markdown in your editor.                        |
+| `tasks go`        | Create and run a task from its title alone.                   |
+| `tasks help`      | Show help for tasks or a specific command.                    |
+| `tasks init`      | Set up the local tasks checkout.                              |
+| `tasks search`    | Search task titles.                                           |
+| `tasks sh`        | Run a command in a task's existing checkout.                  |
+| `tasks st`        | Alias for `tasks status`.                                     |
+| `tasks status`    | Show running agents, merges and tasks that need attention.    |
+| `tasks store`     | Save or list retained task artifacts.                         |
+| `tasks tail`      | Follow a task's saved Pi session.                             |
+| `tasks unarchive` | Restore archived tasks to the working set.                    |
+| `tasks version`   | Print the version and exit.                                   |
+| `tasks worktree`  | Print the path to a task's checkout.                          |
+
 ## Prerequisites
 
 - Go 1.24 or later, a C compiler, and `pkg-config` (macOS or Linux, arm64 or amd64).
@@ -77,10 +113,6 @@ The task records `Topic: feature/export`. Filing alone does not create the topic
 A successful `tasks run` merges into the recorded topic, not the branch you have checked out. To review first, use `tasks run 42 --no-merge` or `tasks pi 42`, then `tasks merge 42` when ready. `tasks cleanup` checks whether each task branch's tip is reachable from its recorded destination and keeps the work if the destination is missing.
 
 Without `--topic` (or with `--topic main`), the task starts from and merges into local `main`. The task prefix always comes from `.tasks.yml` on local `main`.
-
-## Run a command in a task checkout
-
-Run `tasks sh 42 -- git status --short` to inspect task 42's existing checkout. The `--` is optional. If you need a pipeline, redirection, or a shell builtin, invoke a shell explicitly: `tasks sh 42 -- sh -c 'git status --short | wc -l'`.
 
 ## License
 
