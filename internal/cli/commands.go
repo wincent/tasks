@@ -20,6 +20,7 @@ type commandSpec struct {
 	min, max        int
 	options         map[string]optionKind
 	numbered        bool // The first positional argument is a task number, if given.
+	numberedAll     bool // All positional arguments are task numbers.
 	validate        func(arguments) error
 	positionalError string
 	usage           string // Arguments and options, after the command name.
@@ -65,8 +66,6 @@ func (r commandRegistry) visible() []commandSpec {
 	})
 	return result
 }
-
-func (a arguments) number() int { return a.taskNumber }
 
 func unknownCommand(name string) error {
 	return fmt.Errorf("unknown command: %s", name)

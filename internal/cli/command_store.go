@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/state"
 	"github.com/wincent/tasks/internal/store"
 )
 
@@ -103,11 +105,11 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 			if err != nil {
 				return err
 			}
-			lock, err := taskLock(directory, a.prefix, a.number())
+			unlock, err := lockTasks(directory, a.prefix, a.numbers())
 			if err != nil {
 				return err
 			}
-			defer lock.Close()
+			defer unlock()
 		}
 		session, err := store.Begin(ctx, repository)
 		if err != nil {
@@ -116,6 +118,26 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 		defer session.Close()
 		return run(ctx, cwd, a, streams, storeInvocation{repository: repository, session: session, root: root, directory: session.Directory, body: body})
 	}
+}
+
+// lockTasks takes lifetime locks in ticket order before the metadata session.
+func lockTasks(directory string, prefix store.Prefix, numbers []int) (func(), error) {
+	slices.Sort(numbers)
+	locks := make([]*state.Lock, 0, len(numbers))
+	unlock := func() {
+		for _, lock := range locks {
+			lock.Close()
+		}
+	}
+	for _, number := range numbers {
+		lock, err := taskLock(directory, prefix, number)
+		if err != nil {
+			unlock()
+			return nil, err
+		}
+		locks = append(locks, lock)
+	}
+	return unlock, nil
 }
 
 func withTasks(run func(context.Context, string, arguments, IO, storeInvocation, *store.Store) error) commandHandler {

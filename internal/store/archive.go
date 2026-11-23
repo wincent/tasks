@@ -70,37 +70,45 @@ func (move *archiveMove) directory() string {
 	return ""
 }
 
-// MoveTask publishes one archive or unarchive commit. A caller archiving a
-// ticket must hold its task-lifetime lock before acquiring this session.
-func (s *Session) MoveTask(prefix Prefix, number int, archive bool) (Task, error) {
+// MoveTasks publishes one archive or unarchive commit for distinct ticket
+// numbers. A caller archiving tickets must hold all their task-lifetime locks
+// before acquiring this session.
+func (s *Session) MoveTasks(prefix Prefix, numbers []int, archive bool) ([]Task, error) {
+	if len(numbers) == 0 {
+		return nil, nil
+	}
 	tasks, err := s.Preview(prefix)
 	if err != nil {
-		return Task{}, err
+		return nil, err
 	}
 	defer tasks.Close()
-	task, err := tasks.Read(number)
-	if err != nil {
-		return Task{}, err
-	}
-	if task.Archived == archive {
-		if archive {
-			return Task{}, fmt.Errorf("%s is already archived", task.ID())
-		}
-		return Task{}, fmt.Errorf("%s is not archived", task.ID())
-	}
 	head, err := tasks.Head()
 	if err != nil {
-		return Task{}, err
+		return nil, err
+	}
+	selected := make([]Task, 0, len(numbers))
+	for _, number := range numbers {
+		task, err := tasks.Read(number)
+		if err != nil {
+			return nil, err
+		}
+		if task.Archived == archive {
+			if archive {
+				return nil, fmt.Errorf("%s is already archived", task.ID())
+			}
+			return nil, fmt.Errorf("%s is not archived", task.ID())
+		}
+		selected = append(selected, task)
 	}
 	verb := "archive"
 	if !archive {
 		verb = "unarchive"
 	}
-	moved, err := s.moveTasks(tasks, head.ID, []Task{task}, archive, "chore: "+verb+" "+task.ID())
-	if err != nil {
-		return Task{}, err
+	target := selected[0].ID()
+	if len(selected) > 1 {
+		target = fmt.Sprintf("%d selected tasks", len(selected))
 	}
-	return moved[0], nil
+	return s.moveTasks(tasks, head.ID, selected, archive, "chore: "+verb+" "+target)
 }
 
 func (s *Session) moveTasks(tasks *Store, head git.ID, selected []Task, archive bool, message string) ([]Task, error) {

@@ -46,7 +46,7 @@ func init() {
 				return err
 			}
 			// Creation has released the metadata lock that launchTask needs.
-			return launchTask(ctx, cwd, arguments{action: "run", prefix: a.prefix, taskNumber: n}, streams)
+			return launchTask(ctx, cwd, arguments{action: "run", prefix: a.prefix, tasks: []taskArgument{{number: n}}}, streams)
 		},
 	})
 }
