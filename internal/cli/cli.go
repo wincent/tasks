@@ -59,6 +59,13 @@ func parse(args []string) (arguments, error) {
 	literal := false
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
+		if spec.passArgsAfter > 0 && len(a.positional) == spec.passArgsAfter {
+			if arg == "--" && !literal {
+				i++
+			}
+			a.positional = append(a.positional, args[i:]...)
+			break
+		}
 		if arg == "--" && !literal {
 			literal = true
 			continue

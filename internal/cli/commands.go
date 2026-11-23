@@ -21,6 +21,7 @@ type commandSpec struct {
 	options         map[string]optionKind
 	numbered        bool // The first positional argument is a task number, if given.
 	numberedAll     bool // All positional arguments are task numbers.
+	passArgsAfter   int  // Pass through the remaining argv after this many positionals.
 	validate        func(arguments) error
 	positionalError string
 	usage           string // Arguments and options, after the command name.

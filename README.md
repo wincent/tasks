@@ -78,6 +78,10 @@ A successful `tasks run` merges into the recorded topic, not the branch you have
 
 Without `--topic` (or with `--topic main`), the task starts from and merges into local `main`. The task prefix always comes from `.tasks.yml` on local `main`.
 
+## Run a command in a task checkout
+
+Run `tasks sh 42 -- git status --short` to inspect task 42's existing checkout. The `--` is optional. If you need a pipeline, redirection, or a shell builtin, invoke a shell explicitly: `tasks sh 42 -- sh -c 'git status --short | wc -l'`.
+
 ## License
 
 [The Unlicense](UNLICENSE.md) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
