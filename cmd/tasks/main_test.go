@@ -75,18 +75,27 @@ func TestExecutableVersionOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(executable, "--version")
-	command.Dir = t.TempDir()
-	command.Env = append(os.Environ(), "TASK_TEST_MAIN_HELPER=1")
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	stdout, err := command.Output()
-	if err != nil || stderr.Len() != 0 {
-		t.Fatalf("tasks --version: %v; stderr: %q", err, stderr.String())
+	cwd := t.TempDir()
+	run := func(arg string) string {
+		command := exec.Command(executable, arg)
+		command.Dir = cwd
+		command.Env = append(os.Environ(), "TASK_TEST_MAIN_HELPER=1")
+		var stderr bytes.Buffer
+		command.Stderr = &stderr
+		stdout, err := command.Output()
+		if err != nil || stderr.Len() != 0 {
+			t.Fatalf("tasks %s: %v; stderr: %q", arg, err, stderr.String())
+		}
+		return string(stdout)
 	}
-	fields := strings.Fields(string(stdout))
-	if len(fields) != 1 || string(stdout) != fields[0]+"\n" {
-		t.Errorf("stdout = %q, want a version followed by a newline", stdout)
+
+	want := run("--version")
+	fields := strings.Fields(want)
+	if len(fields) != 1 || want != fields[0]+"\n" {
+		t.Errorf("tasks --version printed %q, want a version followed by a newline", want)
+	}
+	if got := run("version"); got != want {
+		t.Errorf("tasks version printed %q, want %q", got, want)
 	}
 }
 

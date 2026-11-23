@@ -207,7 +207,7 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 		}
 	}
 	run := commands[a.action].run
-	if a.action == "help" {
+	if a.action == "help" || a.action == "version" {
 		return run(ctx, cwd, a, streams)
 	}
 	repo, err := git.Open(cwd)
