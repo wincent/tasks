@@ -59,4 +59,4 @@ if ! gh api --method GET --paginate "$repo/actions/workflows/ci.yml/runs" \
   fail 'The release commit needs a successful CI run from a push to main in this repository'
 fi
 
-printf 'commit=%s\ntag_object=%s\n' "$commit" "$tag_object" >> "$GITHUB_OUTPUT"
+printf 'commit=%s\ntag=%s\ntag_object=%s\n' "$commit" "$tag" "$tag_object" >> "$GITHUB_OUTPUT"

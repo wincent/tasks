@@ -3,9 +3,12 @@ set -euo pipefail
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
+[[ $# == 4 ]] || fail "Usage: $0 <commit> <tag> <target> <output>"
 commit=$1
-target=$2
-output=$3
+tag=$2
+target=$3
+output=$4
+[[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'Expected a release tag (vMAJOR.MINOR.PATCH)'
 [[ "$(git rev-parse HEAD)" == "$commit" && -z "$(git status --porcelain --untracked-files=all)" ]] || fail 'Expected a clean checkout of the verified release commit'
 
 export CGO_ENABLED=1 GOTOOLCHAIN=local
@@ -18,7 +21,9 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$output"
 go mod download
 go mod verify
-go build -mod=readonly -trimpath -o "$work/tasks" ./cmd/tasks
+go build -mod=readonly -trimpath \
+  -ldflags "-X github.com/wincent/tasks/internal/cli.releaseVersion=$tag" \
+  -o "$work/tasks" ./cmd/tasks
 {
   printf 'Commit: %s\nTarget: %s\nlibgit2 (pkg-config): %s\n' "$commit" "$target" "$libgit2"
   go version
@@ -44,3 +49,8 @@ COPYFILE_DISABLE=1 tar -C "$work" -czf "$archive" tasks BUILD-INFO.txt UNLICENSE
 mkdir "$work/smoke"
 tar -C "$work/smoke" -xzf "$archive"
 "$work/smoke/tasks" --help >/dev/null
+printf '%s\n' "$tag" > "$work/expected-version"
+for arg in version --version; do
+  "$work/smoke/tasks" "$arg" > "$work/actual-version"
+  diff -u "$work/expected-version" "$work/actual-version" || fail "Expected tasks $arg to report $tag"
+done

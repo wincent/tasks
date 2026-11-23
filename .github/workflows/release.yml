@@ -22,6 +22,7 @@ jobs:
       actions: read
     outputs:
       commit: ${{ steps.tag.outputs.commit }}
+      tag: ${{ steps.tag.outputs.tag }}
       tag_object: ${{ steps.tag.outputs.tag_object }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -83,8 +84,9 @@ jobs:
       - name: Package binary
         env:
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag }}
           TARGET: ${{ matrix.target }}
-        run: bin/package-release "$RELEASE_COMMIT" "$TARGET" "$RUNNER_TEMP/packages"
+        run: bin/package-release "$RELEASE_COMMIT" "$RELEASE_TAG" "$TARGET" "$RUNNER_TEMP/packages"
 
       - name: Attest the packaged archive
         uses: actions/attest@v4.2.2

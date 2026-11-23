@@ -17,7 +17,13 @@ func init() {
 	})
 }
 
+// releaseVersion is set by the release packager with -ldflags.
+var releaseVersion string
+
 func buildVersion() string {
+	if releaseVersion != "" {
+		return releaseVersion
+	}
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 		return info.Main.Version
 	}

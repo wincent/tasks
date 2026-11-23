@@ -94,7 +94,7 @@ prepare v1.0.0 "$commit"
 (RELEASE_GPG_PUBLIC_KEYS='' reject 'Set RELEASE_GPG_PUBLIC_KEYS')
 (RELEASE_GPG_PUBLIC_KEYS='not a GPG public key' reject 'Could not import the release GPG public keys')
 "$check"
-diff -u <(printf 'commit=%s\ntag_object=%s\n' "$commit" "$object") "$GITHUB_OUTPUT"
+diff -u <(printf 'commit=%s\ntag=v1.0.0\ntag_object=%s\n' "$commit" "$object") "$GITHUB_OUTPUT"
 prepare v1.0.0 "$commit" "$commit"
 "$check"
 prepare v1.0.0 "$commit" "$outside"
