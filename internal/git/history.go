@@ -2,6 +2,36 @@ package git
 
 /*
 #include <git2.h>
+
+typedef struct {
+	const git_tree_entry *before, *after;
+} history_tree_change;
+
+// Merge two sorted trees without descending into subtrees. Do this in C to
+// avoid crossing the cgo boundary for every unchanged entry.
+static size_t history_tree_changes(history_tree_change *out, size_t limit,
+		const git_tree *before, const git_tree *after) {
+	size_t i = 0, j = 0, n = 0;
+	size_t a = before ? git_tree_entrycount(before) : 0;
+	size_t b = after ? git_tree_entrycount(after) : 0;
+	while (i < a || j < b) {
+		const git_tree_entry *old = i < a ? git_tree_entry_byindex(before, i) : NULL;
+		const git_tree_entry *new = j < b ? git_tree_entry_byindex(after, j) : NULL;
+		int order = !old ? 1 : !new ? -1 : git_tree_entry_cmp(old, new);
+		if (order <= 0) i++;
+		if (order >= 0) j++;
+		if (order == 0 &&
+				git_oid_equal(git_tree_entry_id(old), git_tree_entry_id(new)) &&
+				git_tree_entry_filemode_raw(old) == git_tree_entry_filemode_raw(new))
+			continue;
+		if (n == limit)
+			return limit + 1;
+		out[n].before = order <= 0 ? old : NULL;
+		out[n].after = order >= 0 ? new : NULL;
+		n++;
+	}
+	return n;
+}
 */
 import "C"
 
@@ -70,6 +100,82 @@ func commitTreeID(repo *C.git_repository, id *C.git_oid) (ID, error) {
 	}
 	defer C.git_commit_free(commit)
 	return objectID(C.git_commit_tree_id(commit)), nil
+}
+
+// RootTreeID reads a commit's tree ID without walking its parents. A shallow
+// commit can still be inspected as a candidate parent.
+func (r *Repository) RootTreeID(revision ID) (ID, error) {
+	var tree ID
+	err := r.call("read root tree ID", func(repo *C.git_repository) error {
+		id := nativeID(revision)
+		var err error
+		tree, err = commitTreeID(repo, &id)
+		return err
+	})
+	return tree, err
+}
+
+type TreeChange struct {
+	Before, After TreeEntry
+}
+
+// TreeChanges compares two tree objects by entry, without descending into
+// subtrees. Zero IDs denote absent trees; zero entries denote absent paths.
+// If more than limit entries changed, complete is false and no changes are
+// returned. Equal IDs need no comparison or object read.
+func (r *Repository) TreeChanges(before, after ID, limit int) (changes []TreeChange, complete bool, err error) {
+	if before == after {
+		return nil, true, nil
+	}
+	err = r.call("compare history trees", func(repo *C.git_repository) error {
+		lookup := func(id ID) (*C.git_tree, error) {
+			if id == (ID{}) {
+				return nil, nil
+			}
+			var tree *C.git_tree
+			oid := nativeID(id)
+			if err := nativeError("lookup history tree", C.git_tree_lookup(&tree, repo, &oid)); err != nil {
+				return nil, err
+			}
+			return tree, nil
+		}
+		left, err := lookup(before)
+		if err != nil {
+			return err
+		}
+		defer C.git_tree_free(left)
+		right, err := lookup(after)
+		if err != nil {
+			return err
+		}
+		defer C.git_tree_free(right)
+
+		buf := make([]C.history_tree_change, limit)
+		var out *C.history_tree_change
+		if limit > 0 {
+			out = &buf[0]
+		}
+		n := int(C.history_tree_changes(out, C.size_t(limit), left, right))
+		if n > limit {
+			return nil
+		}
+		entry := func(e *C.git_tree_entry) TreeEntry {
+			if e == nil {
+				return TreeEntry{}
+			}
+			return TreeEntry{
+				Name: C.GoString(C.git_tree_entry_name(e)),
+				ID:   objectID(C.git_tree_entry_id(e)),
+				Mode: uint32(C.git_tree_entry_filemode_raw(e)),
+			}
+		}
+		for _, change := range buf[:n] {
+			changes = append(changes, TreeChange{Before: entry(change.before), After: entry(change.after)})
+		}
+		complete = true
+		return nil
+	})
+	return
 }
 
 type CommitInfo struct {
