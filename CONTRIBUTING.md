@@ -12,7 +12,7 @@ gh extension install github/gh-actions-lock --pin v0.5.0
 
 ## Releasing
 
-Releases use GitHub's [artifact attestations to establish provenance for builds](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations), using the procedure described in [ADR-0001](docs/adrs/0001-processes-for-ensuring-suitability-for-open-source.md).
+Releases use GitHub's [artifact attestations to establish provenance for builds](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations), using the procedure described in [ADR-0002](docs/adrs/0002-provenance-based-releases.md).
 
 The repository settings are:
 
