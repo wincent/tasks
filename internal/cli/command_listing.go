@@ -73,8 +73,9 @@ func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInv
 		return encode(streams.Out, selected)
 	}
 	p := terminalPresentation(streams.Out)
+	heading := ""
 	if listing.recent {
-		fmt.Fprintln(streams.Out, p.paint("Recent tasks:", "1"))
+		heading = p.paint("Recent tasks:", "1")
 		if len(selected) > 10 {
 			selected = selected[len(selected)-10:]
 		}
@@ -82,53 +83,8 @@ func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInv
 			selected[i], selected[j] = selected[j], selected[i]
 		}
 	}
-	markers := map[string]string{}
-	if !tasks.Prospective() {
-		changes, err := tasks.Repository.Status(true)
-		if err != nil {
-			return err
-		}
-		for _, change := range changes {
-			marker := "M"
-			if change.Status&(git.WorktreeNew|git.Ignored) != 0 {
-				marker = "?"
-			}
-			markers[change.Path] = marker
-		}
-	}
-	// IDs and statuses are ASCII. Measure the visible rows before adding
-	// styling, and keep tab separators when the output is redirected.
-	var idWidth, statusWidth int
-	if p.interactive {
-		for _, task := range selected {
-			idWidth = max(idWidth, len(task.ID()))
-			statusWidth = max(statusWidth, len(task.Status))
-		}
-	}
-	for _, task := range selected {
-		id := task.ID()
-		afterID, afterStatus := "\t", "\t"
-		if p.interactive {
-			afterID = strings.Repeat(" ", idWidth-len(id)+2)
-			afterStatus = strings.Repeat(" ", statusWidth-len(task.Status)+2)
-		}
-		suffix := ""
-		if task.Archived {
-			suffix = " (archived)"
-		}
-		if marker := markers[tasks.RelativePath(task)]; marker != "" {
-			suffix += " (" + p.changeMarker(marker) + ")"
-		}
-		fmt.Fprintf(streams.Out, "%s%s%s%s%s%s\n", p.paint(id, "4"), afterID, p.status(task.Status), afterStatus, p.paint(task.Title, "3"), suffix)
-		for _, activity := range task.Activity {
-			suffix := ""
-			if activity.SessionFile != "" {
-				suffix = "; Pi session: " + activity.SessionFile
-			} else if activity.SessionID != nil {
-				suffix = "; Pi session: " + *activity.SessionID
-			}
-			fmt.Fprintf(streams.Out, "  Worktree: %s%s\n", activity.Worktree, suffix)
-		}
+	if err := printTaskListing(p, tasks, selected, heading); err != nil {
+		return err
 	}
 	if len(selected) == 0 && scanErr == nil {
 		if a.query != nil || pattern != "" {
@@ -157,6 +113,67 @@ func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInv
 	if listing.recent {
 		fmt.Fprintln(streams.Out)
 		return help("", streams.Out)
+	}
+	return nil
+}
+
+func printTaskListing(p presentation, tasks *store.Store, selected []store.Task, heading string) error {
+	markers := map[string]string{}
+	if !tasks.Prospective() {
+		changes, err := tasks.Repository.Status(true)
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			marker := "M"
+			if change.Status&(git.WorktreeNew|git.Ignored) != 0 {
+				marker = "?"
+			}
+			markers[change.Path] = marker
+		}
+	}
+	if heading != "" {
+		if _, err := fmt.Fprintln(p.out, heading); err != nil {
+			return err
+		}
+	}
+	// IDs and statuses are ASCII. Measure the visible rows before adding
+	// styling, and keep tab separators when the output is redirected.
+	var idWidth, statusWidth int
+	if p.interactive {
+		for _, task := range selected {
+			idWidth = max(idWidth, len(task.ID()))
+			statusWidth = max(statusWidth, len(task.Status))
+		}
+	}
+	for _, task := range selected {
+		id := task.ID()
+		afterID, afterStatus := "\t", "\t"
+		if p.interactive {
+			afterID = strings.Repeat(" ", idWidth-len(id)+2)
+			afterStatus = strings.Repeat(" ", statusWidth-len(task.Status)+2)
+		}
+		suffix := ""
+		if task.Archived {
+			suffix = " (archived)"
+		}
+		if marker := markers[tasks.RelativePath(task)]; marker != "" {
+			suffix += " (" + p.changeMarker(marker) + ")"
+		}
+		if _, err := fmt.Fprintf(p.out, "%s%s%s%s%s%s\n", p.paint(id, "4"), afterID, p.status(task.Status), afterStatus, p.paint(task.Title, "3"), suffix); err != nil {
+			return err
+		}
+		for _, activity := range task.Activity {
+			suffix := ""
+			if activity.SessionFile != "" {
+				suffix = "; Pi session: " + activity.SessionFile
+			} else if activity.SessionID != nil {
+				suffix = "; Pi session: " + *activity.SessionID
+			}
+			if _, err := fmt.Fprintf(p.out, "  Worktree: %s%s\n", activity.Worktree, suffix); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

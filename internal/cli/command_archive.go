@@ -36,7 +36,7 @@ status, artifacts, checkout and session are unchanged. A running task cannot
 be archived. Use 'tasks unarchive NUMBER' to restore the ticket.
 
 Options:
-  -q, --query EXPR  Preview matching unarchived ticket IDs.
+  -q, --query EXPR  Preview matching unarchived tasks in list format.
 
 Archive only the previewed tickets in a single commit after you type yes in a
 terminal. Without a terminal, print the preview without changing any tickets.
@@ -73,7 +73,6 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		matcher.history = tasks.TaskHistory(head.ID)
 	}
 	var selected []store.Task
-	var ids []string
 	updates := make(map[int]store.TaskUpdate)
 	for _, task := range candidates {
 		match, update, err := matcher.match(ctx, task)
@@ -82,7 +81,6 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		}
 		if match {
 			selected = append(selected, task)
-			ids = append(ids, task.ID())
 			if matcher.history != nil {
 				updates[task.Number] = update
 			}
@@ -96,7 +94,18 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		_, err := fmt.Fprintln(streams.Out, "No unarchived tasks match the query.")
 		return err
 	}
-	if _, err := fmt.Fprintf(streams.Out, "Tasks to archive (%d):\n%s\n", len(ids), strings.Join(ids, "\n")); err != nil {
+	// The query and plan use recorded status; only the preview shows the
+	// effective status, just as list does.
+	for i, task := range selected {
+		info, _, err := describeActivity(invocation.directory, tasks.Prefix, task)
+		if err != nil {
+			return err
+		}
+		selected[i].Status = info.Status
+	}
+	p := terminalPresentation(streams.Out)
+	heading := fmt.Sprintf("Tasks to archive (%d):", len(selected))
+	if err := printTaskListing(p, tasks, selected, heading); err != nil {
 		return err
 	}
 	if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Out) {

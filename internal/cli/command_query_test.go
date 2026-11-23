@@ -130,7 +130,41 @@ func archiveAtPrompt(t *testing.T, root, expr string, onPrompt func(context.Canc
 	return out.String(), err
 }
 
+func TestQueryArchivePreviewMatchesList(t *testing.T) {
+	repo, root := fixture(t)
+	run(t, root, "init")
+	metadata := filepath.Join(root, "tasks")
+	first := filepath.Join(metadata, "EXAMPLE-1 First task.md")
+	commitTaskText(t, repo, first, "Status: active\n")
+	commitTaskText(t, repo, filepath.Join(metadata, "EXAMPLE-10 Second task.md"), "Status: done\n")
+	writeSafetyFile(t, first, "Status: active\n\nLocal edit\n")
+
+	// The recorded status matches the query even though the stopped task
+	// appears as blocked. The preview also shows the local edit marker.
+	const query = "status:active OR status:done"
+	for _, tc := range []struct{ name, term, noColor string }{
+		{"styled", "xterm", ""},
+		{"no color", "xterm", "1"},
+		{"dumb terminal", "dumb", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TERM", tc.term)
+			t.Setenv("NO_COLOR", tc.noColor)
+			rows, diagnostic, err := outputTerminal(t, root, "list", "all", "-q", query)
+			if err != nil || diagnostic != "" || !strings.Contains(rows, "blocked") || !strings.Contains(rows, "EXAMPLE-10") {
+				t.Fatalf("list = %q, %q, %v", rows, diagnostic, err)
+			}
+			out, diagnostic, err := outputTerminal(t, root, "archive", "-q", query)
+			want := "Tasks to archive (2):\n" + rows + "No changes made; confirmation requires a terminal.\n"
+			if err != nil || diagnostic != "" || out != want {
+				t.Fatalf("archive = %q, %q, %v; want %q", out, diagnostic, err, want)
+			}
+		})
+	}
+}
+
 func TestQueryArchivePreviewAndApply(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	for _, mode := range []string{"noninteractive", "empty", "decline", "cancel", "new match", "changed", "dirty", "busy", "incomplete", "missing", "archived"} {
 		t.Run(mode, func(t *testing.T) {
 			repo, root := fixture(t)
@@ -210,8 +244,20 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 					}
 				})
 			}
-			if checkPreview && (!strings.HasPrefix(out, "Tasks to archive (2):\nEXAMPLE-1\nEXAMPLE-2\n") || strings.Contains(out, "EXAMPLE-3") || strings.Contains(out, "EXAMPLE-4")) {
-				t.Fatalf("bad preview: %q %v", out, err)
+			if checkPreview {
+				rows := "EXAMPLE-1  merged  First\nEXAMPLE-2  merged  Second\n"
+				if mode == "noninteractive" {
+					rows = "EXAMPLE-1\tmerged\tFirst\nEXAMPLE-2\tmerged\tSecond\n"
+				}
+				want := "Tasks to archive (2):\n" + rows
+				if mode == "noninteractive" {
+					want += "No changes made; confirmation requires a terminal.\n"
+				} else {
+					want += "Archive these tasks? Type yes to confirm: "
+				}
+				if !strings.HasPrefix(out, want) || strings.Contains(out, "EXAMPLE-3") || strings.Contains(out, "EXAMPLE-4") {
+					t.Fatalf("bad preview: %q %v; want prefix %q", out, err, want)
+				}
 			}
 			switch mode {
 			case "changed", "dirty", "busy", "archived":
