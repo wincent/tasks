@@ -60,21 +60,6 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		return err
 	}
 	matches := func(n int) bool { return n != 0 && (a.number() == 0 || a.number() == n) }
-	// Check destinations across all tickets, even for numbered cleanup.
-	var protected map[string]string
-	var protectErr error
-	if len(refs) != 0 {
-		protected, protectErr = cleanupProtectedTopics(repo, a.prefix)
-	}
-	checkTopicUse := func(ref string) error {
-		if protectErr != nil {
-			return fmt.Errorf("cannot verify task destinations: %w", protectErr)
-		}
-		if id := protected[strings.ToLower(ref)]; id != "" {
-			return fmt.Errorf("branch is the recorded destination for %s; retarget that task first", id)
-		}
-		return nil
-	}
 	attempt := func(n int, label string, clean func() error) bool {
 		err := func() error {
 			if apply {
@@ -113,9 +98,6 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, entry.Head.Branch)
 		if !matches(n) || entry.Name == "" || !attempt(n, entry.Paths.WorkDir, func() error {
-			if err := checkTopicUse(entry.Head.Branch); err != nil {
-				return err
-			}
 			target, err := cleanupDestination(repo, a.prefix, n)
 			if err != nil {
 				return err
@@ -138,14 +120,11 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, name)
 		attempt(n, "branch "+strings.TrimPrefix(name, "refs/heads/"), func() error {
-			if err := checkTopicUse(name); err != nil {
-				return err
-			}
 			target, err := cleanupDestination(repo, a.prefix, n)
 			if err != nil {
 				return err
 			}
-			return cleanMergedBranch(repo, name, refs[name], retained, target, apply)
+			return cleanMergedBranch(repo, name, refs[name], retained, a.prefix, target, apply)
 		})
 	}
 	return nil
@@ -168,21 +147,26 @@ func inspectCleanupStore(repo *git.Repository, prefix store.Prefix) (*store.Stor
 	return nil, nil
 }
 
-func cleanupProtectedTopics(repo *git.Repository, prefix store.Prefix) (map[string]string, error) {
+// Check records across all tickets, even for numbered or automatic cleanup.
+func requireUnrecordedDestination(repo *git.Repository, prefix store.Prefix, ref string) error {
 	tasks, err := inspectCleanupStore(repo, prefix)
-	if err != nil || tasks == nil {
-		return nil, err
+	if err != nil {
+		return fmt.Errorf("cannot verify task destinations: %w", err)
+	}
+	if tasks == nil {
+		return nil // Intentional no-store fallback.
 	}
 	defer tasks.Close()
 	topics, err := tasks.RecordedTopics()
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("cannot verify task destinations: %w", err)
 	}
-	protected := make(map[string]string)
 	for topic, id := range topics {
-		protected[strings.ToLower(destination(topic).ref())] = id
+		if strings.EqualFold(destination(topic).ref(), ref) {
+			return fmt.Errorf("branch is the recorded destination for %s; retarget that task first", id)
+		}
 	}
-	return protected, nil
+	return nil
 }
 
 func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (destination, error) {
@@ -292,6 +276,9 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	}
 	leasePath := checkoutUseLockPath(stateDirectory(entry.Paths), prefix, n)
 	if !apply {
+		if err := requireUnrecordedDestination(repo, prefix, entry.Head.Branch); err != nil {
+			return err
+		}
 		probe, err := state.ProbeExclusiveLock(leasePath)
 		if err != nil {
 			return err
@@ -327,6 +314,9 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	defer refs.Close()
+	if err := requireUnrecordedDestination(repo, prefix, entry.Head.Branch); err != nil {
+		return err
+	}
 	return repo.RemoveWorktree(entry.Name, entry.Paths, entry.Head, true)
 }
 

@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/store"
 )
 
 // The caller holds the task lock in apply mode.
-func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, dest destination, apply bool) error {
+func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, dest destination, apply bool) error {
 	if ref.Symbolic != "" {
 		return errors.New("symbolic branch refs are protected")
 	}
@@ -27,6 +28,9 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 		return fmt.Errorf("branch is not merged into local %s", dest)
 	}
 	if !apply {
+		if err := requireUnrecordedDestination(repo, prefix, name); err != nil {
+			return err
+		}
 		return checkBranchReservations(retained, name)
 	}
 
@@ -37,6 +41,9 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 		return err
 	}
 	defer tx.Close()
+	if err := requireUnrecordedDestination(repo, prefix, name); err != nil {
+		return err
+	}
 	fresh, err := checkouts(repo)
 	if err != nil {
 		return err

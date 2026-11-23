@@ -118,6 +118,11 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 	systemGit(t, metadata, "add", "--", filepath.Base(path))
 	systemGit(t, metadata, "commit", "-m", "record legacy topic")
 	run(t, root, "archive", "1")
+	dir := filepath.Join("archive", "0")
+	legacy := filepath.Join(dir, "OLD-1 Child.md")
+	systemGit(t, metadata, "mv", filepath.Join(dir, filepath.Base(path)), legacy)
+	systemGit(t, metadata, "commit", "-m", "retain an old implementation prefix")
+	path = filepath.Join(metadata, legacy)
 
 	systemGit(t, root, "switch", "-c", child)
 	childTip := commitImplementation(t, root, "child.txt", "child changes\n")
@@ -135,19 +140,39 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 	}
 	worktree := filepath.Join(directory, "parent")
 	systemGit(t, root, "worktree", "add", worktree, parent)
-	for _, args := range [][]string{{"cleanup", "2"}, {"cleanup", "--apply"}} {
+	ignored := filepath.Join(worktree, "ignored.txt")
+	systemGit(t, worktree, "config", "core.excludesFile", filepath.Join(directory, "excludes"))
+	writeSafetyFile(t, filepath.Join(directory, "excludes"), "ignored.txt\n")
+	writeSafetyFile(t, ignored, "preserve me\n")
+	protect := func(args ...string) {
+		t.Helper()
 		out := run(t, root, args...)
 		for _, label := range []string{worktree, "branch " + parent} {
-			if !strings.Contains(out, "Keep "+label+": branch is the recorded destination for EXAMPLE-1") {
+			if !strings.Contains(out, "Keep "+label+": branch is the recorded destination for OLD-1") {
 				t.Fatalf("%v did not protect %s:\n%s", args, label, out)
 			}
 		}
+		if got := string(uiBytes(t, ignored)); got != "preserve me\n" {
+			t.Fatal(got)
+		}
 	}
+	protect("cleanup", "2")
+	writeSafetyFile(t, path, strings.Replace(string(uiBytes(t, path)), "Topic: "+parent+"\n", "", 1))
+	protect("cleanup", "2", "--apply")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	protect("cleanup", "2", "--apply")
 	if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != parentTip {
 		t.Fatalf("parent checkout moved: %s", got)
 	}
 	if got := systemGit(t, root, "rev-parse", child); got != childTip {
 		t.Fatalf("child branch moved: %s", got)
+	}
+	// Once no checkout reserves the branch, the committed topic still does.
+	systemGit(t, worktree, "switch", "--detach")
+	if out := run(t, root, "cleanup", "2", "--apply"); !strings.Contains(out, "Keep branch "+parent+": branch is the recorded destination for OLD-1") {
+		t.Fatal(out)
 	}
 }
 
@@ -275,7 +300,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 	commitImplementation(t, root, "main.txt", "another merged commit\n")
 	systemGit(t, root, "branch", "-f", "task/example-7", "main")
 	var changed *git.ChangedError
-	if err := cleanMergedBranch(repo, name, ref, nil, "main", true); !errors.As(err, &changed) {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", true); !errors.As(err, &changed) {
 		t.Fatalf("expected changed ref error, got %v", err)
 	}
 	ref, err = repo.Reference(name)
@@ -283,7 +308,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemGit(t, root, "worktree", "add", filepath.Join(t.TempDir(), "new"), "task/example-7")
-	if err := cleanMergedBranch(repo, name, ref, nil, "main", true); err == nil || !strings.Contains(err.Error(), "still checked out") {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", true); err == nil || !strings.Contains(err.Error(), "still checked out") {
 		t.Fatalf("expected refusal with new checkout, got %v", err)
 	}
 	if actual, err := repo.Reference(name); err != nil || actual != ref {

@@ -203,7 +203,7 @@ func (store *Store) read(number int, includeArchived bool) (Task, error) {
 	}
 	entry := selected[0]
 	path := filepath.Join(store.Path, entry.name)
-	data, err := store.readTaskEntry(entry, true)
+	data, err := store.readTaskEntry(entry, store.prospective, true)
 	if err != nil {
 		return Task{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -308,7 +308,7 @@ func (store *Store) Scan(includeArchived bool) ([]Task, error) {
 			failures = append(failures, fmt.Errorf("%s: invalid task title", path))
 			continue
 		}
-		data, err := store.readTaskEntry(entry, false)
+		data, err := store.readTaskEntry(entry, store.prospective, false)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", path, err))
 			continue
@@ -393,10 +393,10 @@ func (store *Store) entries(dir string, revision git.ID) ([]taskEntry, error) {
 	return result, nil
 }
 
-func (store *Store) readTaskEntry(entry taskEntry, smudge bool) ([]byte, error) {
+func (store *Store) readTaskEntry(entry taskEntry, committed, smudge bool) ([]byte, error) {
 	var data []byte
 	var err error
-	if !store.prospective {
+	if !committed {
 		data, err = regularContents(filepath.Join(store.Path, entry.name))
 	} else if entry.tree.Mode != 0100644 && entry.tree.Mode != 0100755 {
 		return nil, errors.New("task must be a regular file")

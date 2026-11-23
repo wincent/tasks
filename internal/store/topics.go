@@ -41,7 +41,7 @@ func (store *Store) RecordedTopics() (map[string]string, error) {
 			if !inTicketLocation(entry.name, number) {
 				continue
 			}
-			content, err := store.readTaskEntry(entry, false)
+			content, err := store.readTaskEntry(entry, revision != (git.ID{}), false)
 			if err != nil {
 				return nil, fmt.Errorf("read topic in %s: %w", entry.name, err)
 			}
