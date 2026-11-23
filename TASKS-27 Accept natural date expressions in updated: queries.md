@@ -1,6 +1,6 @@
 # TASKS-27: Accept natural date expressions in updated: queries
 
-Status: open
+Status: active
 
 ## Description
 
