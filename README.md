@@ -61,6 +61,40 @@ git config --local --add remote.origin.push refs/heads/main:refs/heads/main
 git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 ```
 
+## Work on a topic branch
+
+`tasks` is optimized for working directly on the `main` branch, but it is possible (albeit not super convenient, yet[^yet]) to use it when working on a topic branch.
+
+[^yet]: A future version will provide some kind of affordance for working more ergonomically on topic branches.
+
+Checking out a topic branch does not change the defaults (`tasks` reads `.tasks.yml` from local `main`, starts fresh task branches from local `main`, and merges into local `main`). If a task should land on a topic branch instead, you must use `tasks` to track and run the work, and use Git to integrate it. Avoid `tasks go`, plain `tasks run NUMBER`, and `tasks merge NUMBER` for that workflow.
+
+For example, suppose `DEMO-42` is an existing task with no checkout yet and it needs commits from a local branch named `topic`. From the root of a standard clone, create a linked worktree for the task starting at `topic`:
+
+```sh
+git worktree add -b task/demo-42 .agent-worktrees/demo-42 topic
+```
+
+Use `task/<lowercase-prefix>-<number>` for the branch name so `tasks` recognizes it. Keep the linked worktree inside the repository container so Pi can access it. For a bare repository with sibling worktrees, place the task worktree alongside the others and pass that path to `--worktree`.
+
+Run the task without merging. Keep `--no-merge` on any subsequent `tasks run` for this task.
+
+```sh
+tasks run 42 --no-merge --worktree .agent-worktrees/demo-42
+```
+
+For an interactive session, use `tasks pi 42 --worktree .agent-worktrees/demo-42` instead (`tasks pi` never merges).
+
+After reviewing the committed work, merge the task branch from a clean checkout of `topic` and close the task with a note. If `topic` is already checked out in another worktree, run the merge there instead of switching branches.
+
+```sh
+git switch topic
+git merge task/demo-42
+tasks close 42 --body "Integrated into topic."
+```
+
+If `tasks` created the checkout, use `tasks worktree 42` to find it and `git branch --show-current` there to get its branch name. `tasks close` records the outcome without merging or removing anything. `tasks cleanup` only removes task branches and checkouts whose tips are reachable from local `main`. If the work landed only on `topic` or was squash-merged, verify it was integrated before removing the checkout and branch with Git.
+
 ## License
 
 [The Unlicense](UNLICENSE.md) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
