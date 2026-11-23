@@ -27,12 +27,19 @@ func validateGo(a arguments) error {
 func init() {
 	commands.register(commandSpec{
 		name: "go", min: 1, max: 1,
-		usage:   "TITLE",
+		options: map[string]optionKind{"--topic": valueOption},
+		usage:   "TITLE " + topicUsage,
 		summary: "Create and run a task from its title alone.",
 		details: "Quote a title that contains spaces. Create a task with \"None provided.\" as its\n" +
-			"description, then run Pi non-interactively and merge successful work into local\n" +
-			"main. Pi must be on PATH. To run an existing task, use `tasks run NUMBER`.",
-		validate: validateGo,
+			"description, then run Pi non-interactively and merge successful work into the\n" +
+			"recorded topic (local main by default). Pi must be on PATH.\n" +
+			"To run an existing task, use `tasks run NUMBER`.\n\nOptions:\n" + topicHelp,
+		validate: func(a arguments) error {
+			if err := validateGo(a); err != nil {
+				return err
+			}
+			return validateTopicOption(a)
+		},
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			n, err := createTask(ctx, cwd, a, streams, false)
 			if err != nil {

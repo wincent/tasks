@@ -11,14 +11,17 @@ import (
 )
 
 func init() {
+	options := bodyOptions()
+	options["--topic"] = valueOption
 	commands.register(commandSpec{
-		name: "create", min: 1, max: 1, options: bodyOptions(),
-		usage:   "TITLE " + bodyUsage,
-		summary: "Create a task.",
+		name: "create", min: 1, max: 1, options: options,
+		usage:    "TITLE " + topicUsage + " " + bodyUsage,
+		validate: validateTopicOption,
+		summary:  "Create a task.",
 		details: `Quote a title that contains spaces. On a terminal, print a creation
 confirmation; when stdout is redirected, print the task's file path.
 
-` + bodyHelp,
+` + "Options:\n" + topicHelp + "\n" + bodyOptionsHelp,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			_, err := createTask(ctx, cwd, a, streams, true)
 			return err
@@ -46,7 +49,14 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 		if !withBody {
 			description = "None provided."
 		}
-		content := fmt.Sprintf("# %s: %s\n\nStatus: open\n\n## Description\n\n%s\n", id, title, description)
+		var topicLine string
+		if topic := a.value("--topic"); topic != "" && topic != "main" {
+			if err := destination(topic).validate(a.prefix, n); err != nil {
+				return err
+			}
+			topicLine = "\nTopic: " + topic
+		}
+		content := fmt.Sprintf("# %s: %s\n\nStatus: open%s\n\n## Description\n\n%s\n", id, title, topicLine, description)
 		path, err := writeTask(session, a.prefix, name, content, "create "+id)
 		if err != nil {
 			return err

@@ -16,8 +16,6 @@ import (
 	"github.com/wincent/tasks/internal/store"
 )
 
-const mainRef = "refs/heads/main"
-
 func resolvePath(path string) (string, error) {
 	p, err := filepath.Abs(path)
 	if err != nil {
@@ -209,7 +207,7 @@ func printTaskWorktree(repo *git.Repository, cwd, directory string, prefix store
 	return err
 }
 
-func mainCheckout(repo *git.Repository) (*checkout, error) {
+func destinationCheckout(repo *git.Repository, target destination) (*checkout, error) {
 	entries, err := checkouts(repo)
 	if err != nil {
 		return nil, err
@@ -217,11 +215,11 @@ func mainCheckout(repo *git.Repository) (*checkout, error) {
 	var result *checkout
 	for _, entry := range entries {
 		if entry.Invalid != "" {
-			return nil, fmt.Errorf("cannot locate main with invalid checkout %s; inspect `git worktree list`", entry.Paths.WorkDir)
+			return nil, fmt.Errorf("cannot locate %s with invalid checkout %s; inspect `git worktree list`", target, entry.Paths.WorkDir)
 		}
-		if entry.Head.Branch == mainRef {
+		if entry.Head.Branch == target.ref() {
 			if result != nil {
-				return nil, errors.New("main is checked out in multiple worktrees; resolve this before merging")
+				return nil, fmt.Errorf("%s is checked out in multiple worktrees; resolve this before merging", target)
 			}
 			copy := entry
 			result = &copy

@@ -63,37 +63,20 @@ git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 
 ## Work on a topic branch
 
-`tasks` is optimized for working directly on the `main` branch, but it is possible (albeit not super convenient, yet[^yet]) to use it when working on a topic branch.
-
-[^yet]: A future version will provide some kind of affordance for working more ergonomically on topic branches.
-
-Checking out a topic branch does not change the defaults (`tasks` reads `.tasks.yml` from local `main`, starts fresh task branches from local `main`, and merges into local `main`). If a task should land on a topic branch instead, you must use `tasks` to track and run the work, and use Git to integrate it. Avoid `tasks go`, plain `tasks run NUMBER`, and `tasks merge NUMBER` for that workflow.
-
-For example, suppose `DEMO-42` is an existing task with no checkout yet and it needs commits from a local branch named `topic`. From the root of a standard clone, create a linked worktree for the task starting at `topic`:
+Use `--topic BRANCH` when filing a task that should land somewhere other than local `main`:
 
 ```sh
-git worktree add -b task/demo-42 .agent-worktrees/demo-42 topic
+tasks create "Add export support" --topic feature/export --body "Support CSV exports"
+tasks run 42
 ```
 
-Use `task/<lowercase-prefix>-<number>` for the branch name so `tasks` recognizes it. Keep the linked worktree inside the repository container so Pi can access it. For a bare repository with sibling worktrees, place the task worktree alongside the others and pass that path to `--worktree`.
+Replace `42` with the new task's number. Or use `tasks go "Add export support" --topic feature/export` to file and run a task in one step.
 
-Run the task without merging. Keep `--no-merge` on any subsequent `tasks run` for this task.
+The task records `Topic: feature/export`. Filing alone does not create the topic or a task checkout. On the first `tasks run` or `tasks pi`, a fresh task checkout starts from the existing local topic branch. If the topic does not exist yet, it is created from the current local `main` without switching your checkout. If the topic disappears after work has started, restore it before resuming or merging.
 
-```sh
-tasks run 42 --no-merge --worktree .agent-worktrees/demo-42
-```
+A successful `tasks run` merges into the recorded topic, not the branch you have checked out. To review first, use `tasks run 42 --no-merge` or `tasks pi 42`, then `tasks merge 42` when ready. `tasks cleanup` checks whether each task branch's tip is reachable from its recorded destination and keeps the work if the destination is missing.
 
-For an interactive session, use `tasks pi 42 --worktree .agent-worktrees/demo-42` instead (`tasks pi` never merges).
-
-After reviewing the committed work, merge the task branch from a clean checkout of `topic` and close the task with a note. If `topic` is already checked out in another worktree, run the merge there instead of switching branches.
-
-```sh
-git switch topic
-git merge task/demo-42
-tasks close 42 --body "Integrated into topic."
-```
-
-If `tasks` created the checkout, use `tasks worktree 42` to find it and `git branch --show-current` there to get its branch name. `tasks close` records the outcome without merging or removing anything. `tasks cleanup` only removes task branches and checkouts whose tips are reachable from local `main`. If the work landed only on `topic` or was squash-merged, verify it was integrated before removing the checkout and branch with Git.
+Without `--topic` (or with `--topic main`), the task starts from and merges into local `main`. The task prefix always comes from `.tasks.yml` on local `main`.
 
 ## License
 

@@ -9,6 +9,7 @@ func init() {
 		usage:   "NUMBER [--worktree PATH]",
 		summary: "Open a task in interactive Pi without merging.",
 		details: "Requires a terminal and Pi on PATH. Resumes the saved session if available.\n" +
+			"Fresh checkouts start from the recorded topic (local main by default).\n" +
 			"When ready, use `tasks merge NUMBER` to merge committed work.\n\n" +
 			"Options:\n" + worktreeHelp,
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {

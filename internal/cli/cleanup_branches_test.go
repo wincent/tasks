@@ -10,7 +10,7 @@ import (
 	"github.com/wincent/tasks/internal/git"
 )
 
-func TestCleanupBranchesUsesLocalMainNotTaskRecords(t *testing.T) {
+func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	repo, root := fixture(t)
 	commitMainConfig(t, repo, "prefix: DEV\n")
 	base := systemGit(t, root, "rev-parse", "main")
@@ -122,7 +122,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 	commitImplementation(t, root, "main.txt", "another merged commit\n")
 	systemGit(t, root, "branch", "-f", "task/example-7", "main")
 	var changed *git.ChangedError
-	if err := cleanMergedBranch(repo, name, ref, nil, true); !errors.As(err, &changed) {
+	if err := cleanMergedBranch(repo, name, ref, nil, "main", true); !errors.As(err, &changed) {
 		t.Fatalf("expected changed ref error, got %v", err)
 	}
 	ref, err = repo.Reference(name)
@@ -130,7 +130,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemGit(t, root, "worktree", "add", filepath.Join(t.TempDir(), "new"), "task/example-7")
-	if err := cleanMergedBranch(repo, name, ref, nil, true); err == nil || !strings.Contains(err.Error(), "still checked out") {
+	if err := cleanMergedBranch(repo, name, ref, nil, "main", true); err == nil || !strings.Contains(err.Error(), "still checked out") {
 		t.Fatalf("expected refusal with new checkout, got %v", err)
 	}
 	if actual, err := repo.Reference(name); err != nil || actual != ref {

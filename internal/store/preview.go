@@ -143,6 +143,9 @@ func (store *Store) readProspective(number int) (Task, error) {
 				selected = append(selected, entry)
 			}
 		}
+		if len(selected) == 0 {
+			return fmt.Errorf("expected one %s task in the shared store; found 0: %w", store.Prefix.ID(number), ErrTaskNotFound)
+		}
 		if len(selected) != 1 {
 			return fmt.Errorf("expected one %s task in the shared store; found %d", store.Prefix.ID(number), len(selected))
 		}

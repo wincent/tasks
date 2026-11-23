@@ -59,7 +59,7 @@ func statusTask(directory string, tasks *store.Store, a arguments, streams IO) e
 	}
 	p := terminalPresentation(streams.Out)
 	if result.Merging {
-		fmt.Fprintln(streams.Out, p.label("Merging into local main.", "🔄", "1;36"))
+		fmt.Fprintln(streams.Out, p.label("A local merge operation is in progress.", "🔄", "1;36"))
 	}
 	for _, task := range result.Tasks {
 		fmt.Fprintf(streams.Out, "%s  %s  %s\n", p.paint(tasks.Prefix.ID(task.Number), "4"), p.status(task.Status), p.paint(task.Title, "3"))

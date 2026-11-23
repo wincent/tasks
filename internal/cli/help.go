@@ -8,12 +8,18 @@ import (
 
 const bodyUsage = "[--body TEXT | --body-file FILE]"
 
-const bodyHelp = `Options:
-  --body TEXT       Use the given text.
+const bodyHelp = "Options:\n" + bodyOptionsHelp
+
+const bodyOptionsHelp = `  --body TEXT       Use the given text.
   --body-file FILE  Read text from FILE, or use - to read from standard input.
 
 Without either option, open your editor in an interactive terminal.
 Leave the draft empty to cancel.`
+
+const topicUsage = "[--topic BRANCH]"
+
+const topicHelp = "  --topic BRANCH    Record a local branch to start from and merge into.\n" +
+	"                    If missing, create it from local main on first launch."
 
 const worktreeHelp = "  --worktree PATH  Select an existing checkout for this task."
 
@@ -47,7 +53,8 @@ func help(subject string, out io.Writer) error {
 			"For a quick task, use `tasks go \"Task title\"` to create and run it.\n"+
 			"To write a description first, use `tasks create \"Task title\"`, then\n"+
 			"`tasks run NUMBER`. To review before merging, use `tasks run NUMBER --no-merge`,\n"+
-			"then use `tasks merge NUMBER` when ready.\n\n"+
+			"then use `tasks merge NUMBER` when ready.\n"+
+			"Use `--topic BRANCH` with create or go to target a branch other than main.\n\n"+
 			"Options:\n"+
 			"  -h, --help  Show this help.\n"+
 			"  --version   Print the version and exit.\n\n"+

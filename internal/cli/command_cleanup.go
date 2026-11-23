@@ -21,8 +21,8 @@ func init() {
 		usage:   "[NUMBER] [--apply]",
 		summary: "Preview removal of merged task checkouts and branches.",
 		details: `Omit NUMBER to consider all tasks. Run from outside any checkout you want
-to remove. Branch tips must be in local main, and branches still in use are
-kept. Saved sessions are kept.
+to remove. Branch tips must be in the recorded topic (local main by default).
+Missing topics and branches still in use are kept. Saved sessions are kept.
 
 Options:
   --apply  Remove eligible branches and checkouts (including ignored files).`,
@@ -95,7 +95,11 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, entry.Head.Branch)
 		if !matches(n) || entry.Name == "" || !attempt(n, entry.Paths.WorkDir, func() error {
-			return cleanMerged(repo, entry, cwd, a.prefix, apply)
+			target, err := cleanupDestination(repo, a.prefix, n)
+			if err != nil {
+				return err
+			}
+			return cleanMerged(repo, entry, cwd, a.prefix, target, apply)
 		}) {
 			retained = append(retained, entry)
 		}
@@ -111,16 +115,41 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		attempt(taskBranchNumber(a.prefix, name), "branch "+strings.TrimPrefix(name, "refs/heads/"), func() error {
-			return cleanMergedBranch(repo, name, refs[name], retained, apply)
+		n := taskBranchNumber(a.prefix, name)
+		attempt(n, "branch "+strings.TrimPrefix(name, "refs/heads/"), func() error {
+			target, err := cleanupDestination(repo, a.prefix, n)
+			if err != nil {
+				return err
+			}
+			return cleanMergedBranch(repo, name, refs[name], retained, target, apply)
 		})
 	}
 	return nil
 }
 
+func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (destination, error) {
+	tasks, err := store.Inspect(repo, prefix)
+	if err != nil {
+		return "", err
+	}
+	defer tasks.Close()
+	task, err := tasks.Read(n)
+	if errors.Is(err, store.ErrTaskNotFound) {
+		// Keep supporting legacy branches with no task record.
+		return "main", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := tasks.RequireClean(filepath.Base(task.Path)); err != nil {
+		return "", err
+	}
+	return taskDestination(prefix, n, task.Content)
+}
+
 // Eligibility uses actual Git history, not the status written in Markdown.
 // The caller holds the task lock whenever it requests removal.
-func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, apply bool) error {
+func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, dest destination, apply bool) error {
 	if entry.Name == "" || entry.Locked || entry.Invalid != "" || taskBranchNumber(prefix, entry.Head.Branch) == 0 {
 		return errors.New("not an unlocked linked task checkout")
 	}
@@ -135,7 +164,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	if inside(caller, target) {
 		return errors.New("current directory is inside this checkout; run `tasks cleanup` elsewhere")
 	}
-	base, err := repo.ResolveCommit(mainRef)
+	base, err := dest.tip(repo)
 	if err != nil {
 		return err
 	}
@@ -144,7 +173,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	if !ok {
-		return errors.New("branch is not merged into local main")
+		return fmt.Errorf("branch is not merged into local %s", dest)
 	}
 	present, err := openCheckout(entry)
 	if err != nil {
@@ -203,7 +232,7 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return nil
 	}
 
-	// Hold main steady through removal. RemoveWorktree checks the exact
+	// Serialize removal with tasks merges. RemoveWorktree checks the exact
 	// registration, HEAD and cleanliness again before pruning.
 	directory, err := operationState(repo)
 	if err != nil {
@@ -214,16 +243,16 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	defer lock.Close()
-	main, err := repo.ResolveCommit(mainRef)
+	base, err = dest.tip(repo)
 	if err != nil {
 		return err
 	}
-	ok, err = repo.IsAncestor(entry.Head.ID, main)
+	ok, err = repo.IsAncestor(entry.Head.ID, base)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return errors.New("local main changed; branch is no longer merged")
+		return fmt.Errorf("local %s changed; branch is no longer merged", dest)
 	}
 	return repo.RemoveWorktree(entry.Name, entry.Paths, entry.Head, true)
 }

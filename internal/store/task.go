@@ -18,6 +18,9 @@ var ticketName = regexp.MustCompile(`^([A-Z][A-Z0-9]*)-([1-9][0-9]*) (.+)\.md$`)
 var ticketNumber = regexp.MustCompile(`^(?:([A-Za-z][A-Za-z0-9]*)-)?([1-9][0-9]*)$`)
 var statusLine = regexp.MustCompile(`(?m)^Status: (.*)$`)
 
+// ErrTaskNotFound means no task record exists for the requested number.
+var ErrTaskNotFound = errors.New("task not found")
+
 // ParseNumber validates the syntax; the CLI checks the optional prefix against
 // the repository setting before dispatching the command.
 func ParseNumber(value string) (Prefix, int, error) {
@@ -94,7 +97,37 @@ func WithStatus(content, status string) (string, error) {
 	return statusLine.ReplaceAllString(header, "Status: "+status) + body, nil
 }
 
-// Task status is metadata in the preamble, not a restriction on Markdown notes.
+// ValidTopic accepts local branch names other than the shared metadata branch.
+func ValidTopic(name string) bool {
+	return utf8.ValidString(name) && !strings.HasPrefix(name, "refs/") && !strings.EqualFold("refs/heads/"+name, Branch) && git.ValidBranchName(name)
+}
+
+// Topic reads the optional destination from the task preamble. An empty result
+// means the default, main.
+func Topic(content string) (string, error) {
+	if hasMergeConflict(content) {
+		return "", errors.New("unresolved merge conflict markers; resolve the task record first")
+	}
+	header, _ := taskHeader(content)
+	var topic string
+	for line := range strings.SplitSeq(header, "\n") {
+		value, found := strings.CutPrefix(line, "Topic:")
+		if !found {
+			continue
+		}
+		name, spaced := strings.CutPrefix(value, " ")
+		if topic != "" || !spaced || !ValidTopic(name) {
+			return "", errors.New("expected at most one Topic: BRANCH line naming a local implementation branch")
+		}
+		topic = name
+	}
+	if topic == "main" {
+		return "", nil
+	}
+	return topic, nil
+}
+
+// Task metadata is in the preamble, not in Markdown notes.
 func taskHeader(content string) (string, string) {
 	if i := strings.Index(content, "\n## "); i >= 0 {
 		return content[:i], content[i:]
@@ -140,6 +173,24 @@ func (store *Store) Read(number int) (Task, error) {
 		if n == number {
 			paths = append(paths, filepath.Join(store.Path, entry.Name()))
 		}
+	}
+	if len(paths) == 0 {
+		// A locally deleted record must not be mistaken for a task that has no
+		// record, especially when cleanup would default its destination to main.
+		head, err := store.Head()
+		if err != nil {
+			return Task{}, err
+		}
+		entries, err := store.Repository.Tree(head.ID)
+		if err != nil {
+			return Task{}, err
+		}
+		for _, entry := range entries {
+			if match := store.matchTicket(entry.Name); match != nil && match[2] == strconv.Itoa(number) {
+				return Task{}, fmt.Errorf("%s is missing from the shared checkout; restore it before retrying", entry.Name)
+			}
+		}
+		return Task{}, fmt.Errorf("expected one %s task in the shared store; found 0: %w", store.Prefix.ID(number), ErrTaskNotFound)
 	}
 	if len(paths) != 1 {
 		return Task{}, fmt.Errorf("expected one %s task in the shared store; found %d", store.Prefix.ID(number), len(paths))
@@ -232,6 +283,10 @@ func (store *Store) Scan() ([]Task, error) {
 		}
 		status, err := Status(string(data))
 		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", path, err))
+			continue
+		}
+		if _, err := Topic(string(data)); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", path, err))
 			continue
 		}

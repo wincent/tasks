@@ -10,33 +10,29 @@ import (
 	"github.com/wincent/tasks/internal/git"
 )
 
-// The caller holds the task lock in apply mode. A branch with no checkout
-// needs only Git history and an unused ref, not a task record or session.
-func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, apply bool) error {
+// The caller holds the task lock in apply mode.
+func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, dest destination, apply bool) error {
 	if ref.Symbolic != "" {
 		return errors.New("symbolic branch refs are protected")
 	}
-	main, err := repo.Reference(mainRef)
+	tip, err := dest.tip(repo)
 	if err != nil {
 		return err
 	}
-	if main.Symbolic != "" {
-		return errors.New("local main is a symbolic ref")
-	}
-	merged, err := repo.IsAncestor(ref.ID, main.ID)
+	merged, err := repo.IsAncestor(ref.ID, tip)
 	if err != nil {
 		return err
 	}
 	if !merged {
-		return errors.New("branch is not merged into local main")
+		return fmt.Errorf("branch is not merged into local %s", dest)
 	}
 	if !apply {
 		return checkBranchReservations(retained, name)
 	}
 
 	// Verify both tips under ref locks: neither the branch gaining commits nor
-	// main moving away from them may turn the ancestry check into a deletion.
-	tx, err := repo.Prepare(name, git.ID{}, map[string]git.ID{name: ref.ID, mainRef: main.ID}, git.Signature{}, "")
+	// the destination moving may turn the ancestry check into a deletion.
+	tx, err := repo.Prepare(name, git.ID{}, map[string]git.ID{name: ref.ID, dest.ref(): tip}, git.Signature{}, "")
 	if err != nil {
 		return err
 	}

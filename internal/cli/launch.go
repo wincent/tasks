@@ -100,6 +100,10 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if err != nil {
 		return err
 	}
+	target, err := taskDestination(prefix, n, task.Content)
+	if err != nil {
+		return fmt.Errorf("%s: %w", task.ID(), err)
+	}
 	executable, err := exec.LookPath("pi")
 	if err != nil {
 		return errors.New("pi executable not found on PATH")
@@ -116,25 +120,32 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if err != nil {
 		return err
 	}
+	var previous git.Head
 	if source.Paths.WorkDir == "" {
-		base, err := repo.ResolveCommit(mainRef)
-		if err != nil {
-			return fmt.Errorf("read local main: %w", err)
-		}
-		previous, err := retainedBranch(repo, prefix, n, saved)
+		previous, err = retainedBranch(repo, prefix, n, saved)
 		if err != nil {
 			return err
 		}
-		if previous.ID != (git.ID{}) {
+	}
+	fresh := source.Paths.WorkDir == "" && previous.Branch == "" && saved == nil
+	base, err := launchDestination(ctx, repo, directory, target, fresh)
+	if err != nil {
+		return err
+	}
+	if source.Paths.WorkDir == "" {
+		if previous.Branch != "" && target == "main" {
+			// Preserve the default workflow: after merging into main,
+			// a new checkout starts from the latest main.
 			merged, err := repo.IsAncestor(previous.ID, base)
 			if err != nil {
 				return err
 			}
 			if merged {
 				previous = git.Head{}
-			} else {
-				base = previous.ID
 			}
+		}
+		if previous.Branch != "" {
+			base = previous.ID
 		}
 		source, err = createCheckout(repo, branchStem(prefix, n)+"-", base, previous.Branch)
 		if err != nil {
@@ -185,7 +196,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	}
 
 	diagnostics := terminalPresentation(streams.Err)
-	fmt.Fprintf(streams.Err, "%s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), root, record.SessionFile)
+	fmt.Fprintf(streams.Err, "%s\nTopic: %s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), target, root, record.SessionFile)
 	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path, attentionLabel)
 	argv := []string{executable, "--session", record.SessionFile}
 	progress := &piProgress{out: streams.Out}
@@ -234,7 +245,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if err := writeTaskSession(directory, n, record); err != nil {
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
-	base, err := repo.ResolveCommit(mainRef)
+	base, err = target.tip(repo)
 	if err != nil {
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
@@ -266,7 +277,7 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		fmt.Fprintf(streams.Out, "Checkout: %s; session: %s\n", root, record.SessionFile)
 		return nil
 	}
-	return mergeWork(ctx, repo, directory, cwd, prefix, n, root, streams)
+	return mergeWork(ctx, repo, directory, cwd, prefix, n, root, target, streams)
 }
 
 func launchBlocked(repo *git.Repository, directory string, prefix store.Prefix, n int, record taskSession, cause error) error {
