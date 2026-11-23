@@ -9,8 +9,8 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "check",
-		min:  0, max: 0,
+		name: "check", autoCorrect: allowCorrection,
+		min: 0, max: 0,
 		summary: "Check task files for errors.",
 		details: `Checks filenames, task numbers, file types and statuses, including those of
 archived tickets. Does not edit task files or run application tests.`,

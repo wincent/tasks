@@ -114,7 +114,7 @@ func (out *archivePromptOutput) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func archiveAtPrompt(t *testing.T, root, expr string, onPrompt func(context.CancelFunc, io.Writer)) (string, error) {
+func archiveAtPrompt(t *testing.T, root string, onPrompt func(context.CancelFunc, io.Writer), args ...string) (string, error) {
 	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
@@ -126,7 +126,7 @@ func archiveAtPrompt(t *testing.T, root, expr string, onPrompt func(context.Canc
 	defer cancel()
 	out := &archivePromptOutput{fd: slave.Fd()}
 	out.prompt = func() { onPrompt(cancel, master) }
-	err = Run(ctx, root, []string{"archive", "-q", expr}, IO{In: slave, Out: out})
+	err = Run(ctx, root, args, IO{In: slave, Out: out})
 	return out.String(), err
 }
 
@@ -210,7 +210,7 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 				if mode == "new match" {
 					systemGit(t, root, "worktree", "remove", metadata)
 				}
-				out, err = archiveAtPrompt(t, root, "status:merged", func(cancel context.CancelFunc, input io.Writer) {
+				out, err = archiveAtPrompt(t, root, func(cancel context.CancelFunc, input io.Writer) {
 					answer := "yes\n"
 					switch mode {
 					case "decline":
@@ -242,7 +242,7 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 					if _, err := io.WriteString(input, answer); err != nil {
 						t.Fatal(err)
 					}
-				})
+				}, "archive", "-q", "status:merged")
 			}
 			if checkPreview {
 				rows := "EXAMPLE-1  merged  First\nEXAMPLE-2  merged  Second\n"
@@ -302,11 +302,11 @@ func TestQueryArchiveProspectiveBatch(t *testing.T) {
 	systemGit(t, metadata, "add", "-A")
 	systemGit(t, metadata, "commit", "-m", "mark merged")
 	systemGit(t, root, "worktree", "remove", metadata)
-	out, err := archiveAtPrompt(t, root, "status:merged AND updated:2024-03", func(_ context.CancelFunc, input io.Writer) {
+	out, err := archiveAtPrompt(t, root, func(_ context.CancelFunc, input io.Writer) {
 		if _, err := io.WriteString(input, "yes\n"); err != nil {
 			t.Fatal(err)
 		}
-	})
+	}, "archive", "-q", "status:merged AND updated:2024-03")
 	if err != nil || !strings.Contains(out, "Archived 2 task(s)") {
 		t.Fatalf("%q %v", out, err)
 	}

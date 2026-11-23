@@ -9,8 +9,8 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "list",
-		min:  0, max: 1,
+		name: "list", autoCorrect: allowCorrection,
+		min: 0, max: 1,
 		options: map[string]optionKind{
 			"--json": flagOption, "--verbose": flagOption,
 			"--status": valueOption, "--include-archived": flagOption, "--query": valueOption,

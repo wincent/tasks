@@ -10,8 +10,8 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "search",
-		min:  1, max: 1,
+		name: "search", autoCorrect: allowCorrection,
+		min: 1, max: 1,
 		positionalError: "`tasks search` requires one literal title pattern (PATTERN)",
 		options:         map[string]optionKind{"--json": flagOption, "--verbose": flagOption, "--status": valueOption, "--query": valueOption},
 		validate: func(a arguments) error {

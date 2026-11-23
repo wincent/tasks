@@ -17,7 +17,7 @@ func init() {
 	explicit := withTaskStore(storeRequirements{mutation: true, taskLock: true}, moveTasks)
 	bulk := withTasks(archiveByQuery)
 	commands.register(commandSpec{
-		name: "archive", max: math.MaxInt, numberedAll: true,
+		name: "archive", autoCorrect: allowCorrection, max: math.MaxInt, numberedAll: true,
 		options: map[string]optionKind{"--query": valueOption},
 		validate: func(a arguments) error {
 			hasQuery := len(a.values["--query"]) != 0
@@ -46,6 +46,21 @@ terminal. Without a terminal, print the preview without changing any tickets.
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			if a.query != nil {
 				return bulk(ctx, cwd, a, streams)
+			}
+			// Explicit numbers normally skip confirmation. Do not let a
+			// corrected spelling take that shortcut.
+			if a.correction.from != "" {
+				if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Out) {
+					return errors.New("confirmation requires a terminal; use `tasks archive` explicitly")
+				}
+				ids := make([]string, len(a.tasks))
+				for i, task := range a.tasks {
+					ids[i] = a.prefix.ID(task.number)
+				}
+				confirmed, err := confirmArchive(ctx, streams, strings.Join(ids, ", "))
+				if err != nil || !confirmed {
+					return err
+				}
 			}
 			return explicit(ctx, cwd, a, streams)
 		},
@@ -114,18 +129,8 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		_, err := fmt.Fprintln(streams.Out, "No changes made; confirmation requires a terminal.")
 		return err
 	}
-	if _, err := fmt.Fprint(streams.Out, "Archive these tasks? Type yes to confirm: "); err != nil {
-		return err
-	}
-	reply, err := bufio.NewReader(terminal.Input(ctx, streams.In)).ReadSlice('\n')
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
-		return err
-	}
-	if err != nil || strings.TrimSpace(string(reply)) != "yes" {
-		_, err := fmt.Fprintln(streams.Out, "Archive cancelled; no changes made.")
-		return err
-	}
-	if err := ctx.Err(); err != nil {
+	confirmed, err := confirmArchive(ctx, streams, "these tasks")
+	if err != nil || !confirmed {
 		return err
 	}
 
@@ -160,6 +165,21 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 	}
 	_, err = fmt.Fprintf(streams.Out, "Archived %d task(s).\n", len(moved))
 	return err
+}
+
+func confirmArchive(ctx context.Context, streams IO, selection string) (bool, error) {
+	if _, err := fmt.Fprintf(streams.Out, "Archive %s? Type yes to confirm: ", selection); err != nil {
+		return false, err
+	}
+	reply, err := bufio.NewReader(terminal.Input(ctx, streams.In)).ReadSlice('\n')
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
+		return false, err
+	}
+	if err != nil || strings.TrimSpace(string(reply)) != "yes" {
+		_, err := fmt.Fprintln(streams.Out, "Archive cancelled; no changes made.")
+		return false, err
+	}
+	return true, ctx.Err()
 }
 
 func moveTasks(_ context.Context, _ string, a arguments, streams IO, invocation storeInvocation) error {

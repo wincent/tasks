@@ -17,8 +17,9 @@ func init() {
 	save := withTaskStore(storeRequirements{mutation: true}, saveArtifacts)
 	commands.register(commandSpec{
 		name: "store", min: 1, max: math.MaxInt, numbered: true,
-		usage:   "NUMBER [PATH ...]",
-		summary: "Save or list retained task artifacts.",
+		autoCorrect: func(a arguments) bool { return len(a.positional) == 1 },
+		usage:       "NUMBER [PATH ...]",
+		summary:     "Save or list retained task artifacts.",
 		details: `Save small, sanitized files in one local tasks-branch commit. Files keep
 their original names. If names collide, nothing is saved. Use -- before
 paths starting with a dash.

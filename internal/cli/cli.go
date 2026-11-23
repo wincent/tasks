@@ -30,6 +30,7 @@ type taskArgument struct {
 
 type arguments struct {
 	action     string
+	correction commandCorrection
 	positional []string
 	values     map[string][]string
 	flags      map[string]bool
@@ -54,7 +55,15 @@ func parse(args []string) (arguments, error) {
 	}
 	spec, ok := commands[a.action]
 	if !ok || a.action == "" {
-		return a, unknownCommand(a.action)
+		spec, ok = commands.closest(a.action)
+		if !ok {
+			return a, unknownCommand(a.action)
+		}
+		a.correction = commandCorrection{from: a.action, to: spec.name}
+		if spec.autoCorrect == nil {
+			return a, a.correction.suggestion()
+		}
+		a.action = spec.name
 	}
 	literal := false
 	for i := 1; i < len(args); i++ {
@@ -102,7 +111,10 @@ func parse(args []string) (arguments, error) {
 	}
 
 	if a.flags["--help"] || a.flags["-h"] {
-		return arguments{action: "help", positional: []string{a.action}}, nil
+		return arguments{action: "help", correction: a.correction, positional: []string{a.action}}, nil
+	}
+	if a.correction.from != "" && !spec.autoCorrect(a) {
+		return a, a.correction.suggestion()
 	}
 	if spec.positionalError != "" && (len(a.positional) < spec.min || len(a.positional) > spec.max) {
 		return a, errors.New(spec.positionalError)
@@ -188,6 +200,11 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 	a, err := parse(args)
 	if err != nil {
 		return &usageError{err}
+	}
+	if c := a.correction; c.from != "" {
+		if _, err := fmt.Fprintf(streams.Err, "warning: subcommand `%s` does not exist; using `%s` instead.\n", c.from, c.to); err != nil {
+			return err
+		}
 	}
 	run := commands[a.action].run
 	if a.action == "help" {

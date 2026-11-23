@@ -17,9 +17,10 @@ import (
 func init() {
 	commands.register(commandSpec{
 		name: "cleanup", min: 0, max: 1, numbered: true,
-		options: map[string]optionKind{"--apply": flagOption},
-		usage:   "[NUMBER] [--apply]",
-		summary: "Preview removal of merged task checkouts and branches.",
+		autoCorrect: func(a arguments) bool { return !a.flags["--apply"] },
+		options:     map[string]optionKind{"--apply": flagOption},
+		usage:       "[NUMBER] [--apply]",
+		summary:     "Preview removal of merged task checkouts and branches.",
 		details: `Omit NUMBER to consider all tasks. Run from outside any checkout you want
 to remove. Branch tips must be in the recorded topic (local main by default),
 even for archived tasks. Missing topics and branches in use are kept.

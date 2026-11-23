@@ -33,6 +33,10 @@ func identity(repository *git.Repository) (git.Signature, error) {
 	return repository.CommitterSignature()
 }
 
+func usesBodyEditor(a arguments) bool {
+	return len(a.values["--body"]) == 0 && len(a.values["--body-file"]) == 0
+}
+
 // withTaskStore preserves the shared precondition and cleanup order. Commands
 // explicitly choose facilities; read-only commands never acquire an actor.
 func withTaskStore(require storeRequirements, run func(context.Context, string, arguments, IO, storeInvocation) error) commandHandler {
@@ -46,9 +50,14 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 		var err error
 		if require.body {
 			switch {
+			case usesBodyEditor(a):
+				body, err = editorBody(ctx, cwd, a, streams)
+				if err != nil {
+					return err
+				}
 			case len(a.values["--body"]) > 0:
 				body = a.value("--body")
-			case len(a.values["--body-file"]) > 0:
+			default:
 				var data []byte
 				if a.value("--body-file") == "-" {
 					data, err = io.ReadAll(streams.In)
@@ -63,11 +72,6 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 					return err
 				}
 				body = string(data)
-			default:
-				body, err = editorBody(ctx, cwd, a, streams)
-				if err != nil {
-					return err
-				}
 			}
 			body = strings.TrimSpace(body)
 			if body == "" {

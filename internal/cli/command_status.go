@@ -8,7 +8,7 @@ import (
 
 func init() {
 	status := commandSpec{
-		name: "status", min: 0, max: 0, options: map[string]optionKind{"--json": flagOption},
+		name: "status", autoCorrect: allowCorrection, min: 0, max: 0, options: map[string]optionKind{"--json": flagOption},
 		usage:   "[--json]",
 		summary: "Show running agents, merges and tasks that need attention.",
 		details: `Options:
@@ -20,6 +20,7 @@ func init() {
 	commands.register(status)
 
 	status.name = "st"
+	status.alias = true
 	status.summary = "Alias for `tasks status`."
 	commands.register(status)
 }

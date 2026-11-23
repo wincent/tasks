@@ -9,7 +9,7 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name:     "show",
+		name: "show", autoCorrect: allowCorrection,
 		numbered: true,
 		min:      0, max: 1,
 		options: map[string]optionKind{"--raw": flagOption},

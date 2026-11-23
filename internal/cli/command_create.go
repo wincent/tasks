@@ -14,7 +14,7 @@ func init() {
 	options := bodyOptions()
 	options["--topic"] = valueOption
 	commands.register(commandSpec{
-		name: "create", min: 1, max: 1, options: options,
+		name: "create", autoCorrect: usesBodyEditor, min: 1, max: 1, options: options,
 		usage:    "TITLE " + topicUsage + " " + bodyUsage,
 		validate: validateTopicOption,
 		summary:  "Create a task.",

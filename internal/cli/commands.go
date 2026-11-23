@@ -17,6 +17,8 @@ type commandHandler func(context.Context, string, arguments, IO) error
 
 type commandSpec struct {
 	name            string
+	alias           bool                 // Exact spelling only; not a fuzzy match candidate.
+	autoCorrect     func(arguments) bool // Nil means suggest the spelling without running it.
 	min, max        int
 	options         map[string]optionKind
 	numbered        bool // The first positional argument is a task number, if given.
@@ -34,7 +36,7 @@ type commandSpec struct {
 type commandRegistry map[string]commandSpec
 
 // Commands register explicitly in their own compiled source files. Registration
-// does no repository/process work; runtime dispatch is a single map lookup.
+// does no repository/process work; exact command names use a single lookup.
 var commands = commandRegistry{}
 
 func (r commandRegistry) register(spec commandSpec) {

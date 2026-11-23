@@ -8,8 +8,8 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "worktree",
-		min:  1, max: 1,
+		name: "worktree", autoCorrect: allowCorrection,
+		min: 1, max: 1,
 		numbered: true,
 		usage:    "NUMBER",
 		summary:  "Print the path to a task's checkout.",

@@ -4,7 +4,7 @@ import "context"
 
 func init() {
 	commands.register(commandSpec{
-		name: "help", max: 1,
+		name: "help", max: 1, autoCorrect: allowCorrection,
 		usage:   "[COMMAND]",
 		summary: "Show help for tasks or a specific command.",
 		validate: func(a arguments) error {

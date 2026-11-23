@@ -6,8 +6,8 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "edit",
-		min:  1, max: 1,
+		name: "edit", autoCorrect: allowCorrection,
+		min: 1, max: 1,
 		numbered: true,
 		usage:    "NUMBER",
 		summary:  "Edit a task's Markdown in your editor.",

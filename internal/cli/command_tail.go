@@ -14,7 +14,7 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "tail", min: 1, max: 1, numbered: true,
+		name: "tail", autoCorrect: allowCorrection, min: 1, max: 1, numbered: true,
 		usage:   "NUMBER",
 		summary: "Follow a task's saved Pi session.",
 		details: `Works after the task finishes. Press Ctrl-C to stop viewing without
