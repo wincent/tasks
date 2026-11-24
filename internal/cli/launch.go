@@ -214,6 +214,9 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		argv = append(argv, "--mode", "json")
 		child.Out, child.Group, child.RequireGroupExit = progress, true, true
 	}
+	if len(a.values["--model"]) > 0 {
+		argv = append(argv, "--model", a.value("--model"))
+	}
 	child.Args = append(argv, "--", prompt)
 	runner := streams.Runner
 	if runner == nil {

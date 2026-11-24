@@ -27,13 +27,13 @@ func validateGo(a arguments) error {
 func init() {
 	commands.register(commandSpec{
 		name: "go", min: 1, max: 1,
-		options: map[string]optionKind{"--topic": valueOption},
-		usage:   "TITLE " + topicUsage,
+		options: map[string]optionKind{"--topic": valueOption, "--model": valueOption},
+		usage:   "TITLE [--model MODEL] " + topicUsage,
 		summary: "Create and run a task from its title alone.",
 		details: "Quote a title that contains spaces. Create a task with \"None provided.\" as its\n" +
 			"description, then run Pi non-interactively and merge successful work into the\n" +
 			"recorded topic (local main by default). Pi must be on PATH.\n" +
-			"To run an existing task, use `tasks run NUMBER`.\n\nOptions:\n" + topicHelp,
+			"To run an existing task, use `tasks run NUMBER`.\n\nOptions:\n" + modelHelp + topicHelp,
 		validate: func(a arguments) error {
 			if err := validateGo(a); err != nil {
 				return err
@@ -46,7 +46,12 @@ func init() {
 				return err
 			}
 			// Creation has released the metadata lock that launchTask needs.
-			return launchTask(ctx, cwd, arguments{action: "run", prefix: a.prefix, tasks: []taskArgument{{number: n}}}, streams)
+			return launchTask(ctx, cwd, arguments{
+				action: "run",
+				prefix: a.prefix,
+				tasks:  []taskArgument{{number: n}},
+				values: map[string][]string{"--model": a.values["--model"]},
+			}, streams)
 		},
 	})
 }

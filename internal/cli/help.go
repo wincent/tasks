@@ -21,6 +21,11 @@ const topicUsage = "[--topic BRANCH]"
 const topicHelp = "  --topic BRANCH    Record a local branch to start from and merge into.\n" +
 	"                    If missing, create it from local main on first launch."
 
+const modelHelp = "  --model MODEL    Override Pi's model for this launch, including on resume.\n" +
+	"                   Uses Pi syntax, e.g. openai-codex/gpt-6.2-sol:high.\n" +
+	"                   If omitted, Pi chooses the default for new sessions or\n" +
+	"                   tries to restore the previous model on resume.\n"
+
 const promptHelp = "  --prompt TEXT    Append instructions to Pi for this run only.\n" +
 	"                   Use --prompt=TEXT if TEXT looks like an option.\n"
 
