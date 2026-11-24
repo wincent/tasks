@@ -8,19 +8,20 @@ import (
 	"testing"
 
 	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/store"
 )
 
 func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	repo, root := fixture(t)
 	commitMainConfig(t, repo, "prefix: DEV\n")
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	for _, name := range []string{"task/dev-7-first", "task/dev-7-second", "task/dev-70", "task/example-7", "other"} {
-		systemGit(t, root, "branch", name, base)
+		setRef(t, repo, "refs/heads/"+name, base, git.ID{})
 	}
 	systemGit(t, root, "switch", "-c", "task/dev-7-unmerged")
 	tip := commitImplementation(t, root, "unmerged.txt", "not in local main\n")
 	systemGit(t, root, "switch", "main")
-	systemGit(t, root, "update-ref", "refs/remotes/origin/main", tip)
+	writeFixtureLooseRef(t, repo, "refs/remotes/origin/main", tip)
 	systemGit(t, root, "symbolic-ref", "refs/heads/task/dev-7-alias", "refs/heads/main")
 	systemGit(t, root, "pack-refs", "--all")
 
@@ -66,17 +67,21 @@ func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
 			switch mode {
 			case "configured remote":
 				// A remote restricted to main may still have task history.
-				systemGit(t, root, "remote", "add", "-t", "main", "origin", "https://example.invalid/repo.git")
+				setFixtureConfig(t, repo, "remote.origin.url", "https://example.invalid/repo.git")
+				setFixtureConfig(t, repo, "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
 			case "tracking ref":
-				systemGit(t, root, "update-ref", "refs/remotes/old/tasks", "tasks")
+				writeFixtureLooseRef(t, repo, "refs/remotes/old/tasks", fixtureRevision(t, repo, store.Branch))
 			case "previous store":
 				run(t, root, "init")
 				systemGit(t, root, "worktree", "remove", storePath)
 			case "obstructed checkout":
 				writeSafetyFile(t, storePath, "not a tasks checkout\n")
 			}
+			// Git branch deletion also removes the reflog, which cleanup treats
+			// as evidence of prior task history when the branch is absent.
 			systemGit(t, root, "branch", "-D", "tasks")
-			systemGit(t, root, "branch", branch)
+			setRef(t, repo, "refs/heads/"+branch, fixtureRevision(t, repo, mainRef), git.ID{})
+
 			for _, apply := range []bool{false, true} {
 				args := []string{"cleanup", "7"}
 				want := "Keep branch " + branch
@@ -106,7 +111,7 @@ func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
 }
 
 func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
-	_, root := fixture(t)
+	repo, root := fixture(t)
 	const parent = "task/example-2"
 	const child = "task/example-1"
 	ticket := run(t, root, "create", "Child", "--body", "Land on the legacy topic")
@@ -115,8 +120,7 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 	metadata := filepath.Dir(path)
 	content := strings.Replace(string(uiBytes(t, path)), "Status: open\n", "Status: open\nTopic: "+parent+"\n", 1)
 	writeSafetyFile(t, path, content)
-	systemGit(t, metadata, "add", "--", filepath.Base(path))
-	systemGit(t, metadata, "commit", "-m", "record legacy topic")
+	commitFixtureFiles(t, metadata, "record legacy topic", filepath.Base(path))
 	run(t, root, "archive", "1")
 	dir := filepath.Join("archive", "0")
 	legacy := filepath.Join(dir, "OLD-1 Child.md")
@@ -141,7 +145,7 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 	worktree := filepath.Join(directory, "parent")
 	systemGit(t, root, "worktree", "add", worktree, parent)
 	ignored := filepath.Join(worktree, "ignored.txt")
-	systemGit(t, worktree, "config", "core.excludesFile", filepath.Join(directory, "excludes"))
+	setFixtureConfig(t, repo, "core.excludesFile", filepath.Join(directory, "excludes"))
 	writeSafetyFile(t, filepath.Join(directory, "excludes"), "ignored.txt\n")
 	writeSafetyFile(t, ignored, "preserve me\n")
 	protect := func(args ...string) {
@@ -163,10 +167,10 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	protect("cleanup", "2", "--apply")
-	if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != parentTip {
+	if got := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); got != parentTip {
 		t.Fatalf("parent checkout moved: %s", got)
 	}
-	if got := systemGit(t, root, "rev-parse", child); got != childTip {
+	if got := fixtureRevision(t, repo, child); got != childTip {
 		t.Fatalf("child branch moved: %s", got)
 	}
 	// Once no checkout reserves the branch, the committed topic still does.
@@ -181,7 +185,7 @@ func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 	const rewritten = "task/example-7-rewritten"
 	const mode = "task/example-7-mode"
 	const revert = "task/example-7-revert"
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 
 	systemGit(t, root, "switch", "-c", rewritten)
 	commitImplementation(t, root, "one.txt", "first task change\n")
@@ -196,12 +200,14 @@ func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 
 	systemGit(t, root, "merge", "--squash", rewritten)
 	systemGit(t, root, "commit", "-m", "squash the task changes")
-	if got, want := systemGit(t, root, "rev-parse", "main^{tree}"), systemGit(t, root, "rev-parse", rewritten+"^{tree}"); got != want {
-		t.Fatalf("squash tree %s does not match task tree %s", got, want)
+	squashTree := fixtureRootTree(t, repo, fixtureRevision(t, repo, mainRef))
+	taskTree := fixtureRootTree(t, repo, fixtureRevision(t, repo, "refs/heads/"+rewritten))
+	if squashTree != taskTree {
+		t.Fatalf("squash tree %s does not match task tree %s", squashTree, taskTree)
 	}
 	main := commitImplementation(t, root, "later.txt", "destination moved on\n")
 	systemGit(t, root, "switch", "-c", revert)
-	systemGit(t, root, "restore", "--source="+base, "--staged", "--worktree", "--", ".")
+	systemGit(t, root, "restore", "--source="+base.String(), "--staged", "--worktree", "--", ".")
 	systemGit(t, root, "commit", "-m", "restore the old shared snapshot")
 	systemGit(t, root, "switch", "main")
 
@@ -229,7 +235,7 @@ func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 				t.Fatalf("lost %s after %v: %v", name, args, err)
 			}
 		}
-		if got := systemGit(t, root, "rev-parse", "main"); got != main {
+		if got := fixtureRevision(t, repo, mainRef); got != main {
 			t.Fatalf("cleanup changed main from %s to %s", main, got)
 		}
 	}
@@ -237,8 +243,9 @@ func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 
 func TestCleanupKeepsBranchesInUse(t *testing.T) {
 	repo, root := fixture(t)
+	base := fixtureRevision(t, repo, mainRef)
 	for _, name := range []string{"task/example-7-current", "task/example-7-rebase", "task/example-7-rebase-update", "task/example-7-bisect", "task/example-7-unused", "task/example-8-running"} {
-		systemGit(t, root, "branch", name)
+		setRef(t, repo, "refs/heads/"+name, base, git.ID{})
 	}
 	// A task branch checked out at the primary worktree is never removable.
 	systemGit(t, root, "switch", "task/example-7-current")
@@ -254,13 +261,13 @@ func TestCleanupKeepsBranchesInUse(t *testing.T) {
 
 	worktree := filepath.Join(t.TempDir(), "detached")
 	systemGit(t, root, "worktree", "add", "--detach", worktree, "main")
-	gitDir := systemGit(t, worktree, "rev-parse", "--absolute-git-dir")
+	gitDir := fixturePaths(t, openFixtureRepo(t, worktree)).GitDir
 	rebase := filepath.Join(gitDir, "rebase-merge")
 	if err := os.Mkdir(rebase, 0700); err != nil {
 		t.Fatal(err)
 	}
 	writeSafetyFile(t, filepath.Join(rebase, "head-name"), "refs/heads/task/example-7-rebase\n")
-	writeSafetyFile(t, filepath.Join(rebase, "update-refs"), "refs/heads/task/example-7-rebase-update\n"+systemGit(t, root, "rev-parse", "main")+"\n"+(git.ID{}).String()+"\n")
+	writeSafetyFile(t, filepath.Join(rebase, "update-refs"), "refs/heads/task/example-7-rebase-update\n"+base.String()+"\n"+(git.ID{}).String()+"\n")
 	writeSafetyFile(t, filepath.Join(gitDir, "BISECT_START"), "task/example-7-bisect\n")
 	for _, apply := range []bool{false, true} {
 		args, action := []string{"cleanup"}, "Would remove"
@@ -292,13 +299,13 @@ func TestCleanupKeepsBranchesInUse(t *testing.T) {
 func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 	repo, root := fixture(t)
 	const name = "refs/heads/task/example-7"
-	systemGit(t, root, "branch", "task/example-7")
+	setRef(t, repo, name, fixtureRevision(t, repo, mainRef), git.ID{})
 	ref, err := repo.Reference(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitImplementation(t, root, "main.txt", "another merged commit\n")
-	systemGit(t, root, "branch", "-f", "task/example-7", "main")
+	tip := commitImplementation(t, root, "main.txt", "another merged commit\n")
+	setRef(t, repo, name, tip, ref.ID)
 	target, err := cleanupDestination(repo, "EXAMPLE", 7)
 	if err != nil {
 		t.Fatal(err)
@@ -323,10 +330,11 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 func TestCleanupUsesCurrentMergeResult(t *testing.T) {
 	for _, scenario := range []string{"ancestral-revert", "historical-tree", "conflict", "ours-strategy", "custom-attribute"} {
 		t.Run(scenario, func(t *testing.T) {
-			_, root := fixture(t)
+			repo, root := fixture(t)
 			const branch = "task/example-9"
-			commitImplementation(t, root, "feature.txt", "base\n")
-			systemGit(t, root, "branch", branch)
+			base := commitImplementation(t, root, "feature.txt", "base\n")
+			setRef(t, repo, "refs/heads/"+branch, base, git.ID{})
+
 			switch scenario {
 			case "historical-tree":
 				commitImplementation(t, root, "feature.txt", "incoming\n")
@@ -347,10 +355,10 @@ func TestCleanupUsesCurrentMergeResult(t *testing.T) {
 				systemGit(t, root, "merge", "--ff-only", branch)
 				systemGit(t, root, "revert", "--no-edit", "HEAD")
 			case "ours-strategy", "custom-attribute":
-				systemGit(t, root, "cherry-pick", tip)
+				systemGit(t, root, "cherry-pick", tip.String())
 				commitImplementation(t, root, "unrelated.txt", "different tree\n")
 				if scenario == "ours-strategy" {
-					systemGit(t, root, "config", "branch.main.mergeOptions", "-s ours")
+					setFixtureConfig(t, repo, "branch.main.mergeOptions", "-s ours")
 				} else {
 					commitImplementation(t, root, ".gitattributes", "feature.txt merge=ours\n")
 				}
@@ -372,10 +380,10 @@ func TestCleanupUsesCurrentMergeResult(t *testing.T) {
 				}
 			}
 			if scenario != "ancestral-revert" {
-				if got := systemGit(t, checkout, "rev-parse", "HEAD"); got != tip {
+				if got := fixtureRevision(t, openFixtureRepo(t, checkout), "HEAD"); got != tip {
 					t.Fatalf("checkout changed to %s", got)
 				}
-				if got := systemGit(t, root, "rev-parse", branch); got != tip {
+				if got := fixtureRevision(t, repo, branch); got != tip {
 					t.Fatalf("branch changed to %s", got)
 				}
 			} else if _, err := os.Stat(checkout); !os.IsNotExist(err) {

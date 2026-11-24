@@ -51,7 +51,7 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 		if !strings.HasPrefix(filepath.Base(checkoutPath), "run-1-") || !strings.HasPrefix(cmd.Args[len(cmd.Args)-1], "Read RUN-1 at ") {
 			t.Fatalf("checkout %s, args %v", checkoutPath, cmd.Args)
 		}
-		if branch := systemGit(t, checkoutPath, "branch", "--show-current"); !strings.HasPrefix(branch, "task/run-1-") {
+		if branch := strings.TrimPrefix(fixtureHead(t, openFixtureRepo(t, checkoutPath)).Branch, "refs/heads/"); !strings.HasPrefix(branch, "task/run-1-") {
 			t.Fatalf("task branch: %s", branch)
 		}
 		commitImplementation(t, checkoutPath, "feature.txt", "fixture")
@@ -84,12 +84,12 @@ func TestTaskConfigRequiresExactLocalMain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	systemGit(t, root, "update-ref", "refs/tags/refs/heads/main", main.ID.String())
+	writeFixtureLooseRef(t, repo, "refs/tags/refs/heads/main", main.ID)
 	setRef(t, repo, mainRef, git.ID{}, main.ID)
 	if _, _, err := invoke(root, "", "init"); err == nil || !strings.Contains(err.Error(), "read local main for task configuration") {
 		t.Fatalf("missing main with lookalike tag: %v", err)
 	}
-	systemGit(t, root, "update-ref", "refs/heads/other", main.ID.String())
+	setRef(t, repo, "refs/heads/other", main.ID, git.ID{})
 	systemGit(t, root, "symbolic-ref", mainRef, "refs/heads/other")
 	if _, _, err := invoke(root, "", "init"); err == nil || !strings.Contains(err.Error(), "local main must be a direct branch") {
 		t.Fatalf("symbolic main: %v", err)

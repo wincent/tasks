@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/testutil"
 )
@@ -60,6 +61,7 @@ func TestQueryUpdatedUsesCommittedRecordHistory(t *testing.T) {
 	metadata := filepath.Join(root, "tasks")
 	run(t, root, "init")
 	first, second := "EXAMPLE-1 Export draft.md", "EXAMPLE-1 Export report.md"
+	// Use Git-authored history to check committer dates and rename tracking.
 	commit := func(date, message string) {
 		t.Helper()
 		t.Setenv("GIT_COMMITTER_DATE", date+"T22:00:00-04:00") // next UTC day
@@ -201,7 +203,7 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 				commitTaskText(t, repo, filepath.Join(metadata, name), "Status: merged\n")
 			}
 			run(t, root, "archive", "3")
-			readHead := func() string { return systemGit(t, root, "rev-parse", "tasks") }
+			readHead := func() git.ID { return fixtureRevision(t, repo, store.Branch) }
 			before := readHead()
 			var out string
 			var err error
@@ -301,7 +303,7 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 				}
 			}
 			if mode == "new match" {
-				if got := systemGit(t, root, "show", "-s", "--format=%P", store.Branch); got != before {
+				if got := systemGit(t, root, "show", "-s", "--format=%P", store.Branch); got != before.String() {
 					t.Fatalf("expected one archive commit after %s: %s", before, got)
 				}
 				if got := run(t, root, "list", "all", "-q", "status:merged"); got != "EXAMPLE-4\tmerged\tNew match\n" {
@@ -320,13 +322,14 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 func TestQueryArchiveProspectiveBatch(t *testing.T) {
 	_, root := fixture(t)
 	metadata := filepath.Join(root, "tasks")
+	var names []string
 	for _, title := range []string{"One", "Two"} {
 		path := strings.TrimSpace(run(t, root, "create", title, "--body", "Details"))
 		writeSafetyFile(t, path, "Status: merged\n")
+		names = append(names, filepath.Base(path))
 	}
 	t.Setenv("GIT_COMMITTER_DATE", "2024-03-01T00:00:00Z")
-	systemGit(t, metadata, "add", "-A")
-	systemGit(t, metadata, "commit", "-m", "mark merged")
+	commitFixtureFiles(t, metadata, "mark merged", names...)
 	systemGit(t, root, "worktree", "remove", metadata)
 	out, err := archiveAtPrompt(t, root, func(_ context.CancelFunc, input io.Writer) {
 		if _, err := io.WriteString(input, "yes\n"); err != nil {

@@ -23,23 +23,23 @@ func TestTopicCreationIsDeferredUntilRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	branches := systemGit(t, root, "branch", "--list")
+	branches := fixtureBranchNames(t, repo)
 	// A same-named remote-tracking ref must not provide the base.
-	systemGit(t, root, "update-ref", "refs/remotes/origin/feature/export", "main")
+	writeFixtureLooseRef(t, repo, "refs/remotes/origin/feature/export", fixtureRevision(t, repo, mainRef))
 	run(t, root, "create", "Export", "--topic", "feature/export", "--body", "Export CSV.")
 	if got := run(t, root, "show", "1", "--raw"); !strings.Contains(got, "\nStatus: open\nTopic: feature/export\n\n") {
 		t.Fatal(got)
 	}
-	if after, err := repo.Worktrees(); err != nil || !slices.Equal(after, worktrees) || systemGit(t, root, "branch", "--list") != branches {
+	if after, err := repo.Worktrees(); err != nil || !slices.Equal(after, worktrees) || !slices.Equal(fixtureBranchNames(t, repo), branches) {
 		t.Fatal("filing created an implementation branch or checkout")
 	}
 	main := commitImplementation(t, root, "new-base.txt", "new local main\n")
 	systemGit(t, root, "switch", "-c", "other", "main^")
 	other := commitImplementation(t, root, "other.txt", "caller branch\n")
-	var implementation string
+	var implementation git.ID
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
-		if systemGit(t, worktree, "rev-parse", "HEAD") != main || systemGit(t, root, "rev-parse", "refs/heads/feature/export") != main {
+		if fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD") != main || fixtureRevision(t, repo, "refs/heads/feature/export") != main {
 			t.Fatal("topic and worktree must start at the latest local main")
 		}
 		implementation = commitImplementation(t, worktree, "export.txt", "done\n")
@@ -49,21 +49,21 @@ func TestTopicCreationIsDeferredUntilRun(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	assertStatus(t, root, "merged")
-	if systemGit(t, root, "rev-parse", "feature/export") != implementation || systemGit(t, root, "rev-parse", "main") != main || systemGit(t, root, "rev-parse", "HEAD") != other {
+	if fixtureRevision(t, repo, "feature/export") != implementation || fixtureRevision(t, repo, mainRef) != main || fixtureRevision(t, repo, "HEAD") != other {
 		t.Fatal("run must update only the recorded topic, not main or the caller")
 	}
 }
 
 func TestGoUsesExistingTopicAndUpdatesItsCheckout(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
-	main := systemGit(t, root, "rev-parse", "main")
+	repo, root := taskWorkflowFixture(t)
+	main := fixtureRevision(t, repo, mainRef)
 	topicDir := filepath.Join(t.TempDir(), "topic")
 	systemGit(t, root, "worktree", "add", "-b", "delivery", topicDir, "main")
 	topic := commitImplementation(t, topicDir, ".tasks.yml", "prefix: DIFFERENT\n")
-	var topicAdvance, implementation string
+	var topicAdvance, implementation git.ID
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
-		if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != topic {
+		if got := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); got != topic {
 			t.Fatalf("started at %s, want existing topic %s", got, topic)
 		}
 		if got := run(t, topicDir, "show", "EXAMPLE-1", "--raw"); !strings.Contains(got, "\nStatus: active\nTopic: delivery\n") {
@@ -76,32 +76,33 @@ func TestGoUsesExistingTopicAndUpdatesItsCheckout(t *testing.T) {
 	if err != nil || !strings.Contains(out, "merged into local delivery.\n") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if got := systemGit(t, topicDir, "show", "-s", "--format=%P", "HEAD"); got != topicAdvance+" "+implementation {
+	if got := systemGit(t, topicDir, "show", "-s", "--format=%P", "HEAD"); got != topicAdvance.String()+" "+implementation.String() {
 		t.Fatalf("wrong topic merge parents: %s", got)
 	}
 	if got := string(uiBytes(t, filepath.Join(topicDir, "delivery.txt"))); got != "done\n" {
 		t.Fatal(got)
 	}
-	if systemGit(t, root, "rev-parse", "main") != main || systemGit(t, root, "status", "--porcelain") != "" {
+	if fixtureRevision(t, repo, mainRef) != main || systemGit(t, root, "status", "--porcelain") != "" {
 		t.Fatal("topic merge changed the main checkout")
 	}
 }
 
 func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
-	main := systemGit(t, root, "rev-parse", "main")
+	repo, root := taskWorkflowFixture(t)
+	main := fixtureRevision(t, repo, mainRef)
 	systemGit(t, root, "switch", "-c", "delivery")
-	systemGit(t, root, "config", "merge.ff", "only")
+	setFixtureConfig(t, repo, "merge.ff", "only")
 	run(t, root, "create", "Deliver", "--topic", "delivery", "--body", "Topic only.")
 
-	var worktree, branch, first string
+	var worktree, branch string
+	var first git.ID
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
-		branch = systemGit(t, worktree, "symbolic-ref", "HEAD")
+		branch = fixtureHead(t, openFixtureRepo(t, worktree)).Branch
 		first = commitImplementation(t, worktree, "first.txt", "first run\n")
 		return process.Result{}
 	}, "run", "1")
-	if err != nil || systemGit(t, root, "rev-parse", "delivery") != first {
+	if err != nil || fixtureRevision(t, repo, "delivery") != first {
 		t.Fatalf("first run did not merge: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
@@ -109,39 +110,41 @@ func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
 	}
 	topic := commitImplementation(t, root, "meanwhile.txt", "delivery advanced\n")
 
-	var second string
+	var second git.ID
 	out, err = invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
-		if head := systemGit(t, worktree, "rev-parse", "HEAD"); head != topic {
+		if head := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); head != topic {
 			t.Fatalf("rerun started at %s, want current topic tip %s", head, topic)
 		}
 		second = commitImplementation(t, worktree, "second.txt", "second run\n")
 		return process.Result{}
 	}, "run", "1")
-	if err != nil || systemGit(t, root, "rev-parse", "delivery") != second {
+	if err != nil || fixtureRevision(t, repo, "delivery") != second {
 		t.Fatalf("rerun did not fast-forward delivery: %v\n%s", err, out)
 	}
 	assertStatus(t, root, "merged")
-	if systemGit(t, root, "rev-parse", branch) != first || systemGit(t, root, "rev-parse", "main") != main {
+	if fixtureRevision(t, repo, branch) != first || fixtureRevision(t, repo, mainRef) != main {
 		t.Fatal("rerun changed the old task branch or main")
 	}
 }
 
 func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
-	main := systemGit(t, root, "rev-parse", "main")
+	repo, root := taskWorkflowFixture(t)
+	main := fixtureRevision(t, repo, mainRef)
 	topicDir := filepath.Join(t.TempDir(), "topic")
 	systemGit(t, root, "worktree", "add", "-b", "review", topicDir, "main")
+	topicRepo := openFixtureRepo(t, topicDir)
 	topic := commitImplementation(t, topicDir, "review.txt", "topic base\n")
 	run(t, root, "create", "Review me", "--topic", "review", "--body", "Review before merging.")
-	var worktree, branch, implementation string
+	var worktree, branch string
+	var implementation git.ID
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
-		branch = systemGit(t, worktree, "branch", "--show-current")
+		branch = fixtureHead(t, openFixtureRepo(t, worktree)).Branch
 		implementation = commitImplementation(t, worktree, "feature.txt", "done\n")
 		return process.Result{}
 	}, "run", "1", "--no-merge")
-	if err != nil || !strings.Contains(out, "ready for review") || systemGit(t, topicDir, "rev-parse", "HEAD") != topic {
+	if err != nil || !strings.Contains(out, "ready for review") || fixtureRevision(t, topicRepo, "HEAD") != topic {
 		t.Fatalf("review run must not merge: %v\n%s", err, out)
 	}
 	for _, retained := range []bool{false, true} {
@@ -150,7 +153,8 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 		}
 		out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 			current := piWorktree(t, child)
-			if (!retained && current != worktree) || systemGit(t, current, "branch", "--show-current") != branch || systemGit(t, current, "rev-parse", "HEAD") != implementation {
+			head := fixtureHead(t, openFixtureRepo(t, current))
+			if (!retained && current != worktree) || head.Branch != branch || head.ID != implementation {
 				t.Fatal("did not resume existing task branch or checkout")
 			}
 			worktree = current
@@ -163,7 +167,7 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 	unsaved := filepath.Join(topicDir, "unsaved.txt")
 	writeSafetyFile(t, unsaved, "keep\n")
 	fails(t, root, "worktree is dirty: review", "merge", "1")
-	if systemGit(t, topicDir, "rev-parse", "HEAD") != topic || string(uiBytes(t, unsaved)) != "keep\n" {
+	if fixtureRevision(t, topicRepo, "HEAD") != topic || string(uiBytes(t, unsaved)) != "keep\n" {
 		t.Fatal("failed merge modified the topic")
 	}
 	if err := os.Remove(unsaved); err != nil {
@@ -172,7 +176,7 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 	if out := run(t, root, "merge", "1"); !strings.Contains(out, "merged into local review.\n") {
 		t.Fatal(out)
 	}
-	if systemGit(t, topicDir, "rev-parse", "HEAD") != implementation || systemGit(t, root, "rev-parse", "main") != main {
+	if fixtureRevision(t, topicRepo, "HEAD") != implementation || fixtureRevision(t, repo, mainRef) != main {
 		t.Fatal("explicit merge must update only the topic")
 	}
 }
@@ -191,8 +195,8 @@ func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
 			repo, root := taskWorkflowFixture(t)
 			const topic = "release/delivery"
 			run(t, root, "create", "Deliver", "--topic", topic, "--body", "Topic only.")
-			systemGit(t, root, "branch", topic, "main")
-			base := systemGit(t, root, "rev-parse", topic)
+			base := fixtureRevision(t, repo, mainRef)
+			setRef(t, repo, "refs/heads/"+topic, base, git.ID{})
 			source := filepath.Join(t.TempDir(), "task")
 			systemGit(t, root, "worktree", "add", "-b", "task/example-1", source, topic)
 			implementation := commitImplementation(t, source, "delivery.txt", "done\n")
@@ -208,16 +212,17 @@ func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.failure == "" {
-				systemGit(t, root, "config", "extensions.worktreeConfig", "true")
+				setFixtureConfig(t, repo, "extensions.worktreeConfig", "true")
+				// Exercise a worktree config written by Git itself.
 				systemGit(t, source, "config", "--worktree", "merge.verifySignatures", "true")
 				run(t, source, "merge", "1")
-				if got := systemGit(t, root, "rev-parse", topic); got != implementation {
+				if got := fixtureRevision(t, repo, topic); got != implementation {
 					t.Fatalf("expected %s to fast-forward to %s, got %s", topic, implementation, got)
 				}
 				return
 			}
 			fails(t, source, test.failure, "merge", "1")
-			if got := systemGit(t, root, "rev-parse", topic); got != base {
+			if got := fixtureRevision(t, repo, topic); got != base {
 				t.Fatalf("merge moved %s from %s to %s despite its policy", topic, base, got)
 			}
 			assertStatus(t, root, "blocked")
@@ -226,21 +231,29 @@ func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
 }
 
 func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
-	main := systemGit(t, root, "rev-parse", "main")
+	repo, root := taskWorkflowFixture(t)
+	main := fixtureRevision(t, repo, mainRef)
 	run(t, root, "create", "Topic work", "--topic", "delivery", "--body", "Topic only.")
 	run(t, root, "create", "Default work", "--topic", "main", "--body", "Use main.")
 	if got := run(t, root, "show", "2", "--raw"); strings.Contains(got, "\nTopic:") {
 		t.Fatal(got)
 	}
-	systemGit(t, root, "branch", "delivery", "main")
+	setRef(t, repo, "refs/heads/delivery", main, git.ID{})
 	worktree := filepath.Join(filepath.Dir(root), "task")
 	systemGit(t, root, "worktree", "add", "-b", "task/example-1", worktree, "delivery")
 	implementation := commitImplementation(t, worktree, "topic-only.txt", "not in main\n")
-	systemGit(t, root, "branch", "task/example-2", implementation)
-	tree := systemGit(t, root, "rev-parse", implementation+"^{tree}")
-	rewritten := systemGit(t, root, "commit-tree", tree, "-p", main, "-m", "integrate the task via a different commit")
-	systemGit(t, root, "branch", "-f", "delivery", rewritten)
+	setRef(t, repo, "refs/heads/task/example-2", implementation, git.ID{})
+	tree := fixtureRootTree(t, repo, implementation)
+	who, err := repo.Signatures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten, err := repo.WriteCommit(tree, []git.ID{main}, who.Author, who.Committer, "integrate the task via a different commit\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRef(t, repo, "refs/heads/delivery", rewritten, main)
+
 	for _, args := range [][]string{{"cleanup"}, {"cleanup", "--apply"}} {
 		out := run(t, root, args...)
 		action := "Would remove"
@@ -256,13 +269,13 @@ func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
 	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
 		t.Fatalf("topic checkout not removed: %v", err)
 	}
-	if systemGit(t, root, "branch", "--list", "task/example-1") != "" || systemGit(t, root, "rev-parse", "main") != main || systemGit(t, root, "rev-parse", "delivery") != rewritten {
+	if fixtureHasBranch(t, repo, "task/example-1") || fixtureRevision(t, repo, mainRef) != main || fixtureRevision(t, repo, "delivery") != rewritten {
 		t.Fatal("cleanup removed the wrong branch or changed a destination")
 	}
 }
 
 func TestMissingTopicKeepsExistingWork(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	run(t, root, "create", "Restore topic", "--topic", "missing", "--body", "Do not fall back to main.")
 	worktree := filepath.Join(t.TempDir(), "task")
 	// The task tip is in main. Falling back would allow both merge and cleanup.
@@ -282,14 +295,14 @@ func TestMissingTopicKeepsExistingWork(t *testing.T) {
 		if out := run(t, root, "cleanup", "1", "--apply"); strings.Contains(out, "Removed") || !strings.Contains(out, `Keep branch task/example-1: recorded topic "missing" is missing`) {
 			t.Fatal(out)
 		}
-		if systemGit(t, root, "branch", "--list", "task/example-1") == "" || systemGit(t, root, "branch", "--list", "missing") != "" {
+		if !fixtureHasBranch(t, repo, "task/example-1") || fixtureHasBranch(t, repo, "missing") {
 			t.Fatal("lost the task branch or created the missing topic")
 		}
 	}
 }
 
 func TestPiCreatesTopicWithoutMerging(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	run(t, root, "create", "Interactive", "--topic", "interactive", "--body", "Write the implementation.")
 	main := commitImplementation(t, root, "new-base.txt", "latest main\n")
 	master, slave, err := testutil.OpenPTY()
@@ -300,7 +313,7 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 	var worktree string
 	err = Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
-		if systemGit(t, worktree, "rev-parse", "HEAD") != main {
+		if fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD") != main {
 			t.Fatal("Pi did not start from the new topic")
 		}
 		commitImplementation(t, worktree, "interactive.txt", "done\n")
@@ -310,7 +323,7 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStatus(t, root, "done")
-	if systemGit(t, root, "rev-parse", "interactive") != main || systemGit(t, root, "rev-parse", "main") != main {
+	if fixtureRevision(t, repo, "interactive") != main || fixtureRevision(t, repo, mainRef) != main {
 		t.Fatal("interactive run merged implementation work")
 	}
 	uiBytes(t, filepath.Join(worktree, "interactive.txt"))
@@ -355,7 +368,7 @@ func TestTopicEditRespectsTaskLock(t *testing.T) {
 func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
-	systemGit(t, root, "branch", "after")
+	setRef(t, repo, "refs/heads/after", fixtureRevision(t, repo, mainRef), git.ID{})
 	systemGit(t, root, "switch", "-c", "before")
 	before := commitImplementation(t, root, "destination.txt", "destination change\n")
 	systemGit(t, root, "switch", "main")
@@ -364,7 +377,7 @@ func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 	commitImplementation(t, worktree, "feature.txt", "task change\n")
 
 	hooks := t.TempDir()
-	systemGit(t, root, "config", "core.hooksPath", hooks)
+	setFixtureConfig(t, repo, "core.hooksPath", hooks)
 	if err := os.WriteFile(filepath.Join(hooks, "pre-merge-commit"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -387,10 +400,10 @@ func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 	if !called || err == nil || !strings.Contains(err.Error(), `topic changed from "before" to "after"`) {
 		t.Fatalf("merge did not reject the changed topic: %v (hook called: %v)", err, called)
 	}
-	if got := systemGit(t, root, "rev-parse", "before"); got != before {
+	if got := fixtureRevision(t, repo, "before"); got != before {
 		t.Fatalf("old destination moved: %s", got)
 	}
-	if got := systemGit(t, root, "rev-parse", "after"); got != systemGit(t, root, "rev-parse", "main") {
+	if got := fixtureRevision(t, repo, "after"); got != fixtureRevision(t, repo, mainRef) {
 		t.Fatalf("new destination moved: %s", got)
 	}
 	if err := setResultForTopic(context.Background(), repo, "EXAMPLE", 1, "merged", "", "before"); err == nil || !strings.Contains(err.Error(), "topic changed") {
@@ -403,7 +416,7 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 	ctx := context.Background()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
-	systemGit(t, root, "branch", "before")
+	setRef(t, repo, "refs/heads/before", fixtureRevision(t, repo, mainRef), git.ID{})
 	base, err := destination("before").tip(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -476,11 +489,12 @@ func TestRecordingMergeResultRejectsRawCommitAfterRead(t *testing.T) {
 	writeSafetyFile(t, ticket, retargeted)
 	metadata := filepath.Dir(ticket)
 	systemGit(t, metadata, "commit", "-am", "retarget after reading task")
-	after := systemGit(t, metadata, "rev-parse", "HEAD")
+	tasksRepo := openFixtureRepo(t, metadata)
+	after := fixtureRevision(t, tasksRepo, "HEAD")
 	if _, err := writeTask(session, tasks, head.ID, filepath.Base(ticket), result, "record merged for "+task.ID()); err == nil || !strings.Contains(err.Error(), "tasks ref differs from caller expectation") {
 		t.Fatalf("expected stale merge result to be rejected, got %v", err)
 	}
-	if got := systemGit(t, metadata, "rev-parse", "HEAD"); got != after {
+	if got := fixtureRevision(t, tasksRepo, "HEAD"); got != after {
 		t.Errorf("metadata ref moved from %s to %s", after, got)
 	}
 	if got := string(uiBytes(t, ticket)); got != retargeted {

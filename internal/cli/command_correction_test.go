@@ -6,6 +6,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/store"
 )
 
 func TestCommandCorrectionDispatch(t *testing.T) {
@@ -70,9 +73,9 @@ func TestCommandCorrectionRejectsUnsafeAndUnknown(t *testing.T) {
 }
 
 func TestCommandCorrectionArchiveConfirmation(t *testing.T) {
-	_, root := fixture(t)
+	repo, root := fixture(t)
 	run(t, root, "create", "Example task", "--body", "Details")
-	head := func() string { return systemGit(t, root, "rev-parse", "tasks") }
+	head := func() git.ID { return fixtureRevision(t, repo, store.Branch) }
 	before := head()
 	const warning = "warning: subcommand `arcihve` does not exist; using `archive` instead.\n"
 
@@ -104,11 +107,11 @@ func TestCommandCorrectionArchiveConfirmation(t *testing.T) {
 }
 
 func TestCommandCorrectionCreateUsesEditor(t *testing.T) {
-	_, root, _ := editorFixture(t)
+	repo, root, _ := editorFixture(t)
 	t.Setenv("TASK_TEST_EDITOR_MODE", "fail")
-	before := systemGit(t, root, "rev-parse", "tasks")
+	before := fixtureRevision(t, repo, store.Branch)
 	out, err := runTerminal(t, root, "cretae", "Example task")
-	if err == nil || !strings.Contains(err.Error(), "creation cancelled") || out != "" || systemGit(t, root, "rev-parse", "tasks") != before {
+	if err == nil || !strings.Contains(err.Error(), "creation cancelled") || out != "" || fixtureRevision(t, repo, store.Branch) != before {
 		t.Fatalf("failed editor: stdout = %q, err = %v", out, err)
 	}
 
