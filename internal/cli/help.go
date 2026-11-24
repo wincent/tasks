@@ -21,7 +21,8 @@ const topicUsage = "[--topic BRANCH]"
 const topicHelp = "  --topic BRANCH    Record a local branch to start from and merge into.\n" +
 	"                    If missing, create it from local main on first launch."
 
-const promptHelp = "  --prompt TEXT    Append instructions to Pi for this run only.\n"
+const promptHelp = "  --prompt TEXT    Append instructions to Pi for this run only.\n" +
+	"                   Use --prompt=TEXT if TEXT looks like an option.\n"
 
 const worktreeHelp = "  --worktree PATH  Select an existing checkout for this task."
 

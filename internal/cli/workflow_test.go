@@ -297,6 +297,20 @@ func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 	}
 }
 
+func TestRunRejectsMissingPromptBeforeStartingPi(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	run(t, root, "create", "Missing prompt", "--body", "requirements")
+
+	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		t.Fatalf("Pi started with invalid arguments: %v", child.Args)
+		return process.Result{}
+	}, "run", "1", "--prompt", "--no-merge")
+	if err == nil || err.Error() != "--prompt requires a value" || ExitCode(err) != 2 || out != "" {
+		t.Fatalf("expected a usage error with no launch output, got %v\n%s", err, out)
+	}
+	assertStatus(t, root, "open")
+}
+
 func TestRunPromptIsPerInvocation(t *testing.T) {
 	_, root := taskWorkflowFixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Per-run instructions", "--body", "requirements"))

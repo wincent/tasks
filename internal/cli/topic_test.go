@@ -367,7 +367,7 @@ func TestTopicOptionRejectsTaskNamespace(t *testing.T) {
 func TestTopicOptionRejectsNonBranchValues(t *testing.T) {
 	for _, value := range []string{"", "HEAD", "main^", "-name", "@{-1}", "refs/heads/topic", "one two", "line\nbreak", "tasks"} {
 		for _, args := range [][]string{{"go", "Title"}, {"create", "Title", "--body", "Description"}} {
-			if _, err := parse(append(args, "--topic", value)); err == nil || !strings.Contains(err.Error(), "local implementation branch name") {
+			if _, err := parse(append(args, "--topic="+value)); err == nil || !strings.Contains(err.Error(), "local implementation branch name") {
 				t.Errorf("%s accepted %q: %v", args[0], value, err)
 			}
 		}

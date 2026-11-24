@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/process"
@@ -42,6 +43,13 @@ type arguments struct {
 // Match the prior argument parser's negative-number positional handling;
 // number validation, rather than option parsing, supplies the useful error.
 var negativeArgument = regexp.MustCompile(`^-(?:[0-9]+|[0-9]*\.[0-9]+)$`)
+
+// A lone dash (stdin), negative numbers, and text beginning with a dash
+// followed by whitespace (such as a Markdown bullet) can be separate values.
+func looksLikeOption(arg string) bool {
+	return len(arg) > 1 && arg[0] == '-' &&
+		strings.TrimLeftFunc(arg[1:], unicode.IsSpace) == arg[1:] && !negativeArgument.MatchString(arg)
+}
 
 func parse(args []string) (arguments, error) {
 	a := arguments{values: map[string][]string{}, flags: map[string]bool{}}
@@ -99,7 +107,7 @@ func parse(args []string) (arguments, error) {
 		}
 		if !hasValue {
 			i++
-			if i == len(args) {
+			if i == len(args) || looksLikeOption(args[i]) {
 				return a, fmt.Errorf("%s requires a value", key)
 			}
 			value = args[i]
