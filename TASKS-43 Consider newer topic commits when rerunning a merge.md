@@ -1,6 +1,6 @@
 # TASKS-43: Consider newer topic commits when rerunning a merge
 
-Status: active
+Status: merged
 
 ## Description
 
