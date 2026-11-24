@@ -1,6 +1,6 @@
 # TASKS-59: Add a `config` subcommand
 
-Status: open
+Status: active
 
 ## Description
 
