@@ -222,6 +222,17 @@ func TestBatchSyncDirectoriesResumesAfterFailure(t *testing.T) {
 	}
 }
 
+func TestSyncDirectoryRejectsRegularFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "sample.txt")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncDirectory(path); err == nil {
+		t.Fatal("SyncDirectory(regular file) with sync enabled succeeded, want error")
+	}
+}
+
 func TestDisableSyncForTestingValidatesDescriptorsAndDirectories(t *testing.T) {
 	// Intentionally non-parallel: mutates package-wide skipSync and restores it
 	// before any parallel tests in this package run.

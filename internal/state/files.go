@@ -148,20 +148,21 @@ func SyncFile(file *os.File) error {
 	return file.Sync()
 }
 
+// SyncDirectory flushes a directory to stable storage and rejects non-directories.
 func SyncDirectory(path string) error {
 	directory, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer directory.Close()
+	info, err := directory.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", path)
+	}
 	if syncSkipped() {
-		info, err := directory.Stat()
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("not a directory: %s", path)
-		}
 		return nil
 	}
 	return directory.Sync()
