@@ -1,6 +1,6 @@
 # TASKS-44: Document how to pass relative paths to `tasks sh`
 
-Status: active
+Status: merged
 
 ## Description
 
