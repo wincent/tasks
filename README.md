@@ -97,6 +97,33 @@ git config --local --add remote.origin.push refs/heads/main:refs/heads/main
 git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 ```
 
+## Configuration
+
+### Model aliases
+
+You can define shorthand model aliases for `--model` (used by `tasks run`, `tasks pi`, and `tasks go`) in `$XDG_CONFIG_HOME/tasks/config.yml` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/tasks/config.yml` otherwise:
+
+```yaml
+models:
+  aliases:
+    sol: openai-codex/gpt-6.2-sol
+    fast: datadog-anthropic/claude-haiku-4-5:low
+```
+
+Then pass an alias name with or without a thinking-level suffix:
+
+```sh
+tasks run 10 --model sol
+tasks run 10 --model sol:high
+tasks run 10 --model fast:high
+```
+
+- Exact alias matches expand directly to the configured target.
+- When passing `<alias>:<thinking>`, if the alias target already ends with a Pi thinking-level suffix (`:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, `:max`), that suffix is replaced by `:<thinking>`; otherwise `:<thinking>` is appended, preserving non-thinking colons in model IDs such as `ollama/llama3:8b`.
+- Lookups are single-step (aliases do not chain to other aliases), and unmatched `--model` values pass through to Pi unchanged.
+- The config file is loaded only when `--model` is supplied to `tasks run`, `tasks pi`, or `tasks go`. A missing file is treated as empty; an unreadable or invalid file fails before mutating task, worktree, or session state.
+- `config.yml` uses a strict UTF-8 YAML subset: space-indented block mappings under `models.aliases`, plain or single/double-quoted keys and scalar values, blank lines, and `#` comments.
+
 ## License
 
 [The Unlicense](UNLICENSE.md) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.

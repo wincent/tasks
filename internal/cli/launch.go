@@ -67,7 +67,6 @@ func setResultForTopic(ctx context.Context, repo *git.Repository, prefix store.P
 }
 
 func launchTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
-	prefix, n := a.prefix, a.number()
 	interactive := a.action == "pi"
 	if interactive && (!terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Out)) {
 		return errors.New("`tasks pi` requires a terminal; use `tasks run` for headless work")
@@ -75,6 +74,16 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if _, supplied := a.values["--worktree"]; supplied && a.value("--worktree") == "" {
 		return errors.New("--worktree requires a nonempty path")
 	}
+	model, hasModel, err := resolveModelOption(a, streams)
+	if err != nil {
+		return err
+	}
+	return launchTaskWithModel(ctx, cwd, repo, a, model, hasModel, streams)
+}
+
+func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, a arguments, model string, hasModel bool, streams IO) error {
+	prefix, n := a.prefix, a.number()
+	interactive := a.action == "pi"
 	if err := store.RequireLocalHistory(repo); err != nil {
 		return err
 	}
@@ -208,8 +217,8 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 		argv = append(argv, "--mode", "json")
 		child.Out, child.Group, child.RequireGroupExit = progress, true, true
 	}
-	if len(a.values["--model"]) > 0 {
-		argv = append(argv, "--model", a.value("--model"))
+	if hasModel {
+		argv = append(argv, "--model", model)
 	}
 	child.Args = append(argv, "--", prompt)
 	runner := streams.Runner

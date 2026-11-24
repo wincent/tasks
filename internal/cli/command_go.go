@@ -43,17 +43,20 @@ func init() {
 			return validateTopicOption(a)
 		},
 		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
+			model, hasModel, err := resolveModelOption(a, streams)
+			if err != nil {
+				return err
+			}
 			n, err := createTask(ctx, cwd, repo, a, streams, false)
 			if err != nil {
 				return err
 			}
 			// Creation has released the metadata lock that launchTask needs.
-			return launchTask(ctx, cwd, repo, arguments{
+			return launchTaskWithModel(ctx, cwd, repo, arguments{
 				action: "run",
 				prefix: a.prefix,
 				tasks:  []taskArgument{{number: n}},
-				values: map[string][]string{"--model": a.values["--model"]},
-			}, streams)
+			}, model, hasModel, streams)
 		},
 	})
 }

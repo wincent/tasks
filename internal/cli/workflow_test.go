@@ -42,6 +42,7 @@ func taskWorkflowFixture(t *testing.T) workflowFixture {
 		"PATH="+path+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"PI_CODING_AGENT_DIR=",
 		"HOME="+home,
+		"XDG_CONFIG_HOME",
 	)
 	repo, root := fixture(t)
 	// Keep task worktrees out of main's status without relying on a global ignore.
