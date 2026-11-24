@@ -19,9 +19,8 @@ func TestMergeKeepsCheckoutUsedAsRecordedDestination(t *testing.T) {
 			path := strings.TrimSpace(run(t, root, "create", "Child", "--body", "Uses a legacy destination"))
 			content := string(uiBytes(t, path))
 			writeSafetyFile(t, path, strings.Replace(content, "Status: open\n", "Status: open\nTopic: "+branch+"\n", 1))
-			metadata := filepath.Dir(path)
-			systemGit(t, metadata, "add", "--", filepath.Base(path))
-			systemGit(t, metadata, "commit", "-m", "record a dependent topic")
+			commitFixtureFiles(t, filepath.Dir(path), "record a dependent topic", filepath.Base(path))
+
 			if dirty {
 				writeSafetyFile(t, path, content)
 			}
@@ -54,10 +53,11 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 			const branch = "task/example-1"
 			const refName = "refs/heads/" + branch
 			ticket := strings.TrimSpace(run(t, root, "create", "Land on a topic", "--topic", "before", "--body", "Implementation"))
-			systemGit(t, root, "branch", "after")
-			commitImplementation(t, root, "feature.txt", "task work\n")
-			systemGit(t, root, "branch", "before")
-			systemGit(t, root, "branch", branch)
+			setRef(t, repo, "refs/heads/after", fixtureRevision(t, repo, mainRef), git.ID{})
+			tip := commitImplementation(t, root, "feature.txt", "task work\n")
+			setRef(t, repo, "refs/heads/before", tip, git.ID{})
+			setRef(t, repo, refName, tip, git.ID{})
+
 			ref, err := repo.Reference(refName)
 			if err != nil {
 				t.Fatal(err)
@@ -111,12 +111,13 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 }
 
 func TestCleanupProtectsWorkingOnlyDestination(t *testing.T) {
-	_, root := fixture(t)
+	repo, root := fixture(t)
+
 	const branch = "task/example-2"
 	path := strings.TrimSpace(run(t, root, "create", "Child", "--body", "Will use a legacy destination"))
 	content := string(uiBytes(t, path))
 	writeSafetyFile(t, path, strings.Replace(content, "Status: open\n", "Status: open\nTopic: "+branch+"\n", 1))
-	systemGit(t, root, "branch", branch)
+	setRef(t, repo, "refs/heads/"+branch, fixtureRevision(t, repo, mainRef), git.ID{})
 	if out := run(t, root, "cleanup", "--apply"); !strings.Contains(out, "recorded destination for EXAMPLE-1") {
 		t.Fatal(out)
 	}

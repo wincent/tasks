@@ -73,25 +73,6 @@ func piWorktree(t *testing.T, child process.Command) string {
 	return header.Cwd
 }
 
-func systemGit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"}, args...)...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func commitImplementation(t *testing.T, dir, name, text string) string {
-	t.Helper()
-	writeSafetyFile(t, filepath.Join(dir, name), text)
-	systemGit(t, dir, "add", "--", name)
-	systemGit(t, dir, "commit", "-m", "implement "+name)
-	return systemGit(t, dir, "rev-parse", "HEAD")
-}
-
 func assertStatus(t *testing.T, root, status string) {
 	t.Helper()
 	actual, err := store.Status(run(t, root, "show", "1", "--raw"))
@@ -129,13 +110,14 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 	writeSafetyFile(t, filepath.Join(root, "unsaved.txt"), "preserve\n")
 	path := strings.TrimSpace(run(t, root, "create", "Ship something", "--body", "requirements"))
 	run(t, root, "comment", "1", "--body", "Also cover this.\n\nStatus: example in a note")
-	var checkoutPath, sessionPath, delivered string
+	var checkoutPath, sessionPath string
+	var delivered git.ID
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		checkoutPath, sessionPath = piWorktree(t, child), child.Args[2]
 		if child.Directory != root || filepath.Dir(sessionPath) != filepath.Join(os.Getenv("HOME"), ".pi", "agent", "sessions", "dev.wincent.tasks") {
 			t.Fatalf("unexpected Pi launch directory %q or session path %q", child.Directory, sessionPath)
 		}
-		if head := systemGit(t, checkoutPath, "rev-parse", "HEAD"); head != main {
+		if head := fixtureRevision(t, openFixtureRepo(t, checkoutPath), "HEAD"); head != main {
 			t.Fatalf("started at %s, main %s", head, main)
 		}
 		if prompt := child.Args[len(child.Args)-1]; !strings.Contains(prompt, path) || strings.Contains(prompt, "task complete") {
@@ -164,10 +146,10 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	assertStatus(t, root, "merged")
-	if head, _ := repo.Head(); head.ID.String() != other {
+	if head := fixtureHead(t, repo); head.ID != other {
 		t.Fatal("unrelated checkout moved")
 	}
-	if ref, _ := repo.Reference(mainRef); ref.ID.String() != delivered {
+	if got := fixtureRevision(t, repo, mainRef); got != delivered {
 		t.Fatal("implementation not in main")
 	}
 	if _, err := os.Stat(checkoutPath); !os.IsNotExist(err) {
@@ -192,10 +174,10 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 }
 
 func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	run(t, root, "create", "Review", "--body-file", "-", "--help") // Help is side-effect free.
 	run(t, root, "create", "Review", "--body", "requirements")
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	var checkoutPath string
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		checkoutPath = piWorktree(t, child)
@@ -206,7 +188,7 @@ func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	assertStatus(t, root, "done")
-	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+	if got := fixtureRevision(t, repo, mainRef); got != base {
 		t.Fatal("review run merged")
 	}
 	if got := strings.TrimSpace(run(t, root, "worktree", "1")); filepath.Join(root, got) != checkoutPath {
@@ -219,7 +201,7 @@ func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
 	for _, name := range []string{"one.txt", "two.txt", "meanwhile.txt"} {
 		uiBytes(t, filepath.Join(root, name))
 	}
-	branch := systemGit(t, checkoutPath, "branch", "--show-current")
+	branch := strings.TrimPrefix(fixtureHead(t, openFixtureRepo(t, checkoutPath)).Branch, "refs/heads/")
 	writeSafetyFile(t, filepath.Join(checkoutPath, "unfinished.txt"), "keep\n")
 	if out := run(t, root, "cleanup", "1", "--apply"); !strings.Contains(out, "Keep branch "+branch+": still checked out") {
 		t.Fatal(out)
@@ -240,16 +222,16 @@ func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
 	if _, err := os.Stat(checkoutPath); !os.IsNotExist(err) {
 		t.Fatalf("checkout not removed: %v", err)
 	}
-	if out := systemGit(t, root, "branch", "--list", branch); out != "" {
-		t.Fatalf("branch not removed: %s", out)
+	if fixtureHasBranch(t, repo, branch) {
+		t.Fatalf("branch not removed: %s", branch)
 	}
 }
 
 func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 	for _, mode := range []string{"dirty", "nonzero", "interrupt", "question", "pi-error"} {
 		t.Run(mode, func(t *testing.T) {
-			_, root := taskWorkflowFixture(t)
-			base := systemGit(t, root, "rev-parse", "main")
+			repo, root := taskWorkflowFixture(t)
+			base := fixtureRevision(t, repo, mainRef)
 			run(t, root, "create", "Continuation", "--body", "requirements")
 			var worktree, session string
 			ctx, cancel := context.WithCancel(context.Background())
@@ -278,7 +260,7 @@ func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 				t.Fatalf("%v\n%s", err, out)
 			}
 			assertStatus(t, root, "blocked")
-			if got := systemGit(t, root, "rev-parse", "main"); got != base {
+			if got := fixtureRevision(t, repo, mainRef); got != base {
 				t.Fatal("failed run merged")
 			}
 			uiBytes(t, filepath.Join(worktree, "partial"))
@@ -312,9 +294,9 @@ func TestRunRejectsMissingPromptBeforeStartingPi(t *testing.T) {
 }
 
 func TestRunPromptIsPerInvocation(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Per-run instructions", "--body", "requirements"))
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	const first = "Run the unit tests first."
 	const retry = "- Don't run Chrome tests.\n- Run the worker suite."
 	var worktree, session, standard string
@@ -372,15 +354,15 @@ func TestRunPromptIsPerInvocation(t *testing.T) {
 			t.Fatalf("hint leaked into task file: %q", task)
 		}
 	}
-	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+	if got := fixtureRevision(t, repo, mainRef); got != base {
 		t.Fatal("review run merged")
 	}
 }
 
 func TestPiPromptIsPerInvocation(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Interactive instructions", "--body", "requirements"))
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	const first = "Skip Chrome tests."
 	const retry = "- Skip the browser suite.\n- Still run the worker suite."
 	fails(t, root, "`tasks pi` requires a terminal", "pi", "1", "--prompt", first)
@@ -429,7 +411,7 @@ func TestPiPromptIsPerInvocation(t *testing.T) {
 		if task := run(t, root, "show", "1", "--raw"); strings.Contains(task, first) || strings.Contains(task, retry) {
 			t.Fatalf("hint leaked into task file: %q", task)
 		}
-		if got := systemGit(t, root, "rev-parse", "main"); got != base {
+		if got := fixtureRevision(t, repo, mainRef); got != base {
 			t.Fatal("interactive launch merged")
 		}
 	}
@@ -513,7 +495,7 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 		if filepath.Dir(newPath) != wantDir || newPath == oldPath {
 			t.Fatalf("expected new transcript under %s, got %s", wantDir, newPath)
 		}
-		if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != revision {
+		if got := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); got != revision {
 			t.Fatalf("lost implementation commit: %s, want %s", got, revision)
 		}
 		return process.Result{}
@@ -556,7 +538,10 @@ func TestMergeConflictRetainsTaskAndRetryUsesCurrentTip(t *testing.T) {
 	if err := cmd.Run(); err == nil {
 		t.Fatal("expected a conflict on the task branch")
 	}
-	commitImplementation(t, path, "conflict", "resolved\n")
+	// Complete the Git CLI merge, preserving its second parent and clearing its state.
+	writeSafetyFile(t, filepath.Join(path, "conflict"), "resolved\n")
+	systemGit(t, path, "add", "--", "conflict")
+	systemGit(t, path, "commit", "-m", "resolve conflict")
 	run(t, root, "merge", "1")
 	assertStatus(t, root, "merged")
 	if got := string(uiBytes(t, filepath.Join(root, "conflict"))); got != "resolved\n" {
@@ -573,11 +558,7 @@ func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
 	run(t, root, "create", "Recover merge", "--body", "requirements")
 	var tip git.ID
 	_, err = invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
-		revision := commitImplementation(t, piWorktree(t, child), "result", "task content\n")
-		tip, err = git.ParseID(revision)
-		if err != nil {
-			t.Fatal(err)
-		}
+		tip = commitImplementation(t, piWorktree(t, child), "result", "task content\n")
 		return process.Result{}
 	}, "run", "1", "--no-merge")
 	if err != nil {
@@ -589,7 +570,7 @@ func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSafetyFile(t, filepath.Join(root, "result"), "unrelated staged edit\n")
-	systemGit(t, root, "add", "result")
+	stageFixtureFiles(t, repo, "result")
 	fails(t, root, "unrelated staged changes", "merge", "1")
 	if got := string(uiBytes(t, filepath.Join(root, "result"))); got != "unrelated staged edit\n" {
 		t.Fatal(got)
@@ -599,7 +580,7 @@ func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
 	}
 
 	writeSafetyFile(t, filepath.Join(root, "result"), "task content\n")
-	systemGit(t, root, "add", "result")
+	stageFixtureFiles(t, repo, "result")
 	run(t, root, "merge", "1")
 	run(t, root, "merge", "1")
 	if actual, _ := repo.ResolveCommit(mainRef); actual != tip {
@@ -610,7 +591,7 @@ func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
 
 func TestMergePreservesMainEditsAndDoesNotBypassSigning(t *testing.T) {
 	repo, root := taskWorkflowFixture(t)
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	run(t, root, "create", "Merge safely", "--body", "requirements")
 	_, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		commitImplementation(t, piWorktree(t, child), "delivered", "new file\n")
@@ -626,7 +607,7 @@ func TestMergePreservesMainEditsAndDoesNotBypassSigning(t *testing.T) {
 	if got := string(uiBytes(t, collision)); got != "user edit\n" {
 		t.Fatal(got)
 	}
-	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+	if got := fixtureRevision(t, repo, mainRef); got != base {
 		t.Fatal(got)
 	}
 	if err := os.Remove(collision); err != nil {
@@ -647,16 +628,16 @@ func TestMergePreservesMainEditsAndDoesNotBypassSigning(t *testing.T) {
 	if err == nil || !strings.Contains(diagnostic+err.Error(), "fixture signer refused") {
 		t.Fatalf("%s %v", diagnostic, err)
 	}
-	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+	if got := fixtureRevision(t, repo, mainRef); got != base {
 		t.Fatal("unsigned merge published", got)
 	}
 	assertStatus(t, root, "blocked")
 }
 
 func TestRunWithoutChangesClosesWithExplanation(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	repo, root := taskWorkflowFixture(t)
 	run(t, root, "create", "No changes", "--body", "requirements")
-	base := systemGit(t, root, "rev-parse", "main")
+	base := fixtureRevision(t, repo, mainRef)
 	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		fmt.Fprintln(child.Out, `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The feature already works."}]}}`)
 		return process.Result{}
@@ -668,7 +649,7 @@ func TestRunWithoutChangesClosesWithExplanation(t *testing.T) {
 		t.Fatal(got)
 	}
 	assertStatus(t, root, "closed")
-	if got := systemGit(t, root, "rev-parse", "main"); got != base {
+	if got := fixtureRevision(t, repo, mainRef); got != base {
 		t.Fatal("no-change run touched main")
 	}
 }

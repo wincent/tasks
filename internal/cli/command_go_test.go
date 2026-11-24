@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/store"
 )
 
 func TestGoCreatesAndRunsNewTask(t *testing.T) {
@@ -62,8 +63,8 @@ func TestGoKeepsTaskWhenRunFails(t *testing.T) {
 }
 
 func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
-	before := systemGit(t, root, "rev-parse", "refs/heads/tasks")
+	repo, root := taskWorkflowFixture(t)
+	before := fixtureRevision(t, repo, store.Branch)
 	for _, tc := range []struct {
 		title, number string
 	}{
@@ -87,21 +88,21 @@ func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
 			t.Errorf("go %q output %q and error %v; want usage error %q", tc.title, out, err, want)
 		}
 	}
-	if after := systemGit(t, root, "rev-parse", "refs/heads/tasks"); after != before {
+	if after := fixtureRevision(t, repo, store.Branch); after != before {
 		t.Fatal("rejected task references changed task history")
 	}
 }
 
 func TestGoRejectsInvalidArgumentsWithoutCreatingTask(t *testing.T) {
-	_, root := fixture(t)
-	before := systemGit(t, root, "rev-parse", "refs/heads/tasks")
+	repo, root := fixture(t)
+	before := fixtureRevision(t, repo, store.Branch)
 	fails(t, root, "`tasks go` expects 1 positional argument(s)", "go")
 	fails(t, root, "`tasks go` expects 1 positional argument(s)", "go", "Two", "arguments")
 	fails(t, root, "unrecognized argument: --body", "go", "Title", "--body", "text")
 	fails(t, root, "title must be nonempty", "go", " ")
 	fails(t, root, "without path separators", "go", "bad/title")
 	fails(t, root, "task text must not be empty", "create", "Title", "--body", "")
-	if after := systemGit(t, root, "rev-parse", "refs/heads/tasks"); after != before {
+	if after := fixtureRevision(t, repo, store.Branch); after != before {
 		t.Fatal("invalid arguments changed task history")
 	}
 }

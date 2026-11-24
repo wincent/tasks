@@ -20,7 +20,7 @@ func TestArchiveRoundTrip(t *testing.T) {
 		{999, 0, false}, {1000, 1000, true}, {42017, 42000, true},
 	} {
 		t.Run(fmt.Sprint(tt.number), func(t *testing.T) {
-			_, root := fixture(t)
+			repo, root := fixture(t)
 			metadata := filepath.Join(root, "tasks")
 			name := fmt.Sprintf("EXAMPLE-%d Task [literal].md", tt.number)
 			id := store.Prefix("EXAMPLE").ID(tt.number)
@@ -32,18 +32,17 @@ func TestArchiveRoundTrip(t *testing.T) {
 			if err := os.Chmod(filepath.Join(metadata, name), 0755); err != nil {
 				t.Fatal(err)
 			}
-			systemGit(t, metadata, "add", "--", name)
-			systemGit(t, metadata, "update-index", "--chmod=+x", "--", name)
-			systemGit(t, metadata, "commit", "-m", "seed ticket")
+			commitFixtureFiles(t, metadata, "seed ticket", name)
+
 			writeSafetyFile(t, filepath.Join(root, "report.txt"), "artifact bytes\n")
 			run(t, root, "store", id, "report.txt")
-			before := systemGit(t, root, "rev-parse", "tasks")
+			before := fixtureRevision(t, repo, store.Branch)
 			if tt.prospective {
 				systemGit(t, root, "worktree", "remove", metadata)
 			}
 
 			run(t, root, "archive", strings.ToLower(id))
-			archivedHead := systemGit(t, root, "rev-parse", "tasks")
+			archivedHead := fixtureRevision(t, repo, store.Branch)
 			assertTicketMove(t, root, before, name, archived)
 			if got := string(uiBytes(t, filepath.Join(metadata, archived))); got != original {
 				t.Fatalf("changed ticket bytes: %q", got)
@@ -111,7 +110,7 @@ func TestArchiveRoundTrip(t *testing.T) {
 }
 
 func TestArchiveMultipleTasks(t *testing.T) {
-	_, root := fixture(t)
+	repo, root := fixture(t)
 	var paths, archived, originals []string
 	for _, title := range []string{"First", "Second", "Third"} {
 		path := strings.TrimSpace(run(t, root, "create", title, "--body", "Original"))
@@ -120,13 +119,13 @@ func TestArchiveMultipleTasks(t *testing.T) {
 		originals = append(originals, string(uiBytes(t, path)))
 	}
 	metadata := filepath.Join(root, "tasks")
-	before := systemGit(t, root, "rev-parse", "tasks")
+	before := fixtureRevision(t, repo, store.Branch)
 	want := strings.Join([]string{archived[2], archived[1], archived[0]}, "\n") + "\n"
 	if got := run(t, root, "archive", "3", "example-2", "1"); got != want {
 		t.Fatalf("archive output = %q, want %q", got, want)
 	}
-	archivedHead := systemGit(t, root, "rev-parse", "tasks")
-	if got := systemGit(t, root, "rev-parse", "tasks^"); got != before {
+	archivedHead := fixtureRevision(t, repo, store.Branch)
+	if got := fixtureRevision(t, repo, store.Branch+"^"); got != before {
 		t.Fatalf("archive should write one commit on %s, got parent %s", before, got)
 	}
 	if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
@@ -142,10 +141,10 @@ func TestArchiveMultipleTasks(t *testing.T) {
 	if got := run(t, root, "unarchive", "2", "EXAMPLE-1", "3"); got != want {
 		t.Fatalf("unarchive output = %q, want %q", got, want)
 	}
-	if got := systemGit(t, root, "rev-parse", "tasks^"); got != archivedHead {
+	if got := fixtureRevision(t, repo, store.Branch+"^"); got != archivedHead {
 		t.Fatalf("unarchive should write one commit on %s, got parent %s", archivedHead, got)
 	}
-	if got := systemGit(t, root, "diff", "--name-status", before, "tasks", "--"); got != "" {
+	if got := systemGit(t, root, "diff", "--name-status", before.String(), store.Branch, "--"); got != "" {
 		t.Fatalf("round trip changed the tasks tree: %s", got)
 	}
 	if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
@@ -158,16 +157,16 @@ func TestArchiveBatchRejectsInvalidSelections(t *testing.T) {
 	run(t, root, "create", "First", "--body", "Original")
 	run(t, root, "create", "Second", "--body", "Original")
 	metadata := filepath.Join(root, "tasks")
-	assertUnchanged := func(before string) {
+	assertUnchanged := func(before git.ID) {
 		t.Helper()
-		if got := systemGit(t, root, "rev-parse", "tasks"); got != before {
+		if got := fixtureRevision(t, repo, store.Branch); got != before {
 			t.Fatalf("rejected batch changed tasks ref: %s, want %s", got, before)
 		}
 		if got := systemGit(t, metadata, "status", "--porcelain"); got != "" {
 			t.Fatalf("rejected batch left changes: %s", got)
 		}
 	}
-	before := systemGit(t, root, "rev-parse", "tasks")
+	before := fixtureRevision(t, repo, store.Branch)
 	fails(t, root, "unexpected task prefix WRONG", "archive", "1", "WRONG-2")
 	fails(t, root, "positive ticket number", "archive", "1", "0")
 	fails(t, root, "duplicate task number: EXAMPLE-1", "archive", "1", "example-1")
@@ -191,7 +190,7 @@ func TestArchiveBatchRejectsInvalidSelections(t *testing.T) {
 
 	// This also checks that the failed batch released the first task's lock.
 	run(t, root, "archive", "1")
-	before = systemGit(t, root, "rev-parse", "tasks")
+	before = fixtureRevision(t, repo, store.Branch)
 	fails(t, root, "EXAMPLE-1 is already archived", "archive", "2", "1")
 	fails(t, root, "EXAMPLE-2 is not archived", "unarchive", "1", "2")
 	fails(t, root, "unexpected task prefix WRONG", "unarchive", "1", "WRONG-2")
@@ -199,13 +198,13 @@ func TestArchiveBatchRejectsInvalidSelections(t *testing.T) {
 	assertUnchanged(before)
 }
 
-func assertTicketMove(t *testing.T, root, previous, from, to string) {
+func assertTicketMove(t *testing.T, root string, previous git.ID, from, to string) {
 	t.Helper()
-	if got := systemGit(t, root, "show", "-s", "--format=%P", store.Branch); got != previous {
+	if got := systemGit(t, root, "show", "-s", "--format=%P", store.Branch); got != previous.String() {
 		t.Fatalf("expected one metadata commit on %s, got parents %s", previous, got)
 	}
 	want := "R100\t" + from + "\t" + to
-	if got := systemGit(t, root, "diff", "--name-status", "-M100%", previous, store.Branch); got != want {
+	if got := systemGit(t, root, "diff", "--name-status", "-M100%", previous.String(), store.Branch); got != want {
 		t.Fatalf("commit changed more than the ticket path: %q, want %q", got, want)
 	}
 	if got := systemGit(t, root, "ls-tree", "tasks", "--", to); !strings.HasPrefix(got, "100755 blob ") {
@@ -218,7 +217,8 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 	path := strings.TrimSpace(run(t, root, "create", "Target", "--body", "Original"))
 	metadata := filepath.Dir(path)
 	original := uiBytes(t, path)
-	before := systemGit(t, root, "rev-parse", "tasks")
+	before := fixtureRevision(t, repo, store.Branch)
+	tasksRepo := openFixtureRepo(t, metadata)
 	for _, action := range []string{"archive", "unarchive"} {
 		fails(t, root, "expects at least 1 positional", action)
 		fails(t, root, "positive ticket number", action, "0")
@@ -239,7 +239,7 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 	}
 	writeSafetyFile(t, path, "unsaved edit")
 	fails(t, root, "manual changes", "archive", "1")
-	systemGit(t, metadata, "add", "--", filepath.Base(path))
+	stageFixtureFiles(t, tasksRepo, filepath.Base(path))
 	fails(t, root, "manual changes", "archive", "1")
 	systemGit(t, metadata, "restore", "--source=HEAD", "--staged", "--worktree", "--", filepath.Base(path))
 	bucket := filepath.Join(metadata, "archive", "0")
@@ -262,7 +262,7 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 	duplicate := filepath.Join(bucket, "EXAMPLE-1 Different title.md")
 	writeSafetyFile(t, duplicate, "duplicate")
 	fails(t, root, "found 2", "archive", "1")
-	systemGit(t, metadata, "add", "--", filepath.Join("archive", "0", filepath.Base(duplicate)))
+	stageFixtureFiles(t, tasksRepo, filepath.Join("archive", "0", filepath.Base(duplicate)))
 	remove(duplicate)
 	fails(t, root, "duplicate path in the task index", "archive", "1")
 	systemGit(t, metadata, "reset", "--", filepath.Join("archive", "0", filepath.Base(duplicate)))
@@ -273,13 +273,13 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 	}
 	fails(t, root, "archive directory is obstructed", "archive", "1")
 	remove(bucket)
-	if got := systemGit(t, root, "rev-parse", "tasks"); got != before || string(uiBytes(t, path)) != string(original) {
+	if got := fixtureRevision(t, repo, store.Branch); got != before || string(uiBytes(t, path)) != string(original) {
 		t.Fatal("rejected archive changed the ticket or metadata ref")
 	}
 
 	unrelated := filepath.Join(metadata, "unrelated")
 	writeSafetyFile(t, unrelated, "staged")
-	systemGit(t, metadata, "add", "unrelated")
+	stageFixtureFiles(t, tasksRepo, "unrelated")
 	writeSafetyFile(t, unrelated, "unstaged")
 	staged := systemGit(t, metadata, "ls-files", "--stage", "--", "unrelated")
 	assertUnrelated := func() {
@@ -346,7 +346,7 @@ func TestCleanupArchivedTaskUsesRecordedTopic(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(root), "topic-task")
 	systemGit(t, root, "worktree", "add", "-b", "task/example-1", worktree, "main")
 	tip := commitImplementation(t, worktree, "only-on-topic.txt", "not in main\n")
-	systemGit(t, root, "branch", "delivery", tip)
+	setRef(t, repo, "refs/heads/delivery", tip, git.ID{})
 	directory, err := operationState(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +358,7 @@ func TestCleanupArchivedTaskUsesRecordedTopic(t *testing.T) {
 	}
 	claim := uiBytes(t, taskSessionPath(directory, 1))
 	run(t, root, "archive", "1")
-	if got := systemGit(t, worktree, "rev-parse", "HEAD"); got != tip || string(uiBytes(t, taskSessionPath(directory, 1))) != string(claim) || string(uiBytes(t, session)) != "saved session\n" {
+	if got := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); got != tip || string(uiBytes(t, taskSessionPath(directory, 1))) != string(claim) || string(uiBytes(t, session)) != "saved session\n" {
 		t.Fatal("archive disturbed implementation worktree, branch, or saved session")
 	}
 	metadata := filepath.Join(root, "tasks")
