@@ -1,6 +1,6 @@
 # TASKS-37: Add --include-archived to tasks search
 
-Status: active
+Status: merged
 
 ## Description
 
