@@ -97,25 +97,6 @@ git config --local --add remote.origin.push refs/heads/main:refs/heads/main
 git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 ```
 
-## Work on a topic branch
-
-Use `--topic BRANCH` when filing a task that should land somewhere other than local `main`:
-
-```sh
-tasks create "Add export support" --topic feature/export --body "Support CSV exports"
-tasks run 42
-```
-
-Replace `42` with the new task's number. Or use `tasks go "Add export support" --topic feature/export` to file and run a task in one step.
-
-The task records `Topic: feature/export`. Filing alone does not create the topic or a task checkout. On the first `tasks run` or `tasks pi`, a fresh task checkout starts from the existing local topic branch. If the topic does not exist yet, it is created from the current local `main` without switching your checkout. If the topic disappears after work has started, restore it before resuming or merging.
-
-A successful `tasks run` merges into the recorded topic, not the branch you have checked out. To review first, use `tasks run 42 --no-merge` or `tasks pi 42`, then `tasks merge 42` when ready. `tasks cleanup` keeps work if the recorded destination is missing. Otherwise, a task branch is eligible when its tip is reachable from the destination or when a conflict-free merge of the task tip leaves the current destination unchanged. Cleanup keeps tasks when it cannot verify the merge safely.
-
-Branch names under `task/` are reserved for implementation branches. If an older ticket records one as its topic, cleanup keeps that branch until the ticket is retargeted.
-
-Without `--topic` (or with `--topic main`), the task starts from and merges into local `main`. The task prefix always comes from `.tasks.yml` on local `main`.
-
 ## License
 
 [The Unlicense](UNLICENSE.md) applies to code that the project has the rights to dedicate to the public domain. Third-party dependencies remain subject to their own license terms.
