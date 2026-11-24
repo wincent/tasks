@@ -29,9 +29,11 @@ func armor(format string) string {
 const payload = "tree 0000000000000000000000000000000000000000\ncommitter C <c@example.invalid> 1700000000 +0000\n\nmessage\n"
 
 func TestSigningProtocolsAndFailureContracts(t *testing.T) {
+	t.Parallel()
 	for _, format := range []string{"openpgp", "x509", "ssh"} {
 		for _, failure := range []string{"", "exit", "missing", "signal", "cancel", "empty", "malformed", "status"} {
 			t.Run(format+"/"+failure, func(t *testing.T) {
+				t.Parallel()
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				p := policy(format)
@@ -106,6 +108,7 @@ func TestSigningProtocolsAndFailureContracts(t *testing.T) {
 }
 
 func TestSigningKeyFallbackAndSSHDefaultCommand(t *testing.T) {
+	t.Parallel()
 	p := policy("openpgp")
 	a := Adapter{Runner: runnerFunc(func(_ context.Context, c process.Command) process.Result {
 		if c.Args[3] != "Committer <c@example.invalid>" {
@@ -154,6 +157,7 @@ func TestSigningKeyFallbackAndSSHDefaultCommand(t *testing.T) {
 }
 
 func TestMergeVerificationGPGAndX509TrustStatuses(t *testing.T) {
+	t.Parallel()
 	for _, format := range []string{"openpgp", "x509"} {
 		for _, status := range []string{"GOODSIG", "BADSIG", "ERRSIG", "EXPSIG", "EXPKEYSIG", "REVKEYSIG", "absent", "duplicate"} {
 			for _, level := range trustNames {
@@ -193,8 +197,10 @@ func TestMergeVerificationGPGAndX509TrustStatuses(t *testing.T) {
 }
 
 func TestSSHVerificationPrincipalsTimeRevocationAndTrust(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"good", "bad", "unknown", "revoked", "expired", "ultimate", "missing-revocation", "malformed", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			p := policy("ssh")
 			p.AllowedSigners = "allowed signers"
 			p.Revocation = "revoked"
@@ -294,8 +300,10 @@ func TestSigningPolicyFileFreshnessAndFrozenCommandIncludes(t *testing.T) {
 }
 
 func TestSigningPolicySnapshotBooleanAssignments(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"", " = true", " = false", " = 0", " = -2", " ="} {
 		t.Run(value, func(t *testing.T) {
+			t.Parallel()
 			repo, err := git.Init(filepath.Join(t.TempDir(), "repo"), "", false)
 			if err != nil {
 				t.Fatal(err)
@@ -325,6 +333,7 @@ func TestSigningPolicySnapshotBooleanAssignments(t *testing.T) {
 }
 
 func TestSigningPolicyOrderedAliasesAndInvalidSettings(t *testing.T) {
+	t.Parallel()
 	repo, err := git.Init(filepath.Join(t.TempDir(), "repo"), "", false)
 	if err != nil {
 		t.Fatal(err)

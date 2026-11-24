@@ -12,6 +12,7 @@ import (
 // These are independently specified byte fixtures, not output captured from a
 // Git subprocess. No Git executable or additional encoding library is needed.
 func TestNativeEncodingKnownBytes(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		encoding string
 		worktree string
@@ -28,6 +29,7 @@ func TestNativeEncodingKnownBytes(t *testing.T) {
 		{"UTF-32BE", "\x00\x00\x00A\x00\x00\x00\xe9\x00\x00\x00\n", "Aé\n"},
 	} {
 		t.Run(tt.encoding, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			attributes := "content.txt working-tree-encoding=" + tt.encoding + " -text\n"
 			tip := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": attributes, "content.txt": tt.utf8})
@@ -51,6 +53,7 @@ func TestNativeEncodingKnownBytes(t *testing.T) {
 }
 
 func TestNativeEncodingBOMAndInvalidClean(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name, encoding, data, want, errorText string
 	}{
@@ -77,6 +80,7 @@ func TestNativeEncodingBOMAndInvalidClean(t *testing.T) {
 		{"le-bom-accepts-be", "UTF-16LE-BOM", "\xfe\xff\x00A", "A", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			writeFile(t, filepath.Join(root, ".gitattributes"), []byte("content.txt working-tree-encoding="+tt.encoding+" -text\n"))
 			before := safetyFiles(t, root)
@@ -102,8 +106,10 @@ func TestNativeEncodingBOMAndInvalidClean(t *testing.T) {
 }
 
 func TestNativeEncodingAttributeStates(t *testing.T) {
+	t.Parallel()
 	for _, attribute := range []string{"", "!working-tree-encoding", "working-tree-encoding=", "working-tree-encoding=UTF-8", "working-tree-encoding=uTf8", "working-tree-encoding", "-working-tree-encoding"} {
 		t.Run(attribute, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			writeFile(t, filepath.Join(root, ".gitattributes"), []byte("content.txt -text "+attribute+"\n"))
 			input := []byte{0xff, 0, '\r', '\n'} // UTF-8 is a bypass, not validation.
@@ -127,10 +133,12 @@ func TestNativeEncodingAttributeStates(t *testing.T) {
 }
 
 func TestNativeEncodingRoundtripConfigurationIsPerHandle(t *testing.T) {
+	t.Parallel()
 	// Reading a BE BOM through UTF-16LE-BOM is valid, but writing it back
 	// produces LE bytes. This provides a deterministic lossy roundtrip.
 	for _, list := range []string{"", "SHIFT-JIS", "UTF-16LE", "XUTF-16LE-BOM", "utf-16le-bom", "ASCII,\tUTF-16LE-BOM, SHIFT-JIS"} {
 		t.Run(list, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			writeFile(t, filepath.Join(root, ".gitattributes"), []byte("content.txt working-tree-encoding=UTF-16LE-BOM -text\n"))
 			if err := repo.SetLocalConfig("core.checkRoundtripEncoding", list); err != nil {
@@ -155,6 +163,7 @@ func TestNativeEncodingRoundtripConfigurationIsPerHandle(t *testing.T) {
 }
 
 func TestNativeEncodingCRLFIdentAndSymlink(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	attrs := "content.txt working-tree-encoding=UTF-16LE text eol=crlf ident\nlink working-tree-encoding=not-a-real-encoding\nplain.txt text eol=crlf\n"
 	blob, err := repo.WriteBlob([]byte("$Id$\ncafé\n"))
@@ -200,8 +209,10 @@ func TestNativeEncodingCRLFIdentAndSymlink(t *testing.T) {
 }
 
 func TestNativeEncodingCheckoutFailurePreflight(t *testing.T) {
+	t.Parallel()
 	for _, data := range []string{"unrepresentable €\n", "invalid \xff\n", "overlong \xc0\xaf", "surrogate \xed\xa0\x80", "out-of-range \xf4\x90\x80\x80"} {
 		t.Run(data, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			base := safetyTip(t, repo, ID{}, map[string]string{"a.txt": "before\n", "z.txt": "before\n"})
 			publish(t, repo, "refs/heads/main", base, ID{})

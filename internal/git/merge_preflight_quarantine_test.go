@@ -53,9 +53,11 @@ func mergePreflightBlobID(content string) ID {
 }
 
 func TestNativeMergePreflightQuarantinesEarlierBlobs(t *testing.T) {
+	t.Parallel()
 	for _, layout := range []string{"loose", "packed", "alternate"} {
 		for _, rejection := range []string{"driver", "filter", "existing-object"} {
 			t.Run(layout+"/"+rejection, func(t *testing.T) {
+				t.Parallel()
 				repo, root := fixture(t, false)
 				attributes := "z.txt merge=custom\n"
 				if rejection != "driver" {
@@ -158,9 +160,11 @@ func TestNativeMergePreflightQuarantinesEarlierBlobs(t *testing.T) {
 }
 
 func TestNativeMergePreflightDefaultAndBuiltinDrivers(t *testing.T) {
+	t.Parallel()
 	for _, driver := range []string{"custom", "text", "binary", "union"} {
 		for _, attribute := range []string{"named", "default", "boolean", "one-sided"} {
 			t.Run(driver+"/"+attribute, func(t *testing.T) {
+				t.Parallel()
 				repo, root := fixture(t, false)
 				attributes := "content merge=" + driver + "\n"
 				if attribute == "default" {
@@ -206,6 +210,7 @@ func TestNativeMergePreflightDefaultAndBuiltinDrivers(t *testing.T) {
 }
 
 func TestNativeMergePreflightUsesRenameDriverPath(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	content := strings.Repeat("stable line\n", 30)
 	base := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": "renamed merge=custom\n", "original": content})
@@ -240,8 +245,10 @@ func TestNativeMergePreflightUsesRenameDriverPath(t *testing.T) {
 }
 
 func TestNativeMergePreflightTargetNestedAttributes(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"new-filter", "nested-override", "merged-attributes"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			baseFiles := map[string]string{".gitattributes": "* -filter\n", "dir/content": "base\n", "a.txt": "one\ntwo\nthree\nfour\nfive\n"}
 			if scenario == "nested-override" {
@@ -294,6 +301,7 @@ func TestNativeMergePreflightTargetNestedAttributes(t *testing.T) {
 }
 
 func TestCleanupMergeQuarantinesTreeAndBlob(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	base := safetyTip(t, repo, ID{}, map[string]string{"file": "one\ntwo\nthree\nfour\nfive\n"})
 	ours := safetyTip(t, repo, base, map[string]string{"file": "left\ntwo\nthree\nfour\nfive\n"})

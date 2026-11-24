@@ -65,7 +65,7 @@ func listTasks(ctx context.Context, a arguments, streams IO, invocation storeInv
 	if a.flags["--json"] {
 		return encode(streams.Out, selected)
 	}
-	p := terminalPresentation(streams.Out)
+	p := streams.presentation(streams.Out)
 	heading := ""
 	if listing.recent {
 		heading = p.paint("Recent tasks:", "1")

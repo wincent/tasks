@@ -8,6 +8,7 @@ import (
 )
 
 func TestNativeEncodingGenericBOMSmudge(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		encoding string
 		le, be   []byte
@@ -16,6 +17,7 @@ func TestNativeEncodingGenericBOMSmudge(t *testing.T) {
 		{"UTF-32", []byte{0xff, 0xfe, 0, 0, 'A', 0, 0, 0}, []byte{0, 0, 0xfe, 0xff, 0, 0, 0, 'A'}},
 	} {
 		t.Run(tt.encoding, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			tip := safetyTip(t, repo, ID{}, map[string]string{
 				".gitattributes": "content.txt working-tree-encoding=" + tt.encoding + " -text\n",
@@ -43,6 +45,7 @@ func TestNativeEncodingGenericBOMSmudge(t *testing.T) {
 }
 
 func TestNativeEncodingLargeAndStatefulContent(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name, encoding, utf8, encoded string
 	}{
@@ -52,6 +55,7 @@ func TestNativeEncodingLargeAndStatefulContent(t *testing.T) {
 		{"stateful-eof", "ISO-2022-JP", "あ", "\x1b$B$\x22"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			tip := safetyTip(t, repo, ID{}, map[string]string{
 				".gitattributes": "content.txt working-tree-encoding=" + tt.encoding + " -text\n",

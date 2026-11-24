@@ -11,6 +11,7 @@ import (
 )
 
 func TestPermanentLockAndCancellation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "lock")
 	lock, err := Acquire(context.Background(), path)
 	if err != nil {
@@ -53,6 +54,7 @@ func TestPermanentLockAndCancellation(t *testing.T) {
 }
 
 func TestLockRejectsSymlinkAndDirectory(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	target := filepath.Join(directory, "target")
 	if err := os.WriteFile(target, []byte("precious"), 0600); err != nil {
@@ -75,6 +77,7 @@ func TestLockRejectsSymlinkAndDirectory(t *testing.T) {
 }
 
 func TestAtomicStateReplacement(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "state.json")
 	for _, data := range [][]byte{[]byte("first"), {}, []byte("second\n")} {
 		if err := AtomicWrite(path, data); err != nil {

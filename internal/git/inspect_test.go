@@ -28,6 +28,7 @@ func readFile(t *testing.T, path string) []byte {
 }
 
 func TestDescribeChanges(t *testing.T) {
+	t.Parallel()
 	changes := []Change{
 		{Path: "both", Status: IndexModified | WorktreeModified},
 		{Path: "conflict", Status: Conflicted},
@@ -54,6 +55,7 @@ func TestDescribeChanges(t *testing.T) {
 }
 
 func TestHeadAndRevisionResolution(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	head, err := r.Head()
 	if err != nil || head != (Head{Branch: "refs/heads/main"}) {
@@ -96,8 +98,10 @@ func TestHeadAndRevisionResolution(t *testing.T) {
 }
 
 func TestHeadWorkdirValidation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"attached", "bare", "detached", "unborn", "nonbranch", "alias", "missing-object", "blob", "malformed", "missing", "configuration"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			r, _ := fixture(t, mode == "bare")
 			tip := commit(t, r, "first")
 			publish(t, r, "refs/heads/main", tip, ID{})
@@ -150,6 +154,7 @@ func TestHeadWorkdirValidation(t *testing.T) {
 }
 
 func TestFreshReferencesAndConfiguration(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -195,6 +200,7 @@ func TestFreshReferencesAndConfiguration(t *testing.T) {
 }
 
 func TestMergeBasesAndHistoricalNames(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	blob, err := r.WriteBlob([]byte("task"))
 	if err != nil {
@@ -250,6 +256,7 @@ func TestMergeBasesAndHistoricalNames(t *testing.T) {
 }
 
 func TestHistoryPathsSubtreesAndDeduplication(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	blob, err := r.WriteBlob([]byte("task"))
 	if err != nil {
@@ -458,6 +465,7 @@ func BenchmarkHistoryPaths(b *testing.B) {
 }
 
 func TestLiteralTreeAndBlobReading(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	data := []byte{0, '\r', '\n', 0xff, 'x'}
 	blob, err := r.WriteBlob(data)
@@ -516,6 +524,7 @@ func TestLiteralTreeAndBlobReading(t *testing.T) {
 }
 
 func TestStatusIncludesUnreadableTrackedContent(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -552,6 +561,7 @@ func TestStatusIncludesUnreadableTrackedContent(t *testing.T) {
 }
 
 func TestStatusRejectsUnreadableDirectory(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -587,6 +597,7 @@ func TestStatusRejectsUnreadableDirectory(t *testing.T) {
 }
 
 func TestStatusAndIndexAreFreshAndReadOnly(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	first := commit(t, r, "original")
 	publish(t, r, "refs/heads/main", first, ID{})

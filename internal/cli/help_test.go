@@ -10,6 +10,7 @@ import (
 )
 
 func TestHelp(t *testing.T) {
+	t.Parallel()
 	// Help must work without a repository, even for commands that need a
 	// task number, an editor, or a Pi session.
 	cwd := filepath.Join(t.TempDir(), "missing")
@@ -93,6 +94,7 @@ func TestHelp(t *testing.T) {
 }
 
 func TestHelpQueryExamples(t *testing.T) {
+	t.Parallel()
 	cwd := filepath.Join(t.TempDir(), "missing")
 	for _, tc := range []struct {
 		name    string
@@ -115,6 +117,7 @@ func TestHelpQueryExamples(t *testing.T) {
 }
 
 func TestHelpUsageErrors(t *testing.T) {
+	t.Parallel()
 	cwd := filepath.Join(t.TempDir(), "missing")
 	for _, tc := range []struct {
 		args []string

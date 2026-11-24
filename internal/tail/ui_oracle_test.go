@@ -30,6 +30,7 @@ func uiRole(role string, content any, extra ...map[string]any) map[string]any {
 	return map[string]any{"type": "message", "message": message}
 }
 func TestTailOracleToolsPreviewsAndConversation(t *testing.T) {
+	t.Parallel()
 	output := "one\ntwo\nthree\nfour\nfive"
 	diagnostic := strings.Repeat("failure context\n", 30) + "LAST DIAGNOSTIC"
 	entries := []any{
@@ -92,6 +93,7 @@ func TestTailOracleToolsPreviewsAndConversation(t *testing.T) {
 	}
 }
 func TestTailOraclePhysicalHiddenAndCorruptHistory(t *testing.T) {
+	t.Parallel()
 	body := record("assistant", "OMITTED") + "bad omitted json\n" + record("system", "HIDDEN") + "{\"type\":\"unknown\"}\n" + "bad visible json\n"
 	for i := 0; i < 37; i++ {
 		body += record("assistant", fmt.Sprintf("Visible %d", i))
@@ -106,6 +108,7 @@ func TestTailOraclePhysicalHiddenAndCorruptHistory(t *testing.T) {
 	}
 }
 func TestTailOracleCorruptControlsAndIncompleteSnapshot(t *testing.T) {
+	t.Parallel()
 	file, root := session(t, "not json\nnull\n{\"type\":\"future_type\"}\n"+record("assistant", "safe\x1b]52;c;unsafe\a\u009b31m\rsafe")+"{\"type\":")
 	var out, diagnostic bytes.Buffer
 	if err := readWindow(file, root, &out, &diagnostic); err != nil {

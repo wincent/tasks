@@ -22,6 +22,7 @@ type IO struct {
 	In       io.Reader
 	Out, Err io.Writer
 	Runner   process.Runner
+	Env      []string
 }
 
 type taskArgument struct {

@@ -9,6 +9,7 @@ import (
 )
 
 func TestNativeMergePreservesBothParents(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	base := commit(t, repo, "base")
 	publish(t, repo, "refs/heads/main", base, ID{})
@@ -64,6 +65,7 @@ func TestNativeMergePreservesBothParents(t *testing.T) {
 }
 
 func TestNativeMergeRetainsConflictedCandidate(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	base := commit(t, repo, "base")
 	makeTip := func(text string) ID {
@@ -112,6 +114,7 @@ func TestNativeMergeRetainsConflictedCandidate(t *testing.T) {
 }
 
 func TestRemoveWorktreeProtectsIgnoredAndChangedResources(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	base := commit(t, repo, "base")
 	publish(t, repo, "refs/heads/main", base, ID{})

@@ -12,17 +12,20 @@ import (
 )
 
 func TestLaunchModelOverride(t *testing.T) {
+	t.Parallel()
 	const model = "openai-codex/gpt-6.2-sol:high"
 	for _, command := range []string{"run", "go", "pi"} {
 		t.Run(command, func(t *testing.T) {
-			_, root := taskWorkflowFixture(t)
+			t.Parallel()
+			wf := taskWorkflowFixture(t)
+			root := wf.root
 			models := []string{model, "openai-codex/gpt-6.2-sol:low", ""}
 			if command == "go" {
 				models = []string{model, ""} // Each launch creates a new task.
 			} else {
 				run(t, root, "create", "Model override", "--body", "requirements")
 			}
-			var streams IO
+			streams := IO{Env: wf.env}
 			if command == "pi" {
 				master, slave, err := testutil.OpenPTY()
 				if err != nil {

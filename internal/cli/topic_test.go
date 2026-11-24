@@ -17,7 +17,9 @@ import (
 )
 
 func TestTopicCreationIsDeferredUntilRun(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	run(t, root, "init")
 	worktrees, err := repo.Worktrees()
 	if err != nil {
@@ -37,7 +39,7 @@ func TestTopicCreationIsDeferredUntilRun(t *testing.T) {
 	systemGit(t, root, "switch", "-c", "other", "main^")
 	other := commitImplementation(t, root, "other.txt", "caller branch\n")
 	var implementation git.ID
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
 		if fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD") != main || fixtureRevision(t, repo, "refs/heads/feature/export") != main {
 			t.Fatal("topic and worktree must start at the latest local main")
@@ -55,13 +57,15 @@ func TestTopicCreationIsDeferredUntilRun(t *testing.T) {
 }
 
 func TestGoUsesExistingTopicAndUpdatesItsCheckout(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	main := fixtureRevision(t, repo, mainRef)
 	topicDir := filepath.Join(t.TempDir(), "topic")
 	systemGit(t, root, "worktree", "add", "-b", "delivery", topicDir, "main")
 	topic := commitImplementation(t, topicDir, ".tasks.yml", "prefix: DIFFERENT\n")
 	var topicAdvance, implementation git.ID
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
 		if got := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); got != topic {
 			t.Fatalf("started at %s, want existing topic %s", got, topic)
@@ -88,7 +92,9 @@ func TestGoUsesExistingTopicAndUpdatesItsCheckout(t *testing.T) {
 }
 
 func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	main := fixtureRevision(t, repo, mainRef)
 	systemGit(t, root, "switch", "-c", "delivery")
 	setFixtureConfig(t, repo, "merge.ff", "only")
@@ -96,7 +102,7 @@ func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
 
 	var worktree, branch string
 	var first git.ID
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
 		branch = fixtureHead(t, openFixtureRepo(t, worktree)).Branch
 		first = commitImplementation(t, worktree, "first.txt", "first run\n")
@@ -111,7 +117,7 @@ func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
 	topic := commitImplementation(t, root, "meanwhile.txt", "delivery advanced\n")
 
 	var second git.ID
-	out, err = invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err = wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree := piWorktree(t, child)
 		if head := fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD"); head != topic {
 			t.Fatalf("rerun started at %s, want current topic tip %s", head, topic)
@@ -129,7 +135,9 @@ func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
 }
 
 func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	main := fixtureRevision(t, repo, mainRef)
 	topicDir := filepath.Join(t.TempDir(), "topic")
 	systemGit(t, root, "worktree", "add", "-b", "review", topicDir, "main")
@@ -138,7 +146,7 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 	run(t, root, "create", "Review me", "--topic", "review", "--body", "Review before merging.")
 	var worktree, branch string
 	var implementation git.ID
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
 		branch = fixtureHead(t, openFixtureRepo(t, worktree)).Branch
 		implementation = commitImplementation(t, worktree, "feature.txt", "done\n")
@@ -151,7 +159,7 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 		if retained {
 			systemGit(t, root, "worktree", "remove", worktree)
 		}
-		out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 			current := piWorktree(t, child)
 			head := fixtureHead(t, openFixtureRepo(t, current))
 			if (!retained && current != worktree) || head.Branch != branch || head.ID != implementation {
@@ -182,6 +190,7 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 }
 
 func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, policy, failure string
 	}{
@@ -192,7 +201,9 @@ func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			repo, root := taskWorkflowFixture(t)
+			t.Parallel()
+			wf := taskWorkflowFixture(t)
+			repo, root := wf.repo, wf.root
 			const topic = "release/delivery"
 			run(t, root, "create", "Deliver", "--topic", topic, "--body", "Topic only.")
 			base := fixtureRevision(t, repo, mainRef)
@@ -231,7 +242,9 @@ func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
 }
 
 func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	main := fixtureRevision(t, repo, mainRef)
 	run(t, root, "create", "Topic work", "--topic", "delivery", "--body", "Topic only.")
 	run(t, root, "create", "Default work", "--topic", "main", "--body", "Use main.")
@@ -275,7 +288,9 @@ func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
 }
 
 func TestMissingTopicKeepsExistingWork(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	run(t, root, "create", "Restore topic", "--topic", "missing", "--body", "Do not fall back to main.")
 	worktree := filepath.Join(t.TempDir(), "task")
 	// The task tip is in main. Falling back would allow both merge and cleanup.
@@ -284,7 +299,7 @@ func TestMissingTopicKeepsExistingWork(t *testing.T) {
 		if retained {
 			systemGit(t, root, "worktree", "remove", worktree)
 		}
-		out, err := invokePi(context.Background(), root, func(context.Context, process.Command) process.Result {
+		out, err := wf.invokePi(context.Background(), root, func(context.Context, process.Command) process.Result {
 			t.Fatal("Pi launched with a missing topic")
 			return process.Result{}
 		}, "run", "1")
@@ -302,7 +317,9 @@ func TestMissingTopicKeepsExistingWork(t *testing.T) {
 }
 
 func TestPiCreatesTopicWithoutMerging(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	run(t, root, "create", "Interactive", "--topic", "interactive", "--body", "Write the implementation.")
 	main := commitImplementation(t, root, "new-base.txt", "latest main\n")
 	master, slave, err := testutil.OpenPTY()
@@ -311,7 +328,7 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 	}
 	defer testutil.ClosePTY(master, slave)
 	var worktree string
-	err = Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
+	err = Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Env: wf.env, Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
 		if fixtureRevision(t, openFixtureRepo(t, worktree), "HEAD") != main {
 			t.Fatal("Pi did not start from the new topic")
@@ -330,7 +347,9 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 }
 
 func TestTopicEditRespectsTaskLock(t *testing.T) {
-	repo, root, _ := editorFixture(t)
+	t.Parallel()
+	ef := editorFixture(t)
+	repo, root := ef.repo, ef.root
 	run(t, root, "create", "Retarget me", "--topic", "before", "--body", "Original")
 	original := run(t, root, "show", "1", "--raw")
 	directory, err := operationState(repo)
@@ -344,20 +363,20 @@ func TestTopicEditRespectsTaskLock(t *testing.T) {
 	defer lock.Close()
 
 	revised := strings.Replace(original, "Topic: before", "Topic: after", 1)
-	t.Setenv("TASK_TEST_CONTENT", revised)
-	if _, err := runTerminal(t, root, "edit", "1"); err == nil || !strings.Contains(err.Error(), "change topic: EXAMPLE-1 already has a running") {
+	ef.setEnv("TASK_TEST_CONTENT=" + revised)
+	if _, err := ef.runTerminal(t, root, "edit", "1"); err == nil || !strings.Contains(err.Error(), "change topic: EXAMPLE-1 already has a running") {
 		t.Fatalf("retarget under task lock: %v", err)
 	}
 	if got := run(t, root, "show", "1", "--raw"); got != original {
 		t.Fatalf("blocked edit changed task: %s", got)
 	}
-	t.Setenv("TASK_TEST_CONTENT", strings.Replace(original, "Original", "Revised body", 1))
-	if _, err := runTerminal(t, root, "edit", "1"); err != nil {
+	ef.setEnv("TASK_TEST_CONTENT=" + strings.Replace(original, "Original", "Revised body", 1))
+	if _, err := ef.runTerminal(t, root, "edit", "1"); err != nil {
 		t.Fatalf("body-only edit unexpectedly blocked: %v", err)
 	}
 	lock.Close()
-	t.Setenv("TASK_TEST_CONTENT", revised)
-	if _, err := runTerminal(t, root, "edit", "1"); err != nil {
+	ef.setEnv("TASK_TEST_CONTENT=" + revised)
+	if _, err := ef.runTerminal(t, root, "edit", "1"); err != nil {
 		t.Fatalf("retarget after releasing lock: %v", err)
 	}
 	if got := run(t, root, "show", "1", "--raw"); got != revised {
@@ -366,6 +385,7 @@ func TestTopicEditRespectsTaskLock(t *testing.T) {
 }
 
 func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
 	setRef(t, repo, "refs/heads/after", fixtureRevision(t, repo, mainRef), git.ID{})
@@ -413,6 +433,7 @@ func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 }
 
 func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
@@ -455,6 +476,7 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 }
 
 func TestRecordingMergeResultRejectsRawCommitAfterRead(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
 	session, err := store.Begin(context.Background(), repo)
@@ -503,6 +525,7 @@ func TestRecordingMergeResultRejectsRawCommitAfterRead(t *testing.T) {
 }
 
 func TestTopicOptionRejectsTaskNamespace(t *testing.T) {
+	t.Parallel()
 	for _, topic := range []string{"task/example-2", "Task/other-1-build", "task/nested/branch"} {
 		for _, args := range [][]string{{"go", "Title"}, {"create", "Title"}} {
 			if _, err := parse(append(args, "--topic", topic)); err == nil || !strings.Contains(err.Error(), "reserved task/") {
@@ -513,6 +536,7 @@ func TestTopicOptionRejectsTaskNamespace(t *testing.T) {
 }
 
 func TestTopicOptionRejectsNonBranchValues(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"", "HEAD", "main^", "-name", "@{-1}", "refs/heads/topic", "one two", "line\nbreak", "tasks"} {
 		for _, args := range [][]string{{"go", "Title"}, {"create", "Title", "--body", "Description"}} {
 			if _, err := parse(append(args, "--topic="+value)); err == nil || !strings.Contains(err.Error(), "local implementation branch name") {

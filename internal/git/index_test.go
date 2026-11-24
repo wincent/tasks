@@ -11,6 +11,7 @@ import (
 )
 
 func TestEditTreeLeavesIndexAndWorktreeUntouched(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -67,6 +68,7 @@ func TestEditTreeLeavesIndexAndWorktreeUntouched(t *testing.T) {
 }
 
 func TestIsolatedIndexPreservesUnrelatedStaging(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -151,6 +153,7 @@ func writeFlaggedIndex(t *testing.T, path string, id ID) {
 }
 
 func TestIsolatedIndexPreservesConflictStagesAndFlags(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	blob, err := r.WriteBlob([]byte("fixture"))
 	if err != nil {
@@ -178,6 +181,7 @@ func TestIsolatedIndexPreservesConflictStagesAndFlags(t *testing.T) {
 }
 
 func TestIsolatedIndexRejectsFilesystemAliases(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -230,8 +234,10 @@ func TestIsolatedIndexRejectsFilesystemAliases(t *testing.T) {
 }
 
 func TestSafeCheckoutPreservesDirtyAndIgnoredFiles(t *testing.T) {
+	t.Parallel()
 	for _, obstruction := range []string{"dirty", "untracked", "ignored"} {
 		t.Run(obstruction, func(t *testing.T) {
+			t.Parallel()
 			r, root := fixture(t, false)
 			first := commit(t, r, "first")
 			publish(t, r, "refs/heads/main", first, ID{})

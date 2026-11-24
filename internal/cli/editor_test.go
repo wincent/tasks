@@ -65,7 +65,15 @@ func TestEditorProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-func editorFixture(t *testing.T) (*git.Repository, string, string) {
+type editorTestFixture struct {
+	repo    *git.Repository
+	root    string
+	capture string
+	visual  string
+	env     []string
+}
+
+func editorFixture(t *testing.T) editorTestFixture {
 	t.Helper()
 	repo, root := fixture(t)
 	binary, err := os.Executable()
@@ -73,15 +81,22 @@ func editorFixture(t *testing.T) (*git.Repository, string, string) {
 		t.Fatal(err)
 	}
 	capture := filepath.Join(t.TempDir(), "capture.json")
-	t.Setenv("TASK_TEST_EDITOR_HELPER", "1")
-	t.Setenv("TASK_TEST_CAPTURE", capture)
-	t.Setenv("VISUAL", "'"+strings.ReplaceAll(binary, "'", "'\\''")+"' -test.run=TestEditorProcess -- --flag 'argument with spaces'")
-	t.Setenv("EDITOR", "/nonexistent/editor")
-	t.Setenv("TASK_TEST_CONTENT", "Description from editor.\n\n- Criterion\n")
-	return repo, root, capture
+	visual := "'" + strings.ReplaceAll(binary, "'", "'\\''") + "' -test.run=TestEditorProcess -- --flag 'argument with spaces'"
+	env := withEnv(nil,
+		"TASK_TEST_EDITOR_HELPER=1",
+		"TASK_TEST_CAPTURE="+capture,
+		"VISUAL="+visual,
+		"EDITOR=/nonexistent/editor",
+		"TASK_TEST_CONTENT=Description from editor.\n\n- Criterion\n",
+	)
+	return editorTestFixture{repo: repo, root: root, capture: capture, visual: visual, env: env}
 }
 
-func runTerminal(t *testing.T, root string, args ...string) (string, error) {
+func (e *editorTestFixture) setEnv(overrides ...string) {
+	e.env = withEnv(e.env, overrides...)
+}
+
+func (e editorTestFixture) runTerminal(t *testing.T, root string, args ...string) (string, error) {
 	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
@@ -89,7 +104,7 @@ func runTerminal(t *testing.T, root string, args ...string) (string, error) {
 	}
 	defer testutil.ClosePTY(master, slave)
 	var out bytes.Buffer
-	err = Run(context.Background(), root, args, IO{In: slave, Out: &out, Err: slave})
+	err = Run(context.Background(), root, args, IO{In: slave, Out: &out, Err: slave, Env: e.env})
 	return out.String(), err
 }
 func captured(t *testing.T, path string) map[string]any {
@@ -106,6 +121,7 @@ func captured(t *testing.T, path string) map[string]any {
 }
 
 func TestEditorQuoting(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		input string
 		want  []string
@@ -128,47 +144,50 @@ func TestEditorQuoting(t *testing.T) {
 }
 
 func TestEditorBodyPTYDoesNotHoldStoreLock(t *testing.T) {
-	_, root, capture := editorFixture(t)
-	t.Setenv("TASK_TEST_EDITOR_MODE", "create")
-	out, err := runTerminal(t, root, "create", "Interactive")
+	t.Parallel()
+	ef := editorFixture(t)
+	ef.setEnv("TASK_TEST_EDITOR_MODE=create")
+	out, err := ef.runTerminal(t, ef.root, "create", "Interactive")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasSuffix(strings.TrimSpace(out), "EXAMPLE-2 Interactive.md") {
 		t.Fatal(out)
 	}
-	result := captured(t, capture)
+	result := captured(t, ef.capture)
 	if result["initial"] != "" || result["stdin_tty"] != true || result["stdout_tty"] != true {
 		t.Fatal(result)
 	}
 	if _, err := os.Stat(result["draft"].(string)); !os.IsNotExist(err) {
 		t.Fatalf("draft retained %v", err)
 	}
-	if content := run(t, root, "show", "2"); !strings.Contains(content, "Description from editor.") {
+	if content := run(t, ef.root, "show", "2"); !strings.Contains(content, "Description from editor.") {
 		t.Fatal(content)
 	}
 }
 
 func TestEditorCancellationDoesNotAllocate(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"empty", "fail"} {
 		t.Run(mode, func(t *testing.T) {
-			repo, root, capture := editorFixture(t)
-			t.Setenv("TASK_TEST_EDITOR_MODE", mode)
-			if out, err := runTerminal(t, root, "create", "Cancel"); err == nil || out != "" {
+			t.Parallel()
+			ef := editorFixture(t)
+			ef.setEnv("TASK_TEST_EDITOR_MODE=" + mode)
+			if out, err := ef.runTerminal(t, ef.root, "create", "Cancel"); err == nil || out != "" {
 				t.Fatalf("%q %v", out, err)
 			}
-			result := captured(t, capture)
+			result := captured(t, ef.capture)
 			if _, err := os.Stat(result["draft"].(string)); !os.IsNotExist(err) {
 				t.Fatalf("body draft retained %v", err)
 			}
-			paths, err := repo.Paths()
+			paths, err := ef.repo.Paths()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(paths.CommonDir, "tasks", "ledger.json")); !os.IsNotExist(err) {
 				t.Fatalf("ledger changed %v", err)
 			}
-			if got := run(t, root, "create", "First", "--body", "works"); !strings.HasSuffix(got, "EXAMPLE-1 First.md\n") {
+			if got := run(t, ef.root, "create", "First", "--body", "works"); !strings.HasSuffix(got, "EXAMPLE-1 First.md\n") {
 				t.Fatal(got)
 			}
 		})
@@ -176,18 +195,19 @@ func TestEditorCancellationDoesNotAllocate(t *testing.T) {
 }
 
 func TestEditPTYAndConcurrentDraftPreservation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"write", "empty", "fail", "concurrent", "status"} {
 		t.Run(mode, func(t *testing.T) {
-			repo, root, capture := editorFixture(t)
-			path := strings.TrimSpace(run(t, root, "create", "Edit", "--body", "original"))
-			initial := run(t, root, "show", "1")
+			t.Parallel()
+			ef := editorFixture(t)
+			path := strings.TrimSpace(run(t, ef.root, "create", "Edit", "--body", "original"))
+			initial := run(t, ef.root, "show", "1")
 			updated := strings.Replace(initial, "original", "edited", 1)
 			if mode == "status" {
 				updated = strings.Replace(initial, "Status: open", "Status: active", 1)
 			}
-			t.Setenv("TASK_TEST_CONTENT", updated)
-			t.Setenv("TASK_TEST_EDITOR_MODE", mode)
-			tasks, err := store.Open(repo)
+			ef.setEnv("TASK_TEST_CONTENT="+updated, "TASK_TEST_EDITOR_MODE="+mode)
+			tasks, err := store.Open(ef.repo)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -196,12 +216,12 @@ func TestEditPTYAndConcurrentDraftPreservation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := runTerminal(t, root, "edit", "1")
+			out, err := ef.runTerminal(t, ef.root, "edit", "1")
 			success := mode == "write" || mode == "empty" || mode == "status"
 			if success != (err == nil) {
 				t.Fatalf("%q %v", out, err)
 			}
-			result := captured(t, capture)
+			result := captured(t, ef.capture)
 			draft := result["draft"].(string)
 			if success {
 				if out != path+"\n" {
@@ -216,7 +236,7 @@ func TestEditPTYAndConcurrentDraftPreservation(t *testing.T) {
 					t.Fatalf("failed draft lost: %v", err)
 				}
 			}
-			actual := run(t, root, "show", "1")
+			actual := run(t, ef.root, "show", "1")
 			switch mode {
 			case "write", "status":
 				if actual != updated {

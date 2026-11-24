@@ -13,6 +13,7 @@ import (
 )
 
 func TestArchiveRoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		number, bucket int
 		prospective    bool
@@ -20,6 +21,7 @@ func TestArchiveRoundTrip(t *testing.T) {
 		{999, 0, false}, {1000, 1000, true}, {42017, 42000, true},
 	} {
 		t.Run(fmt.Sprint(tt.number), func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			metadata := filepath.Join(root, "tasks")
 			name := fmt.Sprintf("EXAMPLE-%d Task [literal].md", tt.number)
@@ -110,6 +112,7 @@ func TestArchiveRoundTrip(t *testing.T) {
 }
 
 func TestArchiveMultipleTasks(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	var paths, archived, originals []string
 	for _, title := range []string{"First", "Second", "Third"} {
@@ -153,6 +156,7 @@ func TestArchiveMultipleTasks(t *testing.T) {
 }
 
 func TestArchiveBatchRejectsInvalidSelections(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "create", "First", "--body", "Original")
 	run(t, root, "create", "Second", "--body", "Original")
@@ -213,6 +217,7 @@ func assertTicketMove(t *testing.T, root string, previous git.ID, from, to strin
 }
 
 func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Target", "--body", "Original"))
 	metadata := filepath.Dir(path)
@@ -301,6 +306,7 @@ func TestArchiveRejectsInvalidMovesAndPreservesLocalChanges(t *testing.T) {
 }
 
 func TestArchivedNumbersAreNotReused(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	initial, err := repo.Reference(store.Branch)
 	if err != nil {
@@ -341,6 +347,7 @@ func TestArchivedNumbersAreNotReused(t *testing.T) {
 }
 
 func TestCleanupArchivedTaskUsesRecordedTopic(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "create", "Topic task", "--topic", "delivery", "--body", "Only on the topic")
 	worktree := filepath.Join(filepath.Dir(root), "topic-task")

@@ -9,6 +9,7 @@ import (
 )
 
 func TestSparseCheckoutCleanFlaggedAndPatternTransitions(t *testing.T) {
+	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	// A present clean skipped file may safely be removed; assume-valid does not
 	// prevent a clean included file from being updated.
@@ -45,8 +46,10 @@ func TestSparseCheckoutCleanFlaggedAndPatternTransitions(t *testing.T) {
 }
 
 func TestSparsePatternTransitionProtectsDirtyAndStaged(t *testing.T) {
+	t.Parallel()
 	for _, staged := range []bool{false, true} {
 		t.Run(map[bool]string{false: "dirty", true: "staged"}[staged], func(t *testing.T) {
+			t.Parallel()
 			r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 			writeFile(t, filepath.Join(root, "keep/file"), []byte("precious"))
 			if staged {
@@ -78,6 +81,7 @@ func TestSparsePatternTransitionProtectsDirtyAndStaged(t *testing.T) {
 }
 
 func TestSparseMergeConflictsOutsideSelection(t *testing.T) {
+	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	ours := sparseCommit(t, r, base, map[string]string{"omit/file": "ours\n"})
 	theirs := sparseCommit(t, r, base, map[string]string{"omit/file": "theirs\n"})
@@ -110,6 +114,7 @@ func TestSparseMergeConflictsOutsideSelection(t *testing.T) {
 }
 
 func TestSparseMergeDirtyPreflightDoesNotMutate(t *testing.T) {
+	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	tip := sparseCommit(t, r, base, map[string]string{"omit/file": "theirs"})
 	writeFile(t, filepath.Join(root, "omit/file"), []byte("precious"))
@@ -126,6 +131,7 @@ func TestSparseMergeDirtyPreflightDoesNotMutate(t *testing.T) {
 }
 
 func TestSparseLinkedWorktreePatternLocationAndInheritedConfig(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	base := sparseCommit(t, r, ID{}, map[string]string{"keep/file": "base", "omit/file": "base"})
 	publish(t, r, "refs/heads/main", base, ID{})
@@ -171,6 +177,7 @@ func TestSparseLinkedWorktreePatternLocationAndInheritedConfig(t *testing.T) {
 }
 
 func TestSparseOmittedEncodingDoesNotBlockCheckout(t *testing.T) {
+	t.Parallel()
 	r, root, base, _ := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	next := sparseCommit(t, r, base, map[string]string{".gitattributes": "omit/* working-tree-encoding=UNKNOWN-TEST-ENCODING\n", "omit/file": "unconvertible", "keep/file": "next"})
 	if err := r.Checkout(base, next); err != nil {

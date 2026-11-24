@@ -20,9 +20,9 @@ import (
 
 func splitEditor(value string) ([]string, error) { return process.Split(value) }
 
-func editorCommand() ([]string, error) {
+func editorCommand(streams IO) ([]string, error) {
 	for _, key := range []string{"VISUAL", "EDITOR"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		if value := strings.TrimSpace(streams.getenv(key)); value != "" {
 			return splitEditor(value)
 		}
 	}
@@ -30,9 +30,18 @@ func editorCommand() ([]string, error) {
 }
 
 func runEditor(ctx context.Context, cwd string, command []string, draft string, streams IO) error {
+	executable := command[0]
+	if streams.Env != nil {
+		var err error
+		executable, err = streams.lookPath(executable)
+		if err != nil {
+			return fmt.Errorf("editor failed (%v); task edit cancelled", err)
+		}
+	}
 	args := append(append([]string{}, command[1:]...), draft)
-	process := exec.CommandContext(ctx, command[0], args...)
+	process := exec.CommandContext(ctx, executable, args...)
 	process.Dir = cwd
+	process.Env = streams.Env
 	process.Stdin = streams.In
 	process.Stdout = streams.Err
 	process.Stderr = streams.Err
@@ -66,7 +75,7 @@ func editorBody(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if err != nil {
 		return "", err
 	}
-	p := terminalPresentation(streams.Err)
+	p := streams.presentation(streams.Err)
 	label := p.paint("Creating task:", "1") + " " + p.paint(strings.TrimSpace(a.positional[0]), "3")
 	kind := "description"
 	operation := "task creation"
@@ -83,7 +92,7 @@ func editorBody(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	}
 	tasks.Close()
 	session.Close()
-	command, err := editorCommand()
+	command, err := editorCommand(streams)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +148,7 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 	if err != nil {
 		return err
 	}
-	command, err := editorCommand()
+	command, err := editorCommand(streams)
 	if err != nil {
 		return err
 	}
@@ -159,7 +168,7 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 	if err := os.WriteFile(draft, []byte(task.Content), 0600); err != nil {
 		return err
 	}
-	p := terminalPresentation(streams.Err)
+	p := streams.presentation(streams.Err)
 	fmt.Fprintf(streams.Err, "%s %s. Save and quit to commit; leave unchanged to cancel.\n",
 		p.paint("Editing", "1"), p.task(task.ID(), task.Title, " "))
 	if err := runEditor(ctx, cwd, command, draft, streams); err != nil {
@@ -171,7 +180,7 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 	}
 	if bytes.Equal(data, []byte(task.Content)) {
 		saved = true
-		return taskResult(streams.Out, "Unchanged", task.ID(), task.Title, task.Path)
+		return taskResult(streams, "Unchanged", task.ID(), task.Title, task.Path)
 	}
 	if !utf8.Valid(data) {
 		return errors.New("edited task must be UTF-8")
@@ -240,5 +249,5 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 		return err
 	}
 	saved = true
-	return taskResult(streams.Out, "Edited", task.ID(), task.Title, task.Path)
+	return taskResult(streams, "Edited", task.ID(), task.Title, task.Path)
 }

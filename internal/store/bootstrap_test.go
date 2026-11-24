@@ -86,6 +86,7 @@ func TestBootstrapExplicitLocalHistory(t *testing.T) {
 }
 
 func TestBootstrapMissingLocalBranchNeverContactsRemotes(t *testing.T) {
+	t.Parallel()
 	var contacts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		contacts.Add(1)
@@ -140,6 +141,7 @@ func TestBootstrapMissingLocalBranchNeverContactsRemotes(t *testing.T) {
 }
 
 func TestBootstrapDoesNotAdoptLocalTrackingRef(t *testing.T) {
+	t.Parallel()
 	remote, _, _ := fixture(t)
 	repo := emptyRepository(t)
 	copyFixtureTasks(t, remote, repo)
@@ -192,6 +194,7 @@ func bootstrapSnapshot(t *testing.T, root string) map[string]string {
 }
 
 func TestBootstrapRejectsNonOrphanBeforeCreatingCheckout(t *testing.T) {
+	t.Parallel()
 	repo := emptyRepository(t)
 	main, err := repo.Reference("refs/heads/main")
 	if err != nil {

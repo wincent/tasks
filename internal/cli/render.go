@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"unicode"
@@ -17,9 +16,10 @@ import (
 
 func renderMarkdown(ctx context.Context, cwd, content string, raw bool, streams IO) error {
 	if !raw && terminal.IsTerminal(streams.Out) {
-		if binary, err := exec.LookPath("glow"); err == nil {
+		if binary, err := streams.lookPath("glow"); err == nil {
 			command := exec.CommandContext(ctx, binary, "-")
 			command.Dir = cwd
+			command.Env = streams.Env
 			command.Stdin = strings.NewReader(content)
 			command.Stdout = streams.Out
 			command.Stderr = streams.Err
@@ -40,12 +40,6 @@ type presentation struct {
 	out         io.Writer
 	interactive bool
 	styled      bool
-}
-
-func terminalPresentation(out io.Writer) presentation {
-	interactive := terminal.IsTerminal(out)
-	// Preserve list's historical nonempty NO_COLOR behavior.
-	return presentation{out, interactive, interactive && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"}
 }
 
 func (p presentation) paint(value, code string) string {
@@ -140,8 +134,9 @@ func (p presentation) changeMarker(value string) string {
 	return p.paint(value, "31")
 }
 
-func taskResult(out io.Writer, action, id, title, path string) error {
-	p := terminalPresentation(out)
+func taskResult(streams IO, action, id, title, path string) error {
+	out := streams.Out
+	p := streams.presentation(out)
 	if !p.interactive {
 		_, err := fmt.Fprintln(out, path)
 		return err

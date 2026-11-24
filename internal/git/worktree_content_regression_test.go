@@ -9,9 +9,11 @@ import (
 )
 
 func TestProspectiveContentsUseProposedAttributesWithoutMutation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"encoding", "clean", "process", "safecrlf", "nested"} {
 		for _, unborn := range []bool{false, true} {
 			t.Run(mode+map[bool]string{false: "/existing", true: "/unborn"}[unborn], func(t *testing.T) {
+				t.Parallel()
 				repo, root := fixture(t, false)
 				if !unborn {
 					tip := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": "*.txt -text\n", "old.txt": "old\n"})
@@ -59,6 +61,7 @@ func TestProspectiveContentsUseProposedAttributesWithoutMutation(t *testing.T) {
 }
 
 func TestProspectiveContentsDoNotSmudgeOldTreeUnderFutureAttributes(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	tip := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": "*.txt -text\n", "old.txt": "old\n"})
 	publish(t, repo, "refs/heads/tasks", tip, ID{})
@@ -80,6 +83,7 @@ func TestProspectiveContentsDoNotSmudgeOldTreeUnderFutureAttributes(t *testing.T
 }
 
 func TestProspectiveContentsStillPreflightOriginalAttributes(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	tip := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": "old.txt filter=original\n", "old.txt": "old\n"})
 	publish(t, repo, "refs/heads/tasks", tip, ID{})

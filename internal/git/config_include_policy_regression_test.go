@@ -11,6 +11,7 @@ import (
 )
 
 func TestConfigurationNativeParserPreservesCapturedRecords(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +71,7 @@ func TestConfigurationNativeParserPreservesCapturedRecords(t *testing.T) {
 }
 
 func TestConfigurationBorrowedTraversalOwnership(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}

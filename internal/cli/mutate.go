@@ -28,7 +28,7 @@ func addNote(_ context.Context, _ string, a arguments, streams IO, invocation st
 	if err != nil {
 		return err
 	}
-	return taskResult(streams.Out, action, task.ID(), task.Title, task.Path)
+	return taskResult(streams, action, task.ID(), task.Title, task.Path)
 }
 
 func updateTask(session *store.Session, prefix store.Prefix, n int, status, heading, note, action string, expectedTopic destination) (store.Task, error) {

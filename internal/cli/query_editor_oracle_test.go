@@ -32,7 +32,7 @@ func uiAbsent(t *testing.T, path string) {
 	}
 }
 
-func uiTerminal(t *testing.T, root string, args ...string) (string, string, error) {
+func uiTerminalEnv(t *testing.T, root string, env []string, args ...string) (string, string, error) {
 	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
@@ -47,7 +47,7 @@ func uiTerminal(t *testing.T, root string, args ...string) (string, string, erro
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = Run(ctx, root, args, IO{In: slave, Out: &out, Err: slave})
+	err = Run(ctx, root, args, IO{In: slave, Out: &out, Err: slave, Env: env})
 	// Close the slave to let the reader finish draining the master.
 	slave.Close()
 	return out.String(), strings.ReplaceAll(string(<-done), "\r\n", "\n"), err
@@ -73,9 +73,12 @@ func uiStage(t *testing.T, tasks *store.Store, path, content string) {
 }
 
 func TestEditorOracleSelectedFileAndLinkedCheckout(t *testing.T) {
+	t.Parallel()
 	for _, ticket := range []string{"1", "EXAMPLE-1", "example-1", "linked"} {
 		t.Run(ticket, func(t *testing.T) {
-			repo, root, capture := editorFixture(t)
+			t.Parallel()
+			ef := editorFixture(t)
+			repo, root, capture := ef.repo, ef.root, ef.capture
 			path := strings.TrimSpace(run(t, root, "create", "Edited", "--body", "Original description"))
 			original := string(uiBytes(t, path))
 			updated := strings.Replace(original, "Original description", "Edited description", 1)
@@ -114,8 +117,8 @@ func TestEditorOracleSelectedFileAndLinkedCheckout(t *testing.T) {
 				}
 				cwd, number = linked.Paths.WorkDir, "EXAMPLE-1"
 			}
-			t.Setenv("TASK_TEST_CONTENT", updated)
-			out, diagnostic, err := uiTerminal(t, cwd, "edit", number)
+			ef.setEnv("TASK_TEST_CONTENT=" + updated)
+			out, diagnostic, err := uiTerminalEnv(t, cwd, ef.env, "edit", number)
 			if err != nil || out != path+"\n" || !strings.Contains(diagnostic, "editor output") {
 				t.Fatalf("%q %q %v", out, diagnostic, err)
 			}
@@ -185,10 +188,13 @@ func TestEditorOracleSelectedFileAndLinkedCheckout(t *testing.T) {
 }
 
 func TestEditorOracleActualFallbacks(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"create", "edit"} {
 		for _, choice := range []string{"EDITOR", "vi"} {
 			t.Run(action+"/"+choice, func(t *testing.T) {
-				_, root, capture := editorFixture(t)
+				t.Parallel()
+				ef := editorFixture(t)
+				root, capture := ef.root, ef.capture
 				args := []string{"create", "Edited"}
 				updated := "Description from editor.\n\n- Acceptance criterion\n"
 				if action == "edit" {
@@ -196,9 +202,7 @@ func TestEditorOracleActualFallbacks(t *testing.T) {
 					updated = strings.Replace(run(t, root, "show", "1"), "Original description", "Edited description", 1)
 					args = []string{"edit", "1"}
 				}
-				command := os.Getenv("VISUAL")
-				t.Setenv("VISUAL", "  ")
-				t.Setenv("EDITOR", command)
+				ef.setEnv("VISUAL=  ", "EDITOR="+ef.visual)
 				if choice == "vi" {
 					executable, err := os.Executable()
 					if err != nil {
@@ -209,11 +213,10 @@ func TestEditorOracleActualFallbacks(t *testing.T) {
 					if err := os.WriteFile(filepath.Join(dir, "vi"), []byte(script), 0700); err != nil {
 						t.Fatal(err)
 					}
-					t.Setenv("PATH", dir)
-					t.Setenv("EDITOR", "")
+					ef.setEnv("PATH="+dir, "EDITOR=")
 				}
-				t.Setenv("TASK_TEST_CONTENT", updated)
-				out, diagnostic, err := uiTerminal(t, root, args...)
+				ef.setEnv("TASK_TEST_CONTENT=" + updated)
+				out, diagnostic, err := uiTerminalEnv(t, root, ef.env, args...)
 				if err != nil || !strings.Contains(diagnostic, "editor output") {
 					t.Fatalf("%q %v", diagnostic, err)
 				}

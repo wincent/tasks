@@ -10,6 +10,7 @@ import (
 )
 
 func TestHasconfigURLWildmatch(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		pattern, url string
 		want         bool
@@ -358,6 +359,7 @@ func TestHasconfigConditionalOwnershipAdmission(t *testing.T) {
 // Synthetic file sources cover system/XDG/global levels without changing native
 // global search paths or writing the host's system configuration.
 func TestHasconfigOwnershipSourceLevelsAndFalseOrdinaryTargets(t *testing.T) {
+	t.Parallel()
 	for _, level := range []int{2, 3, 4} {
 		for _, reverse := range []bool{false, true} {
 			for _, active := range []bool{false, true} {
@@ -400,6 +402,7 @@ func TestHasconfigOwnershipSourceLevelsAndFalseOrdinaryTargets(t *testing.T) {
 }
 
 func TestHasconfigOwnershipReadOnlyBranchContext(t *testing.T) {
+	t.Parallel()
 	for _, head := range []string{"ref: refs/heads/main\n", strings.Repeat("1", 40) + "\n", "ref: refs/tags/not-a-branch\n"} {
 		dir := t.TempDir()
 		gitdir := filepath.Join(dir, "gitdir")
@@ -453,6 +456,7 @@ func hasconfigTreeSnapshot(t *testing.T, root string) map[string]string {
 }
 
 func TestHasconfigDepthAndFalseNestedClosure(t *testing.T) {
+	t.Parallel()
 	for _, limit := range []uint{10, 11} {
 		value := "/next"
 		depth := uint(0)
@@ -474,6 +478,7 @@ func TestHasconfigDepthAndFalseNestedClosure(t *testing.T) {
 }
 
 func TestHasconfigInvalidOrdinaryConfigurationPreventsMutation(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	target := filepath.Join(t.TempDir(), "target")
 	writeCommandInclude(t, target, "[tasktool]\nvalid = true\n")
@@ -499,6 +504,7 @@ func TestHasconfigInvalidOrdinaryConfigurationPreventsMutation(t *testing.T) {
 }
 
 func TestHasconfigOtherConditionsAndDetachedFuture(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}

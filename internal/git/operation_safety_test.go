@@ -10,8 +10,10 @@ import (
 )
 
 func TestNativeExternalFilterPreflightPreservesAffectedState(t *testing.T) {
+	t.Parallel()
 	for _, command := range []string{"clean", "smudge", "process"} {
 		t.Run(command, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			base := safetyTip(t, repo, ID{}, map[string]string{"content.txt": "base\n", "unrelated": "untouched\n", ".gitattributes": "content.txt filter=custom\n"})
 			next := safetyTip(t, repo, base, map[string]string{".gitattributes": "content.txt filter=custom\n", "content.txt": "next\n"})
@@ -52,6 +54,7 @@ func TestNativeExternalFilterPreflightPreservesAffectedState(t *testing.T) {
 }
 
 func TestNativeUnrelatedFiltersAndNativeLineEndings(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t, false)
 	// A fixture-specific driver avoids inheriting an installed Git LFS command
 	// before the baseline checkout. The operation under test enables it below.
@@ -93,8 +96,10 @@ func TestNativeUnrelatedFiltersAndNativeLineEndings(t *testing.T) {
 }
 
 func TestNativeExternalMergeDriverOnlyRejectsRequiredOperation(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"conflict", "clean-content-merge", "unrelated", "one-sided"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			base := safetyTip(t, repo, ID{}, map[string]string{"content.txt": "one\ntwo\nthree\n", "other": "base\n", ".gitattributes": "content.txt merge=custom\n"})
 			leftFiles, rightFiles := map[string]string{"content.txt": "left\ntwo\nthree\n"}, map[string]string{"content.txt": "right\ntwo\nthree\n"}
@@ -139,8 +144,10 @@ func TestNativeExternalMergeDriverOnlyRejectsRequiredOperation(t *testing.T) {
 }
 
 func TestNativeUnsupportedRepositoryFormatsAreNonmutating(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ key, value, want string }{{"extensions.objectformat", "sha256", "SHA-256"}, {"extensions.refstorage", "reftable", "reftable"}} {
 		t.Run(tc.value, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t, false)
 			if err := repo.SetLocalConfig("core.repositoryformatversion", "1"); err != nil {
 				t.Fatal(err)

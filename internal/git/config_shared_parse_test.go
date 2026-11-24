@@ -207,6 +207,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 }
 
 func TestConfigurationSharedParseMutationBoundsAndLifetime(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -307,6 +308,7 @@ func TestConfigurationSharedParseMutationBoundsAndLifetime(t *testing.T) {
 }
 
 func TestConfigurationSharedParseConcurrentHandles(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -416,6 +418,7 @@ func TestConfigurationSharedParseFalseClosureRechecked(t *testing.T) {
 }
 
 func TestConfigurationExpandPathPlainBytesAndTilde(t *testing.T) {
+	t.Parallel()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := initialize(); err != nil {

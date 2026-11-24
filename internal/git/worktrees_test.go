@@ -8,6 +8,7 @@ import (
 )
 
 func TestWorktreeInventoryIncludesLockedAndMissing(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
@@ -50,6 +51,7 @@ func TestWorktreeInventoryIncludesLockedAndMissing(t *testing.T) {
 }
 
 func TestOpenCheckoutAndPathsAndWorktreesMatchSeparateCalls(t *testing.T) {
+	t.Parallel()
 	r, dir := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})

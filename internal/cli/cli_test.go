@@ -3,6 +3,7 @@ package cli
 import "testing"
 
 func TestValueOptionsDoNotConsumeHelp(t *testing.T) {
+	t.Parallel()
 	for name, spec := range commands {
 		for option, kind := range spec.options {
 			if kind != valueOption {
@@ -19,6 +20,7 @@ func TestValueOptionsDoNotConsumeHelp(t *testing.T) {
 }
 
 func TestMissingOptionValue(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args   []string
 		option string
@@ -37,6 +39,7 @@ func TestMissingOptionValue(t *testing.T) {
 }
 
 func TestPromptValuesDoNotConsumeNoMerge(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		option []string
 		want   string

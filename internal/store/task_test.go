@@ -9,6 +9,7 @@ import (
 )
 
 func TestScanIgnoresDotfiles(t *testing.T) {
+	t.Parallel()
 	repo, err := git.Init(filepath.Join(t.TempDir(), "repository"), "", false)
 	if err != nil {
 		t.Fatal(err)

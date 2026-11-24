@@ -3,6 +3,7 @@ package git
 import "testing"
 
 func TestConfigurationWildmatch(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		pattern, value string
 		fold, want     bool

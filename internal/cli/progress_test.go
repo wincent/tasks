@@ -12,6 +12,7 @@ import (
 )
 
 func TestPiProgressAttentionPresentation(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, term, noColor string
 		tty, styled         bool
@@ -22,11 +23,10 @@ func TestPiProgressAttentionPresentation(t *testing.T) {
 		{"dumb terminal", "dumb", "", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("TERM", tc.term)
-			t.Setenv("NO_COLOR", tc.noColor)
+			t.Parallel()
 
 			var buffer bytes.Buffer
-			progress := piProgress{out: &buffer}
+			progress := piProgress{out: &buffer, env: []string{"TERM=" + tc.term, "NO_COLOR=" + tc.noColor}}
 			readOutput := buffer.String
 			if tc.tty {
 				master, slave, err := testutil.OpenPTY()

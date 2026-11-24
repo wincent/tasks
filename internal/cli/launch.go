@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -90,7 +89,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer lock.Release()
 	task, err := readTask(ctx, repo, prefix, n)
 	if err != nil {
 		return err
@@ -103,7 +102,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if err != nil {
 		return fmt.Errorf("%s: %w", task.ID(), err)
 	}
-	executable, err := exec.LookPath("pi")
+	executable, err := streams.lookPath("pi")
 	if err != nil {
 		return errors.New("pi executable not found on PATH")
 	}
@@ -168,7 +167,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if !inside(root, scope) {
 		return fmt.Errorf("task checkout %s is outside repository container %s; move the checkout into the container before launching Pi", root, scope)
 	}
-	record, err := prepareSession(directory, scope, root, source.Head.Branch, n, saved)
+	record, err := prepareSession(directory, scope, root, source.Head.Branch, n, saved, streams)
 	if err != nil {
 		return err
 	}
@@ -176,7 +175,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if err != nil {
 		return err
 	}
-	defer runLock.Close()
+	defer runLock.Release()
 	loan, err := lock.Lend()
 	if err != nil {
 		return err
@@ -194,15 +193,15 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
 
-	diagnostics := terminalPresentation(streams.Err)
+	diagnostics := streams.presentation(streams.Err)
 	fmt.Fprintf(streams.Err, "%s\nTopic: %s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), target, root, record.SessionFile)
 	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path, attentionLabel)
 	if hint := a.value("--prompt"); hint != "" {
 		prompt += "\n\nAdditional instructions for this run:\n" + hint
 	}
 	argv := []string{executable, "--session", record.SessionFile}
-	progress := &piProgress{out: streams.Out}
-	child := process.Command{Directory: scope, Environment: os.Environ(), Out: streams.Out, Err: streams.Err, ExtraFiles: []*os.File{loan, live}}
+	progress := &piProgress{out: streams.Out, env: streams.Env}
+	child := process.Command{Directory: scope, Environment: streams.environ(), Out: streams.Out, Err: streams.Err, ExtraFiles: []*os.File{loan, live}}
 	if interactive {
 		child.In = streams.In
 	} else {
@@ -219,7 +218,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	}
 	result := runner.Run(ctx, child)
 	live.Close()
-	runLock.Close()
+	runLock.Release()
 	switch {
 	case ctx.Err() != nil:
 		return launchBlocked(repo, directory, prefix, n, record, fmt.Errorf("Pi interrupted: %w", ctx.Err()))
@@ -258,7 +257,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if err != nil {
 		return launchBlocked(repo, directory, prefix, n, record, err)
 	}
-	p := terminalPresentation(streams.Out)
+	p := streams.presentation(streams.Out)
 	if included && head.ID == source.Head.ID {
 		if interactive && (task.Status == "open" || task.Status == "blocked" || task.Status == "active") {
 			return launchBlocked(repo, directory, prefix, n, record, errors.New("Pi exited without implementation commits; run again to continue, or close if no changes are needed"))

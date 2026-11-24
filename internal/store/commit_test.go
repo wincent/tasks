@@ -82,6 +82,7 @@ func options() CommitOptions {
 }
 
 func TestCommitSelectedFilesPreservesOtherContentAndStaging(t *testing.T) {
+	t.Parallel()
 	repo, store, initial := fixture(t)
 	ctx := context.Background()
 	name := "EXAMPLE-1 literal[abc]\nname.md"
@@ -145,8 +146,10 @@ func TestCommitSelectedFilesPreservesOtherContentAndStaging(t *testing.T) {
 }
 
 func TestMetadataRefVerificationAndRacePreservation(t *testing.T) {
+	t.Parallel()
 	for _, race := range []string{"stale-ref", "callback-error", "file", "index", "index-lock", "head", "operation"} {
 		t.Run(race, func(t *testing.T) {
+			t.Parallel()
 			repo, store, _ := fixture(t)
 			name := "EXAMPLE-1 task.md"
 			first, err := CommitFiles(context.Background(), repo, map[string][]byte{name: []byte("first")}, options())
@@ -226,8 +229,10 @@ func TestMetadataRefVerificationAndRacePreservation(t *testing.T) {
 }
 
 func TestMetadataRefusesManualChangesAndOperationMarkers(t *testing.T) {
+	t.Parallel()
 	for _, obstruction := range []string{"untracked", "modified", "symlink", "directory", "operation", "index-lock", "traversal"} {
 		t.Run(obstruction, func(t *testing.T) {
+			t.Parallel()
 			repo, store, initial := fixture(t)
 			name := "EXAMPLE-1 task.md"
 			path := filepath.Join(store.Path, name)
@@ -272,6 +277,7 @@ func TestMetadataRefusesManualChangesAndOperationMarkers(t *testing.T) {
 }
 
 func TestPublicationFailureRetainsRecoveryEvidence(t *testing.T) {
+	t.Parallel()
 	repo, store, initial := fixture(t)
 	index := filepath.Join(store.Paths.GitDir, "index")
 	before := mustRead(t, index)
@@ -301,6 +307,7 @@ func TestPublicationFailureRetainsRecoveryEvidence(t *testing.T) {
 }
 
 func TestMetadataRejectsSymlinkStateDirectory(t *testing.T) {
+	t.Parallel()
 	repo, _, initial := fixture(t)
 	paths, _ := repo.Paths()
 	foreign := t.TempDir()
@@ -321,6 +328,7 @@ func TestMetadataRejectsSymlinkStateDirectory(t *testing.T) {
 }
 
 func TestMetadataDoesNotRecreateMovedRepository(t *testing.T) {
+	t.Parallel()
 	repo, _, _ := fixture(t)
 	paths, _ := repo.Paths()
 	if err := os.Rename(paths.WorkDir, paths.WorkDir+"-moved"); err != nil {
@@ -335,6 +343,7 @@ func TestMetadataDoesNotRecreateMovedRepository(t *testing.T) {
 }
 
 func TestStoreRejectsRelatedHistoryAndWrongBranch(t *testing.T) {
+	t.Parallel()
 	repo, store, initial := fixture(t)
 	paths, err := repo.Paths()
 	if err != nil {
@@ -358,6 +367,7 @@ func TestStoreRejectsRelatedHistoryAndWrongBranch(t *testing.T) {
 }
 
 func TestBatchArchiveMoveChecksSharedIndexEntries(t *testing.T) {
+	t.Parallel()
 	repo, tasks, _ := fixture(t)
 	ctx := context.Background()
 	files := map[string][]byte{

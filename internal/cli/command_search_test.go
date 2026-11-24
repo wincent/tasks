@@ -13,6 +13,7 @@ import (
 )
 
 func TestSearchTitleSubstringsAndFilters(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "init")
 	statuses := []string{"open", "active", "blocked", "done", "merged", "closed"}
@@ -81,6 +82,7 @@ func TestSearchTitleSubstringsAndFilters(t *testing.T) {
 }
 
 func TestSearchPreservesListMarkersAndOwnership(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Matching title", "--body", "description"))
 	writeSafetyFile(t, path, string(uiBytes(t, path))+"\nManual change\n")
@@ -113,6 +115,7 @@ func TestSearchPreservesListMarkersAndOwnership(t *testing.T) {
 }
 
 func TestSearchArguments(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"search"}, {"search", ""}, {"search", "one", "two"}, {"search", "query", "--status", "invalid"}, {"search", "query", "--raw"}} {
 		if _, err := parse(args); err == nil {
 			t.Fatalf("accepted %v", args)

@@ -17,6 +17,7 @@ import (
 )
 
 func TestQueryPreservesCommandFilters(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "init")
 	metadata := filepath.Join(root, "tasks")
@@ -145,6 +146,11 @@ func (out *archivePromptOutput) Write(p []byte) (int, error) {
 
 func archiveAtPrompt(t *testing.T, root string, onPrompt func(context.CancelFunc, io.Writer), args ...string) (string, error) {
 	t.Helper()
+	return archiveAtPromptEnv(t, root, nil, onPrompt, args...)
+}
+
+func archiveAtPromptEnv(t *testing.T, root string, env []string, onPrompt func(context.CancelFunc, io.Writer), args ...string) (string, error) {
+	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
 		t.Fatal(err)
@@ -154,11 +160,12 @@ func archiveAtPrompt(t *testing.T, root string, onPrompt func(context.CancelFunc
 	defer cancel()
 	out := &archivePromptOutput{fd: slave.Fd()}
 	out.prompt = func() { onPrompt(cancel, master) }
-	err = Run(ctx, root, args, IO{In: slave, Out: out})
+	err = Run(ctx, root, args, IO{In: slave, Out: out, Env: env})
 	return out.String(), err
 }
 
 func TestQueryArchivePreviewMatchesList(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "init")
 	metadata := filepath.Join(root, "tasks")
@@ -176,13 +183,12 @@ func TestQueryArchivePreviewMatchesList(t *testing.T) {
 		{"dumb terminal", "dumb", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("TERM", tc.term)
-			t.Setenv("NO_COLOR", tc.noColor)
-			rows, diagnostic, err := outputTerminal(t, root, "list", "all", "-q", query)
+			env := withEnv(nil, "TERM="+tc.term, "NO_COLOR="+tc.noColor)
+			rows, diagnostic, err := outputTerminalEnv(t, root, env, "list", "all", "-q", query)
 			if err != nil || diagnostic != "" || !strings.Contains(rows, "blocked") || !strings.Contains(rows, "EXAMPLE-10") {
 				t.Fatalf("list = %q, %q, %v", rows, diagnostic, err)
 			}
-			out, diagnostic, err := outputTerminal(t, root, "archive", "-q", query)
+			out, diagnostic, err := outputTerminalEnv(t, root, env, "archive", "-q", query)
 			want := "Tasks to archive (2):\n" + rows + "No changes made; confirmation requires a terminal.\n"
 			if err != nil || diagnostic != "" || out != want {
 				t.Fatalf("archive = %q, %q, %v; want %q", out, diagnostic, err, want)
@@ -192,9 +198,11 @@ func TestQueryArchivePreviewMatchesList(t *testing.T) {
 }
 
 func TestQueryArchivePreviewAndApply(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
+	t.Parallel()
+	noColorEnv := withEnv(nil, "NO_COLOR=1")
 	for _, mode := range []string{"noninteractive", "empty", "decline", "cancel", "new match", "changed", "dirty", "busy", "incomplete", "missing", "archived"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			run(t, root, "init")
 			metadata := filepath.Join(root, "tasks")
@@ -238,7 +246,7 @@ func TestQueryArchivePreviewAndApply(t *testing.T) {
 				if mode == "new match" {
 					systemGit(t, root, "worktree", "remove", metadata)
 				}
-				out, err = archiveAtPrompt(t, root, func(cancel context.CancelFunc, input io.Writer) {
+				out, err = archiveAtPromptEnv(t, root, noColorEnv, func(cancel context.CancelFunc, input io.Writer) {
 					answer := "yes\n"
 					switch mode {
 					case "decline":
@@ -345,6 +353,7 @@ func TestQueryArchiveProspectiveBatch(t *testing.T) {
 }
 
 func TestQueryUpdatedReportsShallowHistory(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	metadata := filepath.Join(root, "tasks")
 	run(t, root, "create", "Target", "--body", "Details")

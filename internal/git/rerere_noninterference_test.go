@@ -137,6 +137,7 @@ func TestNativeMergeNeverInterferesWithRerere(t *testing.T) {
 }
 
 func TestNativeConflictDoesNotCreateRerereCache(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	base := commit(t, repo, "base\n")
 	left, right := commit(t, repo, "left\n", base), commit(t, repo, "right\n", base)

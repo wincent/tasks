@@ -10,6 +10,7 @@ import (
 )
 
 func TestLocalInitDoesNotRequireCommitIdentity(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	for _, key := range []string{"user.name", "user.email"} {
 		if err := repo.SetLocalConfig(key, ""); err != nil {
@@ -25,6 +26,7 @@ func TestLocalInitDoesNotRequireCommitIdentity(t *testing.T) {
 }
 
 func TestMissingLocalHistoryGuidanceDoesNotCreateTaskState(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "repository")
 	repo, err := git.Init(root, "", false)
 	if err != nil {

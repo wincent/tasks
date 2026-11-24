@@ -176,6 +176,7 @@ func TestConfigurationEffectiveCacheInvalidation(t *testing.T) {
 }
 
 func TestConfigurationBatchedNativeOverlaySnapshotsAndEntries(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +236,7 @@ func TestConfigurationBatchedNativeOverlaySnapshotsAndEntries(t *testing.T) {
 }
 
 func TestPureODBOperationsSkipConfigurationRefresh(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	var work configurationWork
 	repo.configuration.work = &work
@@ -315,6 +317,7 @@ func TestPureODBOperationsSkipConfigurationRefresh(t *testing.T) {
 }
 
 func TestValidateIndexSingleApply(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	first := commit(t, repo, "first")
 	publish(t, repo, "refs/heads/main", first, ID{})

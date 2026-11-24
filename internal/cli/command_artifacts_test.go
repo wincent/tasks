@@ -11,6 +11,7 @@ import (
 )
 
 func TestStoreArtifacts(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Benchmark", "--body", "Evidence"))
 	run(t, root, "create", "Other task", "--body", "No evidence")
@@ -138,6 +139,7 @@ func TestStoreArtifacts(t *testing.T) {
 }
 
 func TestStoreArtifactsRefusesObstructions(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Benchmark", "--body", "Evidence"))
 	const input = "new.json"

@@ -12,6 +12,7 @@ import (
 )
 
 func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	commitMainConfig(t, repo, "prefix: DEV\n")
 	base := fixtureRevision(t, repo, mainRef)
@@ -59,8 +60,10 @@ func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 }
 
 func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"absent", "configured remote", "tracking ref", "previous store", "obstructed checkout"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			const branch = "task/example-7"
 			storePath := filepath.Join(root, "tasks")
@@ -111,6 +114,7 @@ func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
 }
 
 func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	const parent = "task/example-2"
 	const child = "task/example-1"
@@ -181,6 +185,7 @@ func TestCleanupKeepsLegacyTaskDestination(t *testing.T) {
 }
 
 func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	const rewritten = "task/example-7-rewritten"
 	const mode = "task/example-7-mode"
@@ -242,6 +247,7 @@ func TestCleanupMatchesRewrittenCommitTrees(t *testing.T) {
 }
 
 func TestCleanupKeepsBranchesInUse(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	base := fixtureRevision(t, repo, mainRef)
 	for _, name := range []string{"task/example-7-current", "task/example-7-rebase", "task/example-7-rebase-update", "task/example-7-bisect", "task/example-7-unused", "task/example-8-running"} {
@@ -297,6 +303,7 @@ func TestCleanupKeepsBranchesInUse(t *testing.T) {
 }
 
 func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	const name = "refs/heads/task/example-7"
 	setRef(t, repo, name, fixtureRevision(t, repo, mainRef), git.ID{})
@@ -328,8 +335,10 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 }
 
 func TestCleanupUsesCurrentMergeResult(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"ancestral-revert", "historical-tree", "conflict", "ours-strategy", "custom-attribute"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			const branch = "task/example-9"
 			base := commitImplementation(t, root, "feature.txt", "base\n")

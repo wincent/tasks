@@ -119,7 +119,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 		return err
 	}
 	if !already {
-		p := terminalPresentation(streams.Err)
+		p := streams.presentation(streams.Err)
 		p.printTaskHeadline(task, "🔄", p.paint("Merging", "1;36")+" ", fmt.Sprintf(" into local %s...", target))
 		if err := publishMerge(ctx, repo, source, task, prefix, target, base, streams); err != nil {
 			if saved == nil || (source.Paths.WorkDir != "" && source.Paths.WorkDir != saved.Worktree) {
@@ -150,7 +150,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			fmt.Fprintf(streams.Err, "Could not record the merged tip locally: %v\n", err)
 		}
 	}
-	p := terminalPresentation(streams.Out)
+	p := streams.presentation(streams.Out)
 	p.printTaskHeadline(task, "✅", "", " "+p.paint(fmt.Sprintf("merged into local %s.", target), "1;32"))
 	if saved != nil && saved.SessionFile != "" {
 		fmt.Fprintf(streams.Out, "Session: %s\n", saved.SessionFile)
@@ -280,7 +280,7 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 		// within whichever checkout the caller happened to use.
 		cryptoDir = paths.CommonDir
 	}
-	crypto := signing.Adapter{Runner: streams.Runner, Directory: cryptoDir, Environment: os.Environ(), Diagnostic: streams.Err}
+	crypto := signing.Adapter{Runner: streams.Runner, Directory: cryptoDir, Environment: streams.environ(), Diagnostic: streams.Err}
 	if policy.Verify {
 		sig, payload, err := repo.ExtractCommitSignature(source.Head.ID)
 		if err == nil {

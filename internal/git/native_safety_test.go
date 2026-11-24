@@ -62,6 +62,7 @@ func indexFixture(t *testing.T, file string, version uint32, extension string, i
 }
 
 func TestNativeIndexVersionFourPreservation(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	if err := r.SetLocalConfig("core.sparseCheckout", "true"); err != nil {
 		t.Fatal(err)
@@ -99,11 +100,13 @@ func TestNativeIndexVersionFourPreservation(t *testing.T) {
 }
 
 func TestNativeIndexUnsupportedFormatsPreserveBytes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		version         uint32
 		extension, want string
 	}{{2, "link", "split"}, {2, "sdir", "sparse"}, {2, "ZUNK", "unknown state"}, {5, "", "version 5"}} {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			r, _ := fixture(t, false)
 			paths, _ := r.Paths()
 			real := filepath.Join(paths.GitDir, "index")

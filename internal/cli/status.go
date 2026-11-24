@@ -60,7 +60,7 @@ func statusTask(directory string, tasks *store.Store, a arguments, streams IO) e
 	if a.flags["--json"] {
 		return errors.Join(err, encode(streams.Out, result))
 	}
-	p := terminalPresentation(streams.Out)
+	p := streams.presentation(streams.Out)
 	if result.Merging {
 		fmt.Fprintln(streams.Out, p.label("A local merge operation is in progress.", "🔄", "1;36"))
 	}

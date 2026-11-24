@@ -55,8 +55,10 @@ func (w *callbackWriter) Write(data []byte) (int, error) {
 }
 
 func TestFollowDetectsReplacementTruncationAndCancellation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"replacement", "truncation", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			file, root := session(t, record("assistant", "first"))
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -91,6 +93,7 @@ func TestFollowDetectsReplacementTruncationAndCancellation(t *testing.T) {
 }
 
 func TestFollowCompletesPartialRecordWithoutSwitchingSession(t *testing.T) {
+	t.Parallel()
 	const first = "first"
 	const final = "late final output"
 	partial := strings.TrimSuffix(record("assistant", final), "\n")
@@ -123,6 +126,7 @@ func TestFollowCompletesPartialRecordWithoutSwitchingSession(t *testing.T) {
 }
 
 func TestHeaderRequiresExactOwnerAndID(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	other := t.TempDir()
 	for _, header := range []map[string]any{{"type": "session", "id": "wrong", "cwd": root}, {"type": "session", "id": "exact-session", "cwd": other}, {"type": "session", "id": "exact-session", "cwd": "relative"}, {"type": "other", "id": "exact-session", "cwd": root}} {
@@ -134,6 +138,7 @@ func TestHeaderRequiresExactOwnerAndID(t *testing.T) {
 }
 
 func TestRendererSafetyVisibilityAndPreview(t *testing.T) {
+	t.Parallel()
 	renderer := Renderer{}
 	for _, value := range []any{nil, []any{}, map[string]any{"type": "message", "message": map[string]any{"role": "system", "content": "secret"}}, map[string]any{"type": "custom_message", "display": false, "content": "secret"}} {
 		if got := renderer.Entry(value); got != "" {
@@ -173,6 +178,7 @@ func TestRendererSafetyVisibilityAndPreview(t *testing.T) {
 }
 
 func TestFollowHandlesLinesLargerThanScanBuffer(t *testing.T) {
+	t.Parallel()
 	// Exercise lines that span multiple 64 KiB bufio reads in the skipped
 	// prefix, inside the retained window, and as a trailing partial line of
 	// exact and non-exact buffer multiples.

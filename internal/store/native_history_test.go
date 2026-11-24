@@ -10,8 +10,10 @@ import (
 )
 
 func TestNumberingReadsFetchedMergedAwayHistoryWithoutAdvancingLocal(t *testing.T) {
+	t.Parallel()
 	for _, checkout := range []bool{false, true} {
 		t.Run(map[bool]string{false: "without-checkout", true: "with-checkout"}[checkout], func(t *testing.T) {
+			t.Parallel()
 			remote, remoteStore, _ := fixture(t)
 			original, err := remoteStore.Repository.Head()
 			if err != nil {
@@ -92,8 +94,10 @@ func TestNumberingReadsFetchedMergedAwayHistoryWithoutAdvancingLocal(t *testing.
 }
 
 func TestEnsureObstructionAndFreshRevalidation(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"file", "directory", "symlink", "foreign", "elsewhere"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			repo := emptyRepository(t)
 			location, _ := Location(repo)
 			switch kind {

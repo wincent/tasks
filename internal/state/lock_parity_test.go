@@ -9,6 +9,7 @@ import (
 )
 
 func TestLentLockRetainsOwnershipUntilLastDescriptorCloses(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "permanent")
 	lock, err := TryLock(path)
 	if err != nil {
@@ -38,7 +39,30 @@ func TestLentLockRetainsOwnershipUntilLastDescriptorCloses(t *testing.T) {
 	other.Close()
 }
 
+func TestLockReleaseUnlocksEvenAfterLend(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "permanent")
+	lock, err := TryLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := lock.Lend()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer duplicate.Close()
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	other, err := TryLock(path)
+	if err != nil {
+		t.Fatalf("expected released lock to be acquirable: %v", err)
+	}
+	other.Close()
+}
+
 func TestWaitingLockRejectsReplacedInode(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "permanent")
 	file, err := openLock(path)
 	if err != nil {

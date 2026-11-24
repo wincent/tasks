@@ -6,6 +6,7 @@ import (
 )
 
 func TestStatusConflictDiagnostics(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, content string
 		conflict      bool

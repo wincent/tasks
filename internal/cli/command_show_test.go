@@ -9,6 +9,7 @@ import (
 )
 
 func TestShowNumberValidation(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"all", "0", "-1", "EXAMPLE-0"} {
 		if _, err := parse([]string{"show", value}); err == nil || !strings.Contains(err.Error(), "positive ticket number") {
 			t.Fatalf("show %q: %v", value, err)
@@ -17,6 +18,7 @@ func TestShowNumberValidation(t *testing.T) {
 }
 
 func TestShowStagedRename(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "init")
 	metadata := filepath.Join(root, "tasks")
@@ -41,7 +43,9 @@ func TestShowStagedRename(t *testing.T) {
 }
 
 func TestShowLatestTask(t *testing.T) {
+	t.Parallel()
 	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
 		_, root := fixture(t)
 		run(t, root, "init")
 		for _, args := range [][]string{{"show"}, {"show", "--raw"}} {
@@ -52,6 +56,7 @@ func TestShowLatestTask(t *testing.T) {
 		}
 	})
 	t.Run("highest-number-in-shared-store", func(t *testing.T) {
+		t.Parallel()
 		repo, root := fixture(t)
 		run(t, root, "init")
 		for _, n := range []int{10, 2, 9} {
@@ -93,6 +98,7 @@ func TestShowLatestTask(t *testing.T) {
 		}
 	})
 	t.Run("argument-validation", func(t *testing.T) {
+		t.Parallel()
 		_, root := fixture(t)
 		fails(t, root, "expects 1 positional", "show", "1", "2")
 		fails(t, root, "positive ticket number", "show", "0")
@@ -106,6 +112,7 @@ func TestShowLatestTask(t *testing.T) {
 	})
 	for _, kind := range []string{"duplicate", "symlink", "directory"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			_, root := fixture(t)
 			path := strings.TrimSpace(run(t, root, "create", "First", "--body", "Requirements"))
 			latest := filepath.Join(filepath.Dir(path), "EXAMPLE-10 Latest.md")

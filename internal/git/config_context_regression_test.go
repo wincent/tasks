@@ -41,6 +41,7 @@ func TestProspectiveConfigurationNormalGlobalContext(t *testing.T) {
 }
 
 func TestProspectiveConfigurationFromLinkedWorktree(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	tip := safetyTip(t, repo, ID{}, map[string]string{"file.txt": "line\n"})
 	publish(t, repo, "refs/heads/parent", tip, ID{})
@@ -80,6 +81,7 @@ func TestProspectiveConfigurationFromLinkedWorktree(t *testing.T) {
 }
 
 func TestProspectiveConfigurationWildcardEdges(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		pattern, subject string
 		want             bool

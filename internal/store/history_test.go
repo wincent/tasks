@@ -70,6 +70,7 @@ func (f taskHistoryFixture) check(h *TaskHistory, number int, revision git.ID, a
 }
 
 func TestTaskHistoryRecordIdentity(t *testing.T) {
+	t.Parallel()
 	f := newTaskHistoryFixture(t)
 	entry := git.TreeEntry{Name: "EXAMPLE-1 First.md", ID: f.blob("record"), Mode: 0100644}
 	created := f.commit(f.tree(entry), 0)
@@ -91,6 +92,7 @@ func TestTaskHistoryRecordIdentity(t *testing.T) {
 }
 
 func TestTaskHistoryMergeParentOrder(t *testing.T) {
+	t.Parallel()
 	f := newTaskHistoryFixture(t)
 	first := git.TreeEntry{Name: "EXAMPLE-1 First.md", ID: f.blob("record"), Mode: 0100644}
 	second := git.TreeEntry{Name: "EXAMPLE-2 Second.md", ID: first.ID, Mode: first.Mode}
@@ -109,6 +111,7 @@ func TestTaskHistoryMergeParentOrder(t *testing.T) {
 }
 
 func TestTaskHistoryParentErrors(t *testing.T) {
+	t.Parallel()
 	f := newTaskHistoryFixture(t)
 	entry := git.TreeEntry{Name: "EXAMPLE-1 Record.md", ID: f.blob("record"), Mode: 0100644}
 	other := git.TreeEntry{Name: "EXAMPLE-1001 Other.md", ID: entry.ID, Mode: entry.Mode}
@@ -170,6 +173,7 @@ func TestTaskHistoryParentErrors(t *testing.T) {
 }
 
 func TestTaskHistoryDenseFallback(t *testing.T) {
+	t.Parallel()
 	f := newTaskHistoryFixture(t)
 	var entries []git.TreeEntry
 	blob := f.blob("record")
@@ -192,6 +196,7 @@ func TestTaskHistoryDenseFallback(t *testing.T) {
 }
 
 func TestTaskHistoryPointLookupKeepsLiteralRecordRules(t *testing.T) {
+	t.Parallel()
 	f := newTaskHistoryFixture(t)
 	blob := f.blob("record")
 	record := git.TreeEntry{Name: "EXAMPLE-1 Record.md", ID: blob, Mode: 0100644}
@@ -271,6 +276,7 @@ func checkWideTaskHistory(t testing.TB, h *TaskHistory, tips []git.ID) {
 }
 
 func TestTaskHistoryScale(t *testing.T) {
+	t.Parallel()
 	const tickets, commits = 1300, 80
 	f, head, tips := wideTaskHistory(t, tickets, commits)
 	h := f.TaskHistory(head)

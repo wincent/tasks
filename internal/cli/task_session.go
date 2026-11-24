@@ -153,10 +153,10 @@ func openSession(record taskSession) (*os.File, error) {
 	return file, nil
 }
 
-func newSessionDirectory(scope string) (string, error) {
-	agentDir := os.Getenv("PI_CODING_AGENT_DIR")
+func newSessionDirectory(scope string, streams IO) (string, error) {
+	agentDir := streams.getenv("PI_CODING_AGENT_DIR")
 	if agentDir == "" || agentDir == "~" || strings.HasPrefix(agentDir, "~/") {
-		home, err := os.UserHomeDir()
+		home, err := streams.userHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("locate Pi session store: %w", err)
 		}
@@ -177,7 +177,7 @@ func newSessionDirectory(scope string) (string, error) {
 	return filepath.Join(agentDir, "sessions", "dev.wincent.tasks"), nil
 }
 
-func prepareSession(directory, scope, root, branch string, n int, saved *taskSession) (taskSession, error) {
+func prepareSession(directory, scope, root, branch string, n int, saved *taskSession, streams IO) (taskSession, error) {
 	record := taskSession{Worktree: root, Branch: branch}
 	if saved != nil && saved.Worktree == root && (saved.Branch == "" || saved.Branch == branch) {
 		record.SessionFile, record.SessionID = saved.SessionFile, saved.SessionID
@@ -213,7 +213,7 @@ func prepareSession(directory, scope, root, branch string, n int, saved *taskSes
 		}
 	}
 
-	path, err := newSessionDirectory(scope)
+	path, err := newSessionDirectory(scope, streams)
 	if err != nil {
 		return record, err
 	}

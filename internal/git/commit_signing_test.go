@@ -8,6 +8,7 @@ import (
 )
 
 func TestCommitSigningPublicAPIsExactBytesAndNoReferences(t *testing.T) {
+	t.Parallel()
 	repo, _ := fixture(t, false)
 	first := commit(t, repo, "first")
 	second := commit(t, repo, "second", first)

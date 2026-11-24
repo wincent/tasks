@@ -164,6 +164,7 @@ func TestCommandIncludeNativeDepthBoundary(t *testing.T) {
 }
 
 func TestConfigurationIncludeMaskPreservesLogicalLines(t *testing.T) {
+	t.Parallel()
 	input := "\xef\xbb\xbf[InClUdE]\npath = child\n[tasktool]\nvalue = \"first\\\n[include] second\"\n# [include]\n; [include]\ncontinued = first\\\n[include] second\n[includeIf \"onbranch:tasks\"]\npath = active\n[include.other]\npath = literal\n"
 	got, prefix := configurationWithoutIncludes(input)
 	want := strings.Replace(input, "[InClUdE]", "["+prefix+"]", 1)

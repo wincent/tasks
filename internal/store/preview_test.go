@@ -11,8 +11,10 @@ import (
 )
 
 func TestPreviewReadsNativeSmudgedTargetBytes(t *testing.T) {
+	t.Parallel()
 	for _, encoding := range []bool{false, true} {
 		t.Run(map[bool]string{false: "crlf", true: "utf16"}[encoding], func(t *testing.T) {
+			t.Parallel()
 			repo, err := git.Init(filepath.Join(t.TempDir(), "repository"), "", false)
 			if err != nil {
 				t.Fatal(err)

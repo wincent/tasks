@@ -20,6 +20,7 @@ func needsAttention(summary string) bool {
 // response. Display compact progress and keep the exact transcript on disk.
 type piProgress struct {
 	out              io.Writer
+	env              []string
 	pending          []byte
 	skip             bool
 	summary, failure string
@@ -108,7 +109,7 @@ func (p *piProgress) event(line []byte) error {
 		output = tail.Safe(output)
 		if attention {
 			label := output[:len(attentionLabel)]
-			output = terminalPresentation(p.out).paint(label, "1;4") + output[len(label):]
+			output = (IO{Env: p.env}).presentation(p.out).paint(label, "1;4") + output[len(label):]
 		}
 		_, err := fmt.Fprintln(p.out, output)
 		return err

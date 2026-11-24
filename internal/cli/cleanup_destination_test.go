@@ -11,8 +11,10 @@ import (
 )
 
 func TestMergeKeepsCheckoutUsedAsRecordedDestination(t *testing.T) {
+	t.Parallel()
 	for _, dirty := range []bool{false, true} {
 		t.Run(map[bool]string{false: "clean", true: "dirty"}[dirty], func(t *testing.T) {
+			t.Parallel()
 			_, root := fixture(t)
 			const branch = "task/example-1"
 			run(t, root, "create", "Parent", "--body", "Merge into main")
@@ -47,8 +49,10 @@ func TestMergeKeepsCheckoutUsedAsRecordedDestination(t *testing.T) {
 }
 
 func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
+	t.Parallel()
 	for _, removal := range []string{"worktree", "branch"} {
 		t.Run(removal, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			const branch = "task/example-1"
 			const refName = "refs/heads/" + branch
@@ -111,6 +115,7 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 }
 
 func TestCleanupProtectsWorkingOnlyDestination(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 
 	const branch = "task/example-2"
@@ -124,6 +129,7 @@ func TestCleanupProtectsWorkingOnlyDestination(t *testing.T) {
 }
 
 func TestCleanupPreviewReusesDestinationsAcrossMultipleBranches(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	const protected = "task/example-1-protected"
 	const removableA = "task/example-2-first"

@@ -20,6 +20,7 @@ func parseTest(t *testing.T, expr string) *Expression {
 }
 
 func TestLogic(t *testing.T) {
+	t.Parallel()
 	r := Record{Status: "merged", Title: "Export REPORT (literally status:merged)"}
 	for _, tc := range []struct {
 		expr string
@@ -50,6 +51,7 @@ func TestLogic(t *testing.T) {
 }
 
 func TestUpdatedPeriods(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ value, start, end string }{
 		{"2026", "2026-01-01", "2027-01-01"},
 		{"2026-10", "2026-10-01", "2026-11-01"},
@@ -93,6 +95,7 @@ func TestUpdatedPeriods(t *testing.T) {
 }
 
 func TestUpdatedRelative(t *testing.T) {
+	t.Parallel()
 	day := 24 * time.Hour
 	for _, tc := range []struct {
 		unit         string
@@ -149,6 +152,7 @@ func TestUpdatedRelative(t *testing.T) {
 }
 
 func TestUpdatedNaturalDateForms(t *testing.T) {
+	t.Parallel()
 	cutoff := fixedNow.Add(-3 * 24 * time.Hour)
 	for _, expr := range []string{
 		`updated: < 3 days ago`,
@@ -186,6 +190,7 @@ func TestUpdatedNaturalDateForms(t *testing.T) {
 }
 
 func TestUpdatedQuotedDateBooleanBoundaries(t *testing.T) {
+	t.Parallel()
 	e := parseTest(t, `(updated:<"3 days ago" AND status:merged) OR (NOT status:open AND updated:>= '3 days ago')`)
 	if !e.NeedsUpdated() {
 		t.Fatal("quoted dates must be detected in compound queries")
@@ -208,6 +213,7 @@ func TestUpdatedQuotedDateBooleanBoundaries(t *testing.T) {
 }
 
 func TestInvalid(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ expr, errorPart string }{
 		{"", "byte 1"},
 		{"status:", "byte 8"},

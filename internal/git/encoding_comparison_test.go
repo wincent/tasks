@@ -29,6 +29,7 @@ func encodingComparisonFixture(t *testing.T) (*Repository, string, ID) {
 }
 
 func TestNativeEncodingComparisonDoesNotRelaxObjectWrites(t *testing.T) {
+	t.Parallel()
 	repo, _, _ := encodingComparisonFixture(t)
 	other, _, _ := encodingComparisonFixture(t)
 	// Reuse the same OS thread to catch a comparison-context leak, including
@@ -49,6 +50,7 @@ func TestNativeEncodingComparisonDoesNotRelaxObjectWrites(t *testing.T) {
 }
 
 func TestNativeEncodingCheckoutComparisonRetainsStrictSmudge(t *testing.T) {
+	t.Parallel()
 	repo, root, base := encodingComparisonFixture(t)
 	next := safetyTip(t, repo, base, map[string]string{"content.txt": "B"})
 	if err := repo.Checkout(base, next); err != nil {
@@ -63,6 +65,7 @@ func TestNativeEncodingCheckoutComparisonRetainsStrictSmudge(t *testing.T) {
 }
 
 func TestNativeEncodingInvalidComparisonStillDetectsChanges(t *testing.T) {
+	t.Parallel()
 	repo, root, _ := encodingComparisonFixture(t)
 	writeFile(t, filepath.Join(root, "content.txt"), []byte{0xff})
 	changes, err := repo.Status(false)

@@ -12,14 +12,16 @@ import (
 )
 
 func TestGoCreatesAndRunsNewTask(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	root := wf.root
 	run(t, root, "create", "Existing task", "--body", "Leave this alone.")
 	before := run(t, root, "show", "1", "--raw")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var launches int
 	var prompt string
-	out, err := invokePi(ctx, root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(ctx, root, func(_ context.Context, child process.Command) process.Result {
 		launches++
 		prompt = child.Args[len(child.Args)-1]
 		const want = "# EXAMPLE-2: Quick win\n\nStatus: active\n\n## Description\n\nNone provided.\n"
@@ -50,10 +52,12 @@ func TestGoCreatesAndRunsNewTask(t *testing.T) {
 }
 
 func TestGoKeepsTaskWhenRunFails(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	root := wf.root
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := invokePi(ctx, root, func(context.Context, process.Command) process.Result {
+	out, err := wf.invokePi(ctx, root, func(context.Context, process.Command) process.Result {
 		return process.Result{Code: 17}
 	}, "go", "Fix later")
 	if err == nil || ExitCode(err) != 17 || !strings.Contains(err.Error(), "Continue with `tasks run 1`") {
@@ -63,7 +67,9 @@ func TestGoKeepsTaskWhenRunFails(t *testing.T) {
 }
 
 func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	before := fixtureRevision(t, repo, store.Branch)
 	for _, tc := range []struct {
 		title, number string
@@ -75,7 +81,7 @@ func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
 		{"0", "NUMBER"},
 		{"TASK-99999999999999999999", "NUMBER"},
 	} {
-		out, err := invokePi(context.Background(), root, func(context.Context, process.Command) process.Result {
+		out, err := wf.invokePi(context.Background(), root, func(context.Context, process.Command) process.Result {
 			t.Fatalf("go %q launched Pi", tc.title)
 			return process.Result{}
 		}, "go", tc.title)
@@ -94,6 +100,7 @@ func TestGoRejectsTaskReferencesWithoutCreatingTask(t *testing.T) {
 }
 
 func TestGoRejectsInvalidArgumentsWithoutCreatingTask(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	before := fixtureRevision(t, repo, store.Branch)
 	fails(t, root, "`tasks go` expects 1 positional argument(s)", "go")

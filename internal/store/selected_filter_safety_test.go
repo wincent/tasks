@@ -36,8 +36,10 @@ func selectedFilterFiles(t *testing.T, roots ...string) map[string]string {
 }
 
 func TestSelectedFilterCommitPreflightsEntireSelection(t *testing.T) {
+	t.Parallel()
 	for _, command := range []string{"clean", "process"} {
 		t.Run(command, func(t *testing.T) {
+			t.Parallel()
 			repo, tasks, _ := fixture(t)
 			session, err := Begin(context.Background(), repo)
 			if err != nil {
@@ -64,11 +66,13 @@ func TestSelectedFilterCommitPreflightsEntireSelection(t *testing.T) {
 }
 
 func TestSelectedContentPreflightDoesNotWriteEarlierBlobs(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, attribute, content, diagnostic string }{
 		{"encoding", "working-tree-encoding=UTF-16", "missing BOM", "BOM"},
 		{"line-endings", "text eol=lf", "first\r\nsecond\n", "LF"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			repo, tasks, _ := fixture(t)
 			session, err := Begin(context.Background(), repo)
 			if err != nil {
@@ -97,6 +101,7 @@ func TestSelectedContentPreflightDoesNotWriteEarlierBlobs(t *testing.T) {
 }
 
 func TestSelectedFilterCommitCleansCRLFAndPreservesUnrelatedStaging(t *testing.T) {
+	t.Parallel()
 	repo, tasks, _ := fixture(t)
 	ctx := context.Background()
 	name := "EXAMPLE-1 Native.md"

@@ -20,6 +20,7 @@ var ErrBusy = errors.New("task operation is already running")
 type Lock struct {
 	mu   sync.Mutex
 	file *os.File
+	lent bool
 }
 
 func openLock(path string) (*os.File, error) {
@@ -52,13 +53,16 @@ func try(file *os.File, mode int) error {
 		}
 		actual, err := os.Lstat(file.Name())
 		if err != nil {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 			return err
 		}
 		opened, err := file.Stat()
 		if err != nil {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 			return err
 		}
 		if !actual.Mode().IsRegular() || !os.SameFile(actual, opened) {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 			return fmt.Errorf("task lock inode changed while waiting: %s", file.Name())
 		}
 		return nil
@@ -128,21 +132,43 @@ func (lock *Lock) Lend() (*os.File, error) {
 	if lock.file == nil {
 		return nil, errors.New("task operation lock is closed")
 	}
+	syscall.ForkLock.RLock()
 	descriptor, err := syscall.Dup(int(lock.file.Fd()))
+	if err == nil {
+		syscall.CloseOnExec(descriptor)
+	}
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return nil, err
 	}
-	syscall.CloseOnExec(descriptor)
+	lock.lent = true
 	return os.NewFile(uintptr(descriptor), lock.file.Name()), nil
 }
 
 func (lock *Lock) Close() error {
+	return lock.close(false)
+}
+
+// Release explicitly unlocks before closing even if Lend was called. Call only
+// after any child that received a lent descriptor has exited.
+func (lock *Lock) Release() error {
+	return lock.close(true)
+}
+
+func (lock *Lock) close(forceUnlock bool) error {
 	lock.mu.Lock()
 	defer lock.mu.Unlock()
 	if lock.file == nil {
 		return nil
 	}
 	file := lock.file
+	lent := lock.lent
 	lock.file = nil
+	if forceUnlock || !lent {
+		// Explicitly unlock before closing so a concurrent fork() in another
+		// goroutine cannot keep the flock alive until its execve() closes the
+		// inherited O_CLOEXEC descriptor.
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	}
 	return file.Close()
 }

@@ -61,7 +61,7 @@ func shellTask(ctx context.Context, cwd string, a arguments, streams IO, invocat
 	if err != nil {
 		return err
 	}
-	defer lease.Close()
+	defer lease.Release()
 	saved, err := readTaskSession(directory, n)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func shellTask(ctx context.Context, cwd string, a arguments, streams IO, invocat
 	defer loan.Close()
 	argv := a.positional[1:]
 	result := runner.Run(ctx, process.Command{
-		Args: argv, Directory: source.Paths.WorkDir,
+		Args: argv, Directory: source.Paths.WorkDir, Environment: streams.Env,
 		In: streams.In, Out: streams.Out, Err: streams.Err,
 		ExtraFiles: []*os.File{loan},
 	})

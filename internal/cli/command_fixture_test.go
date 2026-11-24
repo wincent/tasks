@@ -121,6 +121,32 @@ func commitTaskText(t *testing.T, repo *git.Repository, path, content string) {
 	}
 }
 
+func withEnv(base []string, overrides ...string) []string {
+	if base == nil {
+		base = os.Environ()
+	}
+	env := append([]string(nil), base...)
+	for _, override := range overrides {
+		key, _, hasValue := strings.Cut(override, "=")
+		replaced := false
+		for i, entry := range env {
+			if k, _, ok := strings.Cut(entry, "="); ok && k == key {
+				if hasValue {
+					env[i] = override
+				} else {
+					env = append(env[:i], env[i+1:]...)
+				}
+				replaced = true
+				break
+			}
+		}
+		if hasValue && !replaced {
+			env = append(env, override)
+		}
+	}
+	return env
+}
+
 func writeSafetyFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {

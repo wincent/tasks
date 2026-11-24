@@ -72,6 +72,7 @@ func expectRef(t *testing.T, r *Repository, name string, want ID) {
 }
 
 func TestObjectIDs(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"", "abc", strings.Repeat("g", 40), strings.Repeat("0", 64)} {
 		if _, err := ParseID(value); err == nil {
 			t.Fatalf("accepted %q", value)
@@ -85,8 +86,10 @@ func TestObjectIDs(t *testing.T) {
 }
 
 func TestRepositoryDiscovery(t *testing.T) {
+	t.Parallel()
 	for _, bare := range []bool{false, true} {
 		t.Run(fmt.Sprintf("bare=%v", bare), func(t *testing.T) {
+			t.Parallel()
 			r, root := fixture(t, bare)
 			paths, err := r.Paths()
 			if err != nil || paths.Bare != bare {
@@ -119,6 +122,7 @@ func TestRepositoryDiscovery(t *testing.T) {
 }
 
 func TestSeparateGitDirectory(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	r, err := Init(filepath.Join(root, "private.git"), filepath.Join(root, "checkout"), false)
 	if err != nil {
@@ -140,6 +144,7 @@ func TestSeparateGitDirectory(t *testing.T) {
 }
 
 func TestLinkedWorktreeFromBareContainer(t *testing.T) {
+	t.Parallel()
 	container := t.TempDir()
 	r, err := Init(filepath.Join(container, ".git"), "", true)
 	if err != nil {
@@ -175,6 +180,7 @@ func TestLinkedWorktreeFromBareContainer(t *testing.T) {
 }
 
 func TestObjectsAndAncestry(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -281,6 +287,7 @@ func BenchmarkWriteTree(b *testing.B) {
 }
 
 func TestPreparedPublication(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -317,6 +324,7 @@ func TestPreparedPublication(t *testing.T) {
 }
 
 func TestPublicationAbortAndFailureReleaseAllLocks(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -347,6 +355,7 @@ func TestPublicationAbortAndFailureReleaseAllLocks(t *testing.T) {
 }
 
 func TestFreshReferenceComparison(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -369,6 +378,7 @@ func TestFreshReferenceComparison(t *testing.T) {
 }
 
 func TestSymbolicReferenceRejected(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, false)
 	id := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", id, ID{})
@@ -391,6 +401,7 @@ func TestSymbolicReferenceRejected(t *testing.T) {
 }
 
 func TestPackedRefAndDeletion(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, true)
 	first := commit(t, r, "packed")
 	second := commit(t, r, "second", first)
@@ -412,6 +423,7 @@ func TestPackedRefAndDeletion(t *testing.T) {
 }
 
 func TestPreparedTransactionOutlivesRepository(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, true)
 	id := commit(t, r, "first")
 	tx, err := r.Prepare("refs/heads/main", id, map[string]ID{"refs/heads/main": {}}, testSignature, "independent handle")
@@ -435,6 +447,7 @@ func TestPreparedTransactionOutlivesRepository(t *testing.T) {
 }
 
 func TestPublicationRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, true)
 	id := commit(t, r, "first")
 	blob, err := r.WriteBlob([]byte("not a commit"))
@@ -467,6 +480,7 @@ func TestPublicationRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestConcurrentCompareAndPublish(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, true)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -508,6 +522,7 @@ func TestConcurrentCompareAndPublish(t *testing.T) {
 }
 
 func TestPublicationFailureReportsUncertainty(t *testing.T) {
+	t.Parallel()
 	r, _ := fixture(t, true)
 	first := commit(t, r, "first")
 	second := commit(t, r, "second", first)
@@ -532,6 +547,7 @@ func TestPublicationFailureReportsUncertainty(t *testing.T) {
 }
 
 func TestReferencePublicationPreservesUnrelatedBytes(t *testing.T) {
+	t.Parallel()
 	r, root := fixture(t, false)
 	id := commit(t, r, "first")
 	paths, _ := r.Paths()

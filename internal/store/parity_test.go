@@ -12,8 +12,10 @@ import (
 )
 
 func TestBootstrapUnbornAndLayoutMarkerIsolation(t *testing.T) {
+	t.Parallel()
 	for _, layout := range []string{"ordinary", "bare-container", "separate"} {
 		t.Run(layout, func(t *testing.T) {
+			t.Parallel()
 			root := filepath.Join(t.TempDir(), "odd\tquote'\nroot")
 			path, workdir, bare := root, "", false
 			if layout == "bare-container" {
@@ -68,6 +70,7 @@ func TestBootstrapUnbornAndLayoutMarkerIsolation(t *testing.T) {
 }
 
 func TestNumberingAccountsForIndexAndWorktree(t *testing.T) {
+	t.Parallel()
 	repo, store, _ := fixture(t)
 	blob, err := repo.WriteBlob([]byte("Status: open\n"))
 	if err != nil {
@@ -98,6 +101,7 @@ func TestNumberingAccountsForIndexAndWorktree(t *testing.T) {
 }
 
 func TestConcurrentMetadataCommitsDoNotLoseUpdates(t *testing.T) {
+	t.Parallel()
 	repo, store, _ := fixture(t)
 	var wg sync.WaitGroup
 	failures := make(chan error, 6)
@@ -128,6 +132,7 @@ func TestConcurrentMetadataCommitsDoNotLoseUpdates(t *testing.T) {
 }
 
 func TestBootstrapPreservesRemoteConfigurationAndLocalHistory(t *testing.T) {
+	t.Parallel()
 	remote, _, _ := fixture(t)
 	paths, _ := remote.Paths()
 	repo := emptyRepository(t)

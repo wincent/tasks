@@ -118,7 +118,7 @@ func archiveByQuery(ctx context.Context, _ string, a arguments, streams IO, invo
 		}
 		selected[i].Status = info.Status
 	}
-	p := terminalPresentation(streams.Out)
+	p := streams.presentation(streams.Out)
 	heading := fmt.Sprintf("Tasks to archive (%d):", len(selected))
 	if err := printTaskListing(p, tasks, selected, heading); err != nil {
 		return err
@@ -191,7 +191,7 @@ func moveTasks(_ context.Context, _ string, a arguments, streams IO, invocation 
 		action = "Archived"
 	}
 	for _, task := range tasks {
-		if err := taskResult(streams.Out, action, task.ID(), task.Title, task.Path); err != nil {
+		if err := taskResult(streams, action, task.ID(), task.Title, task.Path); err != nil {
 			return err
 		}
 	}

@@ -41,13 +41,13 @@ func TestGlowProcess(t *testing.T) {
 	fmt.Fprintln(os.Stdout, "rendered marker")
 	os.Exit(0)
 }
-func outputTerminal(t *testing.T, root string, args ...string) (string, string, error) {
+func outputTerminalEnv(t *testing.T, root string, env []string, args ...string) (string, string, error) {
 	t.Helper()
-	return captureTerminal(t, root, false, args...)
+	return captureTerminalEnv(t, root, false, env, args...)
 }
 
 // With a shared terminal, capture the editor and command output in order.
-func captureTerminal(t *testing.T, root string, shared bool, args ...string) (string, string, error) {
+func captureTerminalEnv(t *testing.T, root string, shared bool, env []string, args ...string) (string, string, error) {
 	t.Helper()
 	master, slave, err := testutil.OpenPTY()
 	if err != nil {
@@ -62,7 +62,7 @@ func captureTerminal(t *testing.T, root string, shared bool, args ...string) (st
 	var diagnostic bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	streams := IO{Out: slave, Err: &diagnostic}
+	streams := IO{Out: slave, Err: &diagnostic, Env: env}
 	if shared {
 		streams.In, streams.Err = slave, slave
 	}
@@ -73,8 +73,10 @@ func captureTerminal(t *testing.T, root string, shared bool, args ...string) (st
 	return strings.ReplaceAll(string(data), "\r\n", "\n"), diagnostic.String(), err
 }
 func TestRealGlowInvocationFallbackAndUnlockedMetadata(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"render", "latest", "create", "fail", "spawn-failure", "unavailable", "raw", "pipe", "missing"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			_, root := fixture(t)
 			path := strings.TrimSpace(run(t, root, "create", "Rendering", "--body", "text"))
 			content := "not a valid task status\n# Exact Markdown without a final newline"
@@ -87,10 +89,12 @@ func TestRealGlowInvocationFallbackAndUnlockedMetadata(t *testing.T) {
 				t.Fatal(err)
 			}
 			capture := filepath.Join(t.TempDir(), "capture")
-			t.Setenv("TASK_TEST_GLOW_HELPER", "1")
-			t.Setenv("TASK_TEST_GLOW_CAPTURE", capture)
-			t.Setenv("TASK_TEST_GLOW_MODE", mode)
-			t.Setenv("PATH", tools)
+			env := withEnv(nil,
+				"TASK_TEST_GLOW_HELPER=1",
+				"TASK_TEST_GLOW_CAPTURE="+capture,
+				"TASK_TEST_GLOW_MODE="+mode,
+				"PATH="+tools,
+			)
 			script := "#!/bin/sh\nexec '" + strings.ReplaceAll(executable, "'", "'\\''") + "' -test.run=^TestGlowProcess$ -- \"$@\"\n"
 			if mode == "spawn-failure" {
 				script = "invalid executable without an interpreter\n"
@@ -112,9 +116,11 @@ func TestRealGlowInvocationFallbackAndUnlockedMetadata(t *testing.T) {
 			}
 			var output, diagnostic string
 			if mode == "pipe" {
-				output, diagnostic, err = invoke(root, "", args...)
+				var out, diag bytes.Buffer
+				err = Run(context.Background(), root, args, IO{In: strings.NewReader(""), Out: &out, Err: &diag, Env: env})
+				output, diagnostic = out.String(), diag.String()
 			} else {
-				output, diagnostic, err = outputTerminal(t, root, args...)
+				output, diagnostic, err = outputTerminalEnv(t, root, env, args...)
 			}
 			if mode == "missing" {
 				if err == nil {
@@ -152,11 +158,13 @@ func TestRealGlowInvocationFallbackAndUnlockedMetadata(t *testing.T) {
 }
 
 func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
+	t.Parallel()
 	for _, policy := range []struct {
 		term, noColor string
 		color         bool
 	}{{"xterm", "", true}, {"dumb", "", false}, {"xterm", "1", false}} {
 		t.Run(policy.term+policy.noColor, func(t *testing.T) {
+			t.Parallel()
 			_, root := fixture(t)
 			path := strings.TrimSpace(run(t, root, "create", "Edited", "--body", "details"))
 			original, err := os.ReadFile(path)
@@ -169,10 +177,9 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(filepath.Dir(path), "EXAMPLE-10 Manual.md"), []byte("Status: merged\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("TERM", policy.term)
-			t.Setenv("NO_COLOR", policy.noColor)
+			env := withEnv(nil, "TERM="+policy.term, "NO_COLOR="+policy.noColor)
 			for _, args := range [][]string{{"list", "all"}, {}, {"search", "edited"}} {
-				output, diagnostic, err := outputTerminal(t, root, args...)
+				output, diagnostic, err := outputTerminalEnv(t, root, env, args...)
 				if err != nil {
 					t.Fatalf("%v %s", err, diagnostic)
 				}
@@ -196,7 +203,7 @@ func TestActualTerminalListOverviewAndJSONColorPolicy(t *testing.T) {
 			if piped := run(t, root, "list", "all"); piped != "EXAMPLE-1\topen\tEdited (M)\nEXAMPLE-10\tmerged\tManual (?)\n" {
 				t.Fatalf("unexpected piped listing %q", piped)
 			}
-			output, diagnostic, err := outputTerminal(t, root, "list", "all", "--json")
+			output, diagnostic, err := outputTerminalEnv(t, root, env, "list", "all", "--json")
 			if piped := run(t, root, "list", "all", "--json"); err != nil || output != piped {
 				t.Fatalf("JSON terminal %v %q %q; want %q", err, output, diagnostic, piped)
 			}

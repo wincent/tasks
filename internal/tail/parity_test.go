@@ -12,6 +12,7 @@ import (
 )
 
 func TestHistoryBoundaryMatrix(t *testing.T) {
+	t.Parallel()
 	for _, count := range []int{0, 39, 40, 41, 83} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			var body strings.Builder
@@ -48,6 +49,7 @@ func TestHistoryBoundaryMatrix(t *testing.T) {
 }
 
 func TestDecodeRejectsCorruptionWithoutDiscardingNextRecord(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"{", "{} {}", "null true", string([]byte{0xff}), ""} {
 		t.Run(fmt.Sprintf("%q", bad), func(t *testing.T) {
 			file, root := session(t, bad+"\n"+record("assistant", "survives"))
@@ -63,6 +65,7 @@ func TestDecodeRejectsCorruptionWithoutDiscardingNextRecord(t *testing.T) {
 }
 
 func TestRendererRecordMatrix(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ input, want string }{
 		{`{"type":"message","message":{"role":"user","content":"literal **text**"}}`, "[user]\nliteral **text**"},
 		{`{"type":"message","message":{"role":"assistant","content":"partial","stopReason":"error"}}`, "[assistant]\npartial\n[ERROR]"},
@@ -91,6 +94,7 @@ func TestRendererRecordMatrix(t *testing.T) {
 }
 
 func TestFalseDisplayValuesRemainHidden(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"false", "null", `""`, "0", "0.0", "-0", "0e5", "[]", "{}"} {
 		for _, kind := range []string{"custom_message", "message"} {
 			input := fmt.Sprintf(`{"type":"custom_message","display":%s,"content":"secret"}`, value)
@@ -112,6 +116,7 @@ type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
 func TestFollowPropagatesWriterFailures(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("consumer gone")
 	for _, diagnostic := range []bool{false, true} {
 		body := record("assistant", "text")
@@ -132,6 +137,7 @@ func TestFollowPropagatesWriterFailures(t *testing.T) {
 }
 
 func TestHeaderShapeMatrix(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, input := range []string{"null", "[]", "{}", `{"type":"session","id":1,"cwd":"relative"}`, `{"type":"session","id":"","cwd":"/"}`, "{} {}"} {
 		if err := ValidateHeader([]byte(input), root, ""); err == nil {

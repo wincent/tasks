@@ -54,9 +54,15 @@ func probeLock(path string, mode int) (*Probe, error) {
 	}
 	actual, err := os.Lstat(path)
 	if err != nil {
+		if !held {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		}
 		return closeError(err)
 	}
 	if !actual.Mode().IsRegular() || !os.SameFile(info, actual) {
+		if !held {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		}
 		return closeError(errors.New("lock identity changed during probe"))
 	}
 	return &Probe{Held: held, file: file}, nil
@@ -67,5 +73,8 @@ func (probe *Probe) Close() error {
 	}
 	file := probe.file
 	probe.file = nil
+	if !probe.Held {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	}
 	return file.Close()
 }

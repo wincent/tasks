@@ -15,6 +15,7 @@ func writeCommandInclude(t *testing.T, path, contents string) {
 }
 
 func TestCommandIncludePathContext(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"", "relative", "../relative", "~other/config"} {
 		if _, err := commandIncludePath(&value); err == nil {
 			t.Fatalf("accepted context-free relative path %q", value)

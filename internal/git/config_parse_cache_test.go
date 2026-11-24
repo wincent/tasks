@@ -93,6 +93,7 @@ func TestConfigurationParseCacheReuseAndFreshBytes(t *testing.T) {
 }
 
 func TestConfigurationParseCacheMissingIdentityAndFailures(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +171,7 @@ func TestConfigurationParseCacheMissingIdentityAndFailures(t *testing.T) {
 }
 
 func TestConfigurationParseCacheReevaluatesGraph(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -397,6 +399,7 @@ func TestConfigurationEffectiveOperationWork(t *testing.T) {
 }
 
 func TestHeadWorkdirConfigurationWork(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t, false)
 	opened, err := Open(root)
 	if err != nil {
@@ -582,6 +585,7 @@ func TestConfigurationEffectiveReuseRequiresIdenticalSources(t *testing.T) {
 }
 
 func TestConfigurationParseCacheBounds(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}
@@ -622,6 +626,7 @@ func TestConfigurationParseCacheBounds(t *testing.T) {
 }
 
 func TestConfigurationParseCacheConcurrentCaptures(t *testing.T) {
+	t.Parallel()
 	if err := initialize(); err != nil {
 		t.Fatal(err)
 	}

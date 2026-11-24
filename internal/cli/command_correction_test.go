@@ -12,6 +12,7 @@ import (
 )
 
 func TestCommandCorrectionDispatch(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	run(t, root, "create", "Example task", "--body", "Details")
 
@@ -44,6 +45,7 @@ func TestCommandCorrectionDispatch(t *testing.T) {
 }
 
 func TestCommandCorrectionRejectsUnsafeAndUnknown(t *testing.T) {
+	t.Parallel()
 	// Usage errors must be reported without opening a repository.
 	cwd := t.TempDir()
 	for _, tc := range []struct {
@@ -73,6 +75,7 @@ func TestCommandCorrectionRejectsUnsafeAndUnknown(t *testing.T) {
 }
 
 func TestCommandCorrectionArchiveConfirmation(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "create", "Example task", "--body", "Details")
 	head := func() git.ID { return fixtureRevision(t, repo, store.Branch) }
@@ -107,20 +110,21 @@ func TestCommandCorrectionArchiveConfirmation(t *testing.T) {
 }
 
 func TestCommandCorrectionCreateUsesEditor(t *testing.T) {
-	repo, root, _ := editorFixture(t)
-	t.Setenv("TASK_TEST_EDITOR_MODE", "fail")
-	before := fixtureRevision(t, repo, store.Branch)
-	out, err := runTerminal(t, root, "cretae", "Example task")
-	if err == nil || !strings.Contains(err.Error(), "creation cancelled") || out != "" || fixtureRevision(t, repo, store.Branch) != before {
+	t.Parallel()
+	ef := editorFixture(t)
+	ef.setEnv("TASK_TEST_EDITOR_MODE=fail")
+	before := fixtureRevision(t, ef.repo, store.Branch)
+	out, err := ef.runTerminal(t, ef.root, "cretae", "Example task")
+	if err == nil || !strings.Contains(err.Error(), "creation cancelled") || out != "" || fixtureRevision(t, ef.repo, store.Branch) != before {
 		t.Fatalf("failed editor: stdout = %q, err = %v", out, err)
 	}
 
-	t.Setenv("TASK_TEST_EDITOR_MODE", "")
-	out, err = runTerminal(t, root, "cretae", "Example task")
+	ef.setEnv("TASK_TEST_EDITOR_MODE=")
+	out, err = ef.runTerminal(t, ef.root, "cretae", "Example task")
 	if err != nil || !strings.HasSuffix(strings.TrimSpace(out), "EXAMPLE-1 Example task.md") {
 		t.Fatalf("successful editor: stdout = %q, err = %v", out, err)
 	}
-	if out := run(t, root, "show", "1"); !strings.Contains(out, "Description from editor.") {
+	if out := run(t, ef.root, "show", "1"); !strings.Contains(out, "Description from editor.") {
 		t.Fatal(out)
 	}
 }

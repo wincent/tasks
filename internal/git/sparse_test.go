@@ -126,6 +126,7 @@ func setupSparse(t *testing.T, patterns string) (*Repository, string, ID, string
 }
 
 func TestSparsePatterns(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, patterns    string
 		included, omitted []string
@@ -136,6 +137,7 @@ func TestSparsePatterns(t *testing.T) {
 		{"escaped", "# comment\n\\#literal\n\\!literal\nspace\\ \n", []string{"#literal", "!literal", "space "}, []string{"comment", "space"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			rules, err := parseSparsePatterns(tc.patterns, false)
 			if err != nil {
 				t.Fatal(err)
@@ -199,6 +201,7 @@ func TestSparsePatterns(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			rules, err := parseSparsePatterns(tc.patterns, tc.ignoreCase)
 			if err != nil {
 				t.Fatal(err)
@@ -247,6 +250,7 @@ func BenchmarkSparsePatternsIncludes(b *testing.B) {
 }
 
 func TestSparseStatusMissingAndStaged(t *testing.T) {
+	t.Parallel()
 	r, _, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	before := readFile(t, index)
 	if changes, err := r.Status(false); err != nil || len(changes) != 0 {
@@ -276,8 +280,10 @@ func TestSparseStatusMissingAndStaged(t *testing.T) {
 }
 
 func TestSparseCheckoutPreservesOmissionsFlagsAndUnrelatedState(t *testing.T) {
+	t.Parallel()
 	for _, metadata := range []bool{false, true} {
 		t.Run(map[bool]string{false: "implementation", true: "metadata"}[metadata], func(t *testing.T) {
+			t.Parallel()
 			r, root, base, _ := setupSparse(t, "/*\n!/*/\n/keep/\n")
 			entries, err := r.IndexEntries()
 			if err != nil {
@@ -336,6 +342,7 @@ func TestSparseCheckoutPreservesOmissionsFlagsAndUnrelatedState(t *testing.T) {
 }
 
 func TestSparseCheckoutRenamesAcrossSelectionAndDeletes(t *testing.T) {
+	t.Parallel()
 	r, root, base, _ := setupSparse(t, "/keep/\n/assumed\n/unrelated\n")
 	next := sparseCommit(t, r, base, map[string]string{"keep/from-omit": "base", "omit/from-keep": "base"}, "keep/file", "omit/file")
 	if err := r.Checkout(base, next); err != nil {
@@ -361,8 +368,10 @@ func TestSparseCheckoutRenamesAcrossSelectionAndDeletes(t *testing.T) {
 }
 
 func TestSparseCheckoutProtectsDirtyIgnoredAndStagedPaths(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"dirty", "ignored", "staged", "present-skipped"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 			path := "keep/file"
 			if kind == "ignored" {
@@ -402,6 +411,7 @@ func TestSparseCheckoutProtectsDirtyIgnoredAndStagedPaths(t *testing.T) {
 }
 
 func TestSparsePerFileFlagsWithoutSparseConfiguration(t *testing.T) {
+	t.Parallel()
 	r, root, base, _ := setupSparse(t, "")
 	next := sparseCommit(t, r, base, map[string]string{"omit/file": "next", "newdir/file": "new"})
 	if err := r.Checkout(base, next); err != nil {
@@ -416,6 +426,7 @@ func TestSparsePerFileFlagsWithoutSparseConfiguration(t *testing.T) {
 }
 
 func TestSparseMergePreservesOmissions(t *testing.T) {
+	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	tip := sparseCommit(t, r, base, map[string]string{"omit/file": "theirs"})
 	merged, err := r.MergeIntoIndex(tip)

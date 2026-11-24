@@ -24,15 +24,25 @@ type piFixture func(context.Context, process.Command) process.Result
 
 func (f piFixture) Run(ctx context.Context, cmd process.Command) process.Result { return f(ctx, cmd) }
 
-func taskWorkflowFixture(t *testing.T) (*git.Repository, string) {
+type workflowFixture struct {
+	repo *git.Repository
+	root string
+	home string
+	env  []string
+}
+
+func taskWorkflowFixture(t *testing.T) workflowFixture {
 	t.Helper()
 	path := t.TempDir()
 	if err := os.WriteFile(filepath.Join(path, "pi"), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", path+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("PI_CODING_AGENT_DIR", "")
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	env := withEnv(nil,
+		"PATH="+path+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"PI_CODING_AGENT_DIR=",
+		"HOME="+home,
+	)
 	repo, root := fixture(t)
 	// Keep task worktrees out of main's status without relying on a global ignore.
 	info := filepath.Join(root, ".git", "info")
@@ -40,12 +50,12 @@ func taskWorkflowFixture(t *testing.T) (*git.Repository, string) {
 		t.Fatal(err)
 	}
 	writeSafetyFile(t, filepath.Join(info, "exclude"), "/.agent-worktrees/\n")
-	return repo, root
+	return workflowFixture{repo: repo, root: root, home: home, env: env}
 }
 
-func invokePi(ctx context.Context, root string, f piFixture, args ...string) (string, error) {
+func (w workflowFixture) invokePi(ctx context.Context, root string, f piFixture, args ...string) (string, error) {
 	var out bytes.Buffer
-	err := Run(ctx, root, args, IO{Out: &out, Err: &out, Runner: f})
+	err := Run(ctx, root, args, IO{Out: &out, Err: &out, Runner: f, Env: w.env})
 	return out.String(), err
 }
 
@@ -103,7 +113,9 @@ func assertTail(t *testing.T, root, want string) {
 }
 
 func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	main := commitImplementation(t, root, "base.txt", "from main\n")
 	systemGit(t, root, "switch", "-c", "other")
 	other := commitImplementation(t, root, "other.txt", "unrelated\n")
@@ -112,9 +124,9 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 	run(t, root, "comment", "1", "--body", "Also cover this.\n\nStatus: example in a note")
 	var checkoutPath, sessionPath string
 	var delivered git.ID
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		checkoutPath, sessionPath = piWorktree(t, child), child.Args[2]
-		if child.Directory != root || filepath.Dir(sessionPath) != filepath.Join(os.Getenv("HOME"), ".pi", "agent", "sessions", "dev.wincent.tasks") {
+		if child.Directory != root || filepath.Dir(sessionPath) != filepath.Join(wf.home, ".pi", "agent", "sessions", "dev.wincent.tasks") {
 			t.Fatalf("unexpected Pi launch directory %q or session path %q", child.Directory, sessionPath)
 		}
 		if head := fixtureRevision(t, openFixtureRepo(t, checkoutPath), "HEAD"); head != main {
@@ -174,12 +186,14 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 }
 
 func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	run(t, root, "create", "Review", "--body-file", "-", "--help") // Help is side-effect free.
 	run(t, root, "create", "Review", "--body", "requirements")
 	base := fixtureRevision(t, repo, mainRef)
 	var checkoutPath string
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		checkoutPath = piWorktree(t, child)
 		commitImplementation(t, checkoutPath, "one.txt", "first\n")
 		return process.Result{}
@@ -228,15 +242,18 @@ func TestRunReviewThenMergeAmendedBranch(t *testing.T) {
 }
 
 func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"dirty", "nonzero", "interrupt", "question", "pi-error"} {
 		t.Run(mode, func(t *testing.T) {
-			repo, root := taskWorkflowFixture(t)
+			t.Parallel()
+			wf := taskWorkflowFixture(t)
+			repo, root := wf.repo, wf.root
 			base := fixtureRevision(t, repo, mainRef)
 			run(t, root, "create", "Continuation", "--body", "requirements")
 			var worktree, session string
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			out, err := invokePi(ctx, root, func(_ context.Context, child process.Command) process.Result {
+			out, err := wf.invokePi(ctx, root, func(_ context.Context, child process.Command) process.Result {
 				worktree, session = piWorktree(t, child), child.Args[2]
 				fails(t, root, "already has a running agent", "run", "1")
 				if mode == "dirty" {
@@ -264,7 +281,7 @@ func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 				t.Fatal("failed run merged")
 			}
 			uiBytes(t, filepath.Join(worktree, "partial"))
-			out, err = invokePi(context.Background(), worktree, func(_ context.Context, child process.Command) process.Result {
+			out, err = wf.invokePi(context.Background(), worktree, func(_ context.Context, child process.Command) process.Result {
 				if child.Directory != root || piWorktree(t, child) != worktree || child.Args[2] != session {
 					t.Fatalf("did not continue %s %s: %+v", worktree, session, child)
 				}
@@ -280,10 +297,12 @@ func TestRunKeepsWorkOnFailureOrInterruption(t *testing.T) {
 }
 
 func TestRunRejectsMissingPromptBeforeStartingPi(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	root := wf.root
 	run(t, root, "create", "Missing prompt", "--body", "requirements")
 
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		t.Fatalf("Pi started with invalid arguments: %v", child.Args)
 		return process.Result{}
 	}, "run", "1", "--prompt", "--no-merge")
@@ -294,7 +313,9 @@ func TestRunRejectsMissingPromptBeforeStartingPi(t *testing.T) {
 }
 
 func TestRunPromptIsPerInvocation(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	path := strings.TrimSpace(run(t, root, "create", "Per-run instructions", "--body", "requirements"))
 	base := fixtureRevision(t, repo, mainRef)
 	const first = "Run the unit tests first."
@@ -305,7 +326,7 @@ func TestRunPromptIsPerInvocation(t *testing.T) {
 		if hint != "" {
 			args = append(args, "--prompt", hint)
 		}
-		out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 			checkout := piWorktree(t, child)
 			if i == 0 {
 				worktree, session = checkout, child.Args[2]
@@ -360,7 +381,9 @@ func TestRunPromptIsPerInvocation(t *testing.T) {
 }
 
 func TestPiPromptIsPerInvocation(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	path := strings.TrimSpace(run(t, root, "create", "Interactive instructions", "--body", "requirements"))
 	base := fixtureRevision(t, repo, mainRef)
 	const first = "Skip Chrome tests."
@@ -404,7 +427,7 @@ func TestPiPromptIsPerInvocation(t *testing.T) {
 			}
 			return process.Result{}
 		})
-		if err := Run(context.Background(), root, args, IO{In: slave, Out: slave, Runner: runner}); err != nil {
+		if err := Run(context.Background(), root, args, IO{In: slave, Out: slave, Runner: runner, Env: wf.env}); err != nil {
 			t.Fatal(err)
 		}
 		assertStatus(t, root, "done")
@@ -418,8 +441,10 @@ func TestPiPromptIsPerInvocation(t *testing.T) {
 }
 
 func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
-	t.Setenv("PI_CODING_AGENT_DIR", "~/custom-agent")
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
+	wf.env = withEnv(wf.env, "PI_CODING_AGENT_DIR=~/custom-agent")
 	run(t, root, "create", "Keep the old transcript", "--body", "requirements")
 	base, err := repo.ResolveCommit(mainRef)
 	if err != nil {
@@ -453,7 +478,7 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 	}
 	defer testutil.ClosePTY(master, slave)
 	interactive := func(f piFixture) error {
-		return Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: f})
+		return Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: f, Env: wf.env})
 	}
 	assertTail(t, root, "Original transcript.")
 	if err := interactive(func(_ context.Context, child process.Command) process.Result {
@@ -473,7 +498,7 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 			t.Fatalf("launched Pi with an invalid transcript: %+v", child)
 			return process.Result{}
 		})
-		_, runErr := invokePi(context.Background(), root, unexpectedLaunch, "run", "1")
+		_, runErr := wf.invokePi(context.Background(), root, unexpectedLaunch, "run", "1")
 		piErr := interactive(unexpectedLaunch)
 		for _, err := range []error{runErr, piErr} {
 			if err == nil || !strings.Contains(err.Error(), invalid.message) {
@@ -486,12 +511,12 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 	}
 	var newPath string
 	before := run(t, root, "show", "1", "--raw")
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		newPath = child.Args[2]
 		if piWorktree(t, child) != worktree || child.Directory != root {
 			t.Fatalf("did not keep the checkout: %+v", child)
 		}
-		wantDir := filepath.Join(os.Getenv("HOME"), "custom-agent", "sessions", "dev.wincent.tasks")
+		wantDir := filepath.Join(wf.home, "custom-agent", "sessions", "dev.wincent.tasks")
 		if filepath.Dir(newPath) != wantDir || newPath == oldPath {
 			t.Fatalf("expected new transcript under %s, got %s", wantDir, newPath)
 		}
@@ -513,10 +538,12 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 }
 
 func TestMergeConflictRetainsTaskAndRetryUsesCurrentTip(t *testing.T) {
-	_, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	root := wf.root
 	commitImplementation(t, root, "conflict", "base\n")
 	run(t, root, "create", "Conflict", "--body", "requirements")
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		commitImplementation(t, piWorktree(t, child), "conflict", "task\n")
 		commitImplementation(t, root, "conflict", "main\n")
 		return process.Result{}
@@ -550,14 +577,16 @@ func TestMergeConflictRetainsTaskAndRetryUsesCurrentTip(t *testing.T) {
 }
 
 func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	base, err := repo.ResolveCommit(mainRef)
 	if err != nil {
 		t.Fatal(err)
 	}
 	run(t, root, "create", "Recover merge", "--body", "requirements")
 	var tip git.ID
-	_, err = invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	_, err = wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		tip = commitImplementation(t, piWorktree(t, child), "result", "task content\n")
 		return process.Result{}
 	}, "run", "1", "--no-merge")
@@ -590,10 +619,12 @@ func TestMergeRetryFinishesAnInterruptedCheckoutUpdate(t *testing.T) {
 }
 
 func TestMergePreservesMainEditsAndDoesNotBypassSigning(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	base := fixtureRevision(t, repo, mainRef)
 	run(t, root, "create", "Merge safely", "--body", "requirements")
-	_, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	_, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		commitImplementation(t, piWorktree(t, child), "delivered", "new file\n")
 		return process.Result{}
 	}, "run", "1", "--no-merge")
@@ -635,10 +666,12 @@ func TestMergePreservesMainEditsAndDoesNotBypassSigning(t *testing.T) {
 }
 
 func TestRunWithoutChangesClosesWithExplanation(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	run(t, root, "create", "No changes", "--body", "requirements")
 	base := fixtureRevision(t, repo, mainRef)
-	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
 		fmt.Fprintln(child.Out, `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"The feature already works."}]}}`)
 		return process.Result{}
 	}, "run", "1")
@@ -655,6 +688,7 @@ func TestRunWithoutChangesClosesWithExplanation(t *testing.T) {
 }
 
 func TestCreateNumbersSharedAcrossWorktrees(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "init")
 	head, _ := repo.Head()
@@ -688,6 +722,7 @@ func TestCreateNumbersSharedAcrossWorktrees(t *testing.T) {
 }
 
 func TestRemovedCommandsAndFlagsAreNotAliases(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"queue"}, {"admission"}, {"start", "1"}, {"stop", "1"}, {"complete", "1"}, {"block", "1"}, {"unblock", "1"}, {"reopen", "1"}, {"handoff", "1"}, {"integrate", "1"}, {"submit", "1"}, {"mark-merged", "1"}, {"reservations"}, {"reserve-ticket-number"}, {"release-ticket-number", "1"}, {"validation-plan"}, {"run", "1", "--reuse"}, {"run", "1", "--queue-bound"}, {"pi", "1", "--in-place"}, {"pi", "1", "--resume"}, {"tail", "1", "--no-follow"}, {"tail", "1", "--all"}, {"tail", "1", "--full"}, {"merge", "1", "--no-test"}, {"create", "Title", "--number", "1"}, {"close", "1", "--commit", "HEAD"}} {
 		if _, err := parse(args); err == nil {
 			t.Fatalf("accepted removed invocation: %v", args)

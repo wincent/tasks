@@ -12,7 +12,9 @@ import (
 )
 
 func TestRepositoryTaskPrefix(t *testing.T) {
-	repo, root := taskWorkflowFixture(t)
+	t.Parallel()
+	wf := taskWorkflowFixture(t)
+	repo, root := wf.repo, wf.root
 	oldMain, err := repo.ResolveCommit(mainRef)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +48,7 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 	}
 
 	var checkoutPath string
-	out, err := invokePi(context.Background(), root, func(_ context.Context, cmd process.Command) process.Result {
+	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, cmd process.Command) process.Result {
 		checkoutPath = piWorktree(t, cmd)
 		if !strings.HasPrefix(filepath.Base(checkoutPath), "run-1-") || !strings.HasPrefix(cmd.Args[len(cmd.Args)-1], "Read RUN-1 at ") {
 			t.Fatalf("checkout %s, args %v", checkoutPath, cmd.Args)
@@ -79,6 +81,7 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 }
 
 func TestTaskConfigRequiresExactLocalMain(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	main, err := repo.Reference(mainRef)
 	if err != nil {
@@ -97,6 +100,7 @@ func TestTaskConfigRequiresExactLocalMain(t *testing.T) {
 }
 
 func TestTaskConfigIsRequiredOnMain(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name, config, want string
 	}{
@@ -108,6 +112,7 @@ func TestTaskConfigIsRequiredOnMain(t *testing.T) {
 		{"unknown key", "prefix: EXAMPLE\nextra: ignored\n", "invalid .tasks.yml"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repo, root := fixture(t)
 			commitMainConfig(t, repo, tt.config)
 			// A valid but uncommitted file does not rescue the setting on main.

@@ -24,7 +24,7 @@ func hook(ctx context.Context, repo *git.Repository, name string, args []string,
 		return err
 	}
 	if strings.HasPrefix(directory, "~/") {
-		home, err := os.UserHomeDir()
+		home, err := streams.userHomeDir()
 		if err != nil {
 			return err
 		}
@@ -49,10 +49,10 @@ func hook(ctx context.Context, repo *git.Repository, name string, args []string,
 		runner = process.Native{}
 	}
 	arguments := append([]string{path}, args...)
-	result := runner.Run(ctx, process.Command{Args: arguments, Directory: paths.WorkDir, Environment: os.Environ(), Out: streams.Err, Err: streams.Err})
+	result := runner.Run(ctx, process.Command{Args: arguments, Directory: paths.WorkDir, Environment: streams.environ(), Out: streams.Err, Err: streams.Err})
 	if errors.Is(result.Err, syscall.ENOEXEC) {
 		arguments = append([]string{"/bin/sh"}, arguments...)
-		result = runner.Run(ctx, process.Command{Args: arguments, Directory: paths.WorkDir, Environment: os.Environ(), Out: streams.Err, Err: streams.Err})
+		result = runner.Run(ctx, process.Command{Args: arguments, Directory: paths.WorkDir, Environment: streams.environ(), Out: streams.Err, Err: streams.Err})
 	}
 	if result.Code != 0 || result.Err != nil {
 		return process.Failure(arguments, result, "", "")

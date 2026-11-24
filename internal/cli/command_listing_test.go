@@ -17,6 +17,7 @@ import (
 )
 
 func TestListingPartialResultsAndStatusWarnings(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Matching open", "--body", "requirements"))
 	run(t, root, "create", "Matching active", "--body", "requirements")
@@ -138,6 +139,7 @@ func TestListingPartialResultsAndStatusWarnings(t *testing.T) {
 }
 
 func TestRecentListingEmptyStoreHint(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	out, diagnostic, err := invoke(root, "")
 	const want = "No tasks yet. Create one with: `tasks create \"Task title\"`\n"
@@ -147,6 +149,7 @@ func TestRecentListingEmptyStoreHint(t *testing.T) {
 }
 
 func TestListingNoUncompletedTasksHint(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Merged task", "--body", "requirements"))
 	commitTaskText(t, repo, path, "Status: merged\n")
@@ -162,6 +165,7 @@ func TestListingNoUncompletedTasksHint(t *testing.T) {
 }
 
 func TestListingOnlyInvalidRecordsDoesNotClaimEmptyStore(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Broken", "--body", "requirements"))
 	writeSafetyFile(t, path, "Status: invalid\n")
@@ -182,6 +186,7 @@ func TestListingOnlyInvalidRecordsDoesNotClaimEmptyStore(t *testing.T) {
 }
 
 func TestListingDuplicatesExcludeEveryCopy(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Original", "--body", "requirements"))
 	run(t, root, "create", "Unrelated", "--body", "requirements")
@@ -201,6 +206,7 @@ func TestListingDuplicatesExcludeEveryCopy(t *testing.T) {
 }
 
 func TestListingProcessPartialJSONAndExitStatus(t *testing.T) {
+	t.Parallel()
 	_, root := fixture(t)
 	path := strings.TrimSpace(run(t, root, "create", "Matching", "--body", "requirements"))
 	writeSafetyFile(t, filepath.Join(filepath.Dir(path), "EXAMPLE-2 Broken.md"), "Status: invalid\n")

@@ -27,17 +27,20 @@ func OpenPTY() (*os.File, *os.File, error) {
 }
 
 func OpenPTYWithWidth(columns uint16) (*os.File, *os.File, error) {
+	syscall.ForkLock.RLock()
 	var master, slave C.int
 	if code := C.task_openpty(&master, &slave, C.ushort(columns)); code != 0 {
+		syscall.ForkLock.RUnlock()
 		return nil, nil, syscall.Errno(code)
 	}
+	syscall.CloseOnExec(int(master))
+	syscall.CloseOnExec(int(slave))
+	syscall.ForkLock.RUnlock()
 	if err := syscall.SetNonblock(int(master), true); err != nil {
 		syscall.Close(int(master))
 		syscall.Close(int(slave))
 		return nil, nil, err
 	}
-	syscall.CloseOnExec(int(master))
-	syscall.CloseOnExec(int(slave))
 	return os.NewFile(uintptr(master), "pty master"), os.NewFile(uintptr(slave), "pty slave"), nil
 }
 

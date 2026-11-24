@@ -77,6 +77,7 @@ printf '<%s>\n' "$@"
 }
 
 func TestShSelectsExistingCheckout(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "create", "Inspect worktrees", "--body", "Fixture")
 	fails(t, root, "no checkout for EXAMPLE-1", "sh", "1", "/bin/pwd")
@@ -107,6 +108,7 @@ func TestShSelectsExistingCheckout(t *testing.T) {
 }
 
 func TestShKeepsCheckoutDuringCleanup(t *testing.T) {
+	t.Parallel()
 	repo, root := fixture(t)
 	run(t, root, "create", "Keep checkout", "--body", "Fixture")
 	base, err := repo.ResolveCommit(mainRef)
@@ -165,6 +167,7 @@ func TestShLeaseSurvivesLauncherDeath(t *testing.T) {
 		}
 		os.Exit(0)
 	}
+	t.Parallel()
 
 	repo, root := fixture(t)
 	run(t, root, "create", "Keep checkout", "--body", "Fixture")
@@ -242,6 +245,7 @@ func TestShLeaseSurvivesLauncherDeath(t *testing.T) {
 }
 
 func TestShUsageErrors(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args []string
 		want string

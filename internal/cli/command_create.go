@@ -69,7 +69,7 @@ func createTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 			return err
 		}
 		number = n
-		return taskResult(streams.Out, "Created", id, title, filepath.Clean(path))
+		return taskResult(streams, "Created", id, title, filepath.Clean(path))
 	})
 	err := create(ctx, cwd, repo, a, streams)
 	return number, err

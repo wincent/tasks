@@ -9,7 +9,6 @@ import (
 
 	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/tail"
-	"github.com/wincent/tasks/internal/terminal"
 )
 
 func init() {
@@ -59,7 +58,7 @@ func tailTask(ctx context.Context, cwd string, a arguments, streams IO, invocati
 		id = *record.SessionID
 	}
 	fmt.Fprintln(streams.Err, tail.Safe(fmt.Sprintf("%s: %s\nFollowing %s (Ctrl-C stops the viewer)", task.ID(), task.Title, record.SessionFile)))
-	err = tail.Follow(ctx, file, record.Worktree, id, terminal.Color(streams.Out), streams.Out, streams.Err)
+	err = tail.Follow(ctx, file, record.Worktree, id, streams.color(streams.Out), streams.Out, streams.Err)
 	if errors.Is(err, syscall.EPIPE) {
 		return nil
 	}
