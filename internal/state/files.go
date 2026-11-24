@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
-	"testing"
+	"testing" // testing.Testing() only; no build tags, no init flags since Go 1.13.
 )
 
 var skipSync atomic.Bool
