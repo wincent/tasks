@@ -10,6 +10,7 @@
 - feat: teach `tasks pi` and `tasks run` to accept a `--prompt` option, which can be used to pass additional instructions to the agent.
 - feat: add `tasks st` as an alias for `tasks status`.
 - feat: add `tasks version` as an alias for `tasks --version`.
+- feat: handle misspelled commands automatically when it is safe to do so (eg. `tasks lsti` will autocorrect to `tasks list`).
 
 ## v0.1.0 — 2026-11-22
 
