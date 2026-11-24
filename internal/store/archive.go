@@ -223,55 +223,118 @@ func (move *archiveMove) treeEdits(repo *git.Repository, head git.ID, data []byt
 	return []git.TreeEdit{{Path: move.source}, {Path: move.destination, ID: entry.ID, Mode: entry.Mode}}, nil
 }
 
-// A no-replace link keeps the ticket's exact bytes and mode. Rollback will
-// restore that same file rather than overwrite anything created meanwhile.
-func (move *archiveMove) install(root string) (rollback func() error, err error) {
+type archiveLink struct {
+	source, destination string
+	info                os.FileInfo
+	removed             bool
+}
+
+// A no-replace link keeps the ticket's exact bytes and mode.
+func (move *archiveMove) link(root string) (archiveLink, error) {
 	source, destination := filepath.Join(root, move.source), filepath.Join(root, move.destination)
 	info, err := os.Lstat(source)
 	if err != nil {
-		return nil, err
+		return archiveLink{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("task must be a regular file: %s", source)
+		return archiveLink{}, fmt.Errorf("task must be a regular file: %s", source)
 	}
 	if err := os.Link(source, destination); err != nil {
-		return nil, err
+		return archiveLink{}, err
 	}
-	removed := false
-	rollback = func() error {
-		current, err := os.Lstat(destination)
-		if err != nil {
-			return err
-		}
-		if !os.SameFile(info, current) {
-			return fmt.Errorf("archive move destination changed: %s", destination)
-		}
-		if removed {
-			if err := os.Link(destination, source); err != nil {
-				return err
-			}
-			if err := state.SyncDirectory(filepath.Dir(source)); err != nil {
-				return err
-			}
-		}
-		if err := os.Remove(destination); err != nil {
-			return err
-		}
-		return state.SyncDirectory(filepath.Dir(destination))
-	}
-	if err := state.SyncDirectory(filepath.Dir(destination)); err != nil {
-		return rollback, err
-	}
-	current, err := os.Lstat(source)
+	return archiveLink{source: source, destination: destination, info: info}, nil
+}
+
+func (link *archiveLink) checkDestination() error {
+	current, err := os.Lstat(link.destination)
 	if err != nil {
-		return rollback, err
+		return err
 	}
-	if !os.SameFile(info, current) {
-		return rollback, fmt.Errorf("archive move source changed: %s", source)
+	if !os.SameFile(link.info, current) {
+		return fmt.Errorf("archive move destination changed: %s", link.destination)
 	}
-	if err := os.Remove(source); err != nil {
-		return rollback, err
+	return nil
+}
+
+func (link *archiveLink) unlinkSource() error {
+	if err := link.checkDestination(); err != nil {
+		return err
 	}
-	removed = true
-	return rollback, state.SyncDirectory(filepath.Dir(source))
+	current, err := os.Lstat(link.source)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(link.info, current) {
+		return fmt.Errorf("archive move source changed: %s", link.source)
+	}
+	if err := os.Remove(link.source); err != nil {
+		return err
+	}
+	link.removed = true
+	return nil
+}
+
+// Restore the original inode before dropping the destination link. If a
+// replacement source prevents restoration, leave the destination intact.
+func (link *archiveLink) rollback() error {
+	if err := link.checkDestination(); err != nil {
+		return err
+	}
+	if link.removed {
+		if err := os.Link(link.destination, link.source); err != nil {
+			return err
+		}
+		if err := state.SyncDirectory(filepath.Dir(link.source)); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(link.destination); err != nil {
+		return err
+	}
+	return state.SyncDirectory(filepath.Dir(link.destination))
+}
+
+// installArchiveMoves returns all installed links, even on error, for the
+// caller to roll back before publication. It makes the destination links
+// durable before removing any sources, then flushes the source removals.
+func installArchiveMoves(root string, moves []archiveMove, created []string, syncDirectory func(string) error) ([]archiveLink, error) {
+	links := make([]archiveLink, 0, len(moves))
+	directories := make([]string, 0, len(moves))
+	for _, move := range moves {
+		link, err := move.link(root)
+		if err != nil {
+			return links, err
+		}
+		links = append(links, link)
+		directories = append(directories, filepath.Dir(link.destination))
+	}
+	// Flush the new directory entries too, from the leaves up to the root.
+	for i := len(created) - 1; i >= 0; i-- {
+		directories = append(directories, filepath.Dir(created[i]))
+	}
+	if err := syncArchiveDirectories(directories, syncDirectory); err != nil {
+		return links, err
+	}
+	directories = directories[:0]
+	for i := range links {
+		if err := links[i].unlinkSource(); err != nil {
+			return links, err
+		}
+		directories = append(directories, filepath.Dir(links[i].source))
+	}
+	return links, syncArchiveDirectories(directories, syncDirectory)
+}
+
+func syncArchiveDirectories(directories []string, syncDirectory func(string) error) error {
+	seen := make(map[string]bool)
+	for _, dir := range directories {
+		if seen[dir] {
+			continue
+		}
+		if err := syncDirectory(dir); err != nil {
+			return fmt.Errorf("sync archive move directory %s: %w", dir, err)
+		}
+		seen[dir] = true
+	}
+	return nil
 }

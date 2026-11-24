@@ -390,8 +390,8 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			return revision, err
 		}
 	}
-	var rollbackMoves []func() error
-	written := make([]string, 0, len(names))
+	var archiveLinks []archiveLink
+	var written []string
 	defer func() {
 		if err == nil {
 			return
@@ -401,8 +401,8 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			err = &RecoveryError{Revision: revision, Directory: temporary, Err: err}
 			return
 		}
-		for i := len(rollbackMoves) - 1; i >= 0; i-- {
-			if restoreErr := rollbackMoves[i](); restoreErr != nil {
+		for i := len(archiveLinks) - 1; i >= 0; i-- {
+			if restoreErr := archiveLinks[i].rollback(); restoreErr != nil {
 				retain = true
 				err = errors.Join(err, fmt.Errorf("restore archive move (recovery in %s): %w", temporary, restoreErr))
 			}
@@ -425,37 +425,34 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			}
 		}
 	}()
-	writeNames := names
-	for _, move := range options.moves {
-		rollback, err := move.install(store.Path)
-		if rollback != nil {
-			rollbackMoves = append(rollbackMoves, rollback)
-		}
+	if len(options.moves) != 0 {
+		archiveLinks, err = installArchiveMoves(store.Path, options.moves, created, state.SyncDirectory)
 		if err != nil {
 			return revision, err
 		}
-		writeNames = nil
-	}
-	var batch state.Batch
-	for _, name := range writeNames {
-		path := filepath.Join(store.Path, name)
-		if options.artifactDirectory != "" {
-			installed, err := batch.AtomicCreate(path, contents[name])
-			if installed {
+	} else {
+		written = make([]string, 0, len(names))
+		var batch state.Batch
+		for _, name := range names {
+			path := filepath.Join(store.Path, name)
+			if options.artifactDirectory != "" {
+				installed, err := batch.AtomicCreate(path, contents[name])
+				if installed {
+					written = append(written, name)
+				}
+				if err != nil {
+					return revision, err
+				}
+			} else {
 				written = append(written, name)
-			}
-			if err != nil {
-				return revision, err
-			}
-		} else {
-			written = append(written, name)
-			if err := batch.AtomicWrite(path, contents[name]); err != nil {
-				return revision, err
+				if err := batch.AtomicWrite(path, contents[name]); err != nil {
+					return revision, err
+				}
 			}
 		}
-	}
-	if err := batch.SyncDirectories(); err != nil {
-		return revision, err
+		if err := batch.SyncDirectories(); err != nil {
+			return revision, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return revision, err
