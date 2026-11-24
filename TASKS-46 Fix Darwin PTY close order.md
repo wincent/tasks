@@ -1,6 +1,6 @@
 # TASKS-46: Fix Darwin PTY close order
 
-Status: open
+Status: active
 
 ## Description
 
