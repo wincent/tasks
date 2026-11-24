@@ -436,10 +436,11 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		}
 		writeNames = nil
 	}
+	var batch state.Batch
 	for _, name := range writeNames {
 		path := filepath.Join(store.Path, name)
 		if options.artifactDirectory != "" {
-			installed, err := state.AtomicCreate(path, contents[name])
+			installed, err := batch.AtomicCreate(path, contents[name])
 			if installed {
 				written = append(written, name)
 			}
@@ -448,10 +449,13 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 			}
 		} else {
 			written = append(written, name)
-			if err := state.AtomicWrite(path, contents[name]); err != nil {
+			if err := batch.AtomicWrite(path, contents[name]); err != nil {
 				return revision, err
 			}
 		}
+	}
+	if err := batch.SyncDirectories(); err != nil {
+		return revision, err
 	}
 	if err := ctx.Err(); err != nil {
 		return revision, err
@@ -470,7 +474,7 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 	if _, err := indexLock.Write(newIndex); err != nil {
 		return revision, err
 	}
-	if err := indexLock.Sync(); err != nil {
+	if err := state.SyncFile(indexLock); err != nil {
 		return revision, err
 	}
 	if err := indexLock.Close(); err != nil {
