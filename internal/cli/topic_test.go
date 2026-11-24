@@ -354,6 +354,53 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 	}
 }
 
+func TestRecordingMergeResultRejectsRawCommitAfterRead(t *testing.T) {
+	repo, root := fixture(t)
+	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
+	session, err := store.Begin(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tasks, err := session.Preview("EXAMPLE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tasks.Close()
+	head, err := tasks.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := tasks.ReadWorking(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := requireTaskDestination(task, "before"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.WithStatus(task.Content, "merged")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A raw Git commit can retarget the task after the result check but
+	// before the conditional write, bypassing the metadata session lock.
+	retargeted := strings.Replace(task.Content, "Topic: before", "Topic: after", 1)
+	writeSafetyFile(t, ticket, retargeted)
+	metadata := filepath.Dir(ticket)
+	systemGit(t, metadata, "commit", "-am", "retarget after reading task")
+	after := systemGit(t, metadata, "rev-parse", "HEAD")
+	if _, err := writeTask(session, tasks, head.ID, filepath.Base(ticket), result, "record merged for "+task.ID()); err == nil || !strings.Contains(err.Error(), "tasks ref differs from caller expectation") {
+		t.Fatalf("expected stale merge result to be rejected, got %v", err)
+	}
+	if got := systemGit(t, metadata, "rev-parse", "HEAD"); got != after {
+		t.Errorf("metadata ref moved from %s to %s", after, got)
+	}
+	if got := string(uiBytes(t, ticket)); got != retargeted {
+		t.Errorf("stale merge result changed retargeted task: %s", got)
+	}
+}
+
 func TestTopicOptionRejectsTaskNamespace(t *testing.T) {
 	for _, topic := range []string{"task/example-2", "Task/other-1-build", "task/nested/branch"} {
 		for _, args := range [][]string{{"go", "Title"}, {"create", "Title"}} {
