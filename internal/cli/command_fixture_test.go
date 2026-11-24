@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/state"
 	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
+	state.DisableSyncForTesting()
 	if os.Getenv("TASK_TEST_COMMAND_HELPER") != "task" {
 		os.Exit(testutil.RunWithIsolatedHome(m.Run))
 	}

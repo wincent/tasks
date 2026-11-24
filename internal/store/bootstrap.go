@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wincent/tasks/internal/git"
+	"github.com/wincent/tasks/internal/state"
 )
 
 // Ensure never resets an existing branch or replaces a filesystem obstruction.
@@ -85,5 +86,5 @@ func (s *Session) ignoreCheckoutAt(commonDir string) error {
 	if _, err := file.WriteString(suffix); err != nil {
 		return err
 	}
-	return file.Sync()
+	return state.SyncFile(file)
 }

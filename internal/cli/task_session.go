@@ -58,12 +58,16 @@ func writeTaskSession(directory string, n int, record taskSession) error {
 		return err
 	}
 	data = append(data, '\n')
+	var batch state.Batch
 	if record.SessionFile != "" && record.Branch != "" {
-		if err := state.AtomicWrite(checkoutSessionPath(directory, record.Worktree, record.Branch), data); err != nil {
+		if err := batch.AtomicWrite(checkoutSessionPath(directory, record.Worktree, record.Branch), data); err != nil {
 			return err
 		}
 	}
-	return state.AtomicWrite(taskSessionPath(directory, n), data)
+	if err := batch.AtomicWrite(taskSessionPath(directory, n), data); err != nil {
+		return err
+	}
+	return batch.SyncDirectories()
 }
 
 func checkoutSessionPath(directory, worktree, branch string) string {
