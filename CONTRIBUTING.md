@@ -18,7 +18,7 @@ The repository settings are:
 
 - Settings:
   - General:
-    - "Enable release immutability Loading"
+    - "Enable release immutability"
   - Rulesets:
     - "Restrict creation" (tag rule):
       - Enforcement status: Active
@@ -30,7 +30,7 @@ The repository settings are:
       - Bypass list: none
       - Tag targeting criteria: Include by pattern `v*`
       - Rules: "Restrict updates" and "Restrict deletions"
-  - Enviroments:
+  - Environments:
     - "release":
       - Selected branches and tags: `v*`
       - Environment variables:
