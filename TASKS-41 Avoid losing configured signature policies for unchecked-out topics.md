@@ -1,6 +1,6 @@
 # TASKS-41: Avoid losing configured signature policies for unchecked-out topics
 
-Status: active
+Status: merged
 
 ## Description
 
