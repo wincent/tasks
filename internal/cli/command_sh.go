@@ -22,7 +22,7 @@ func init() {
 		summary:         "Run a command in a task's existing checkout.",
 		details: `Examples:
   tasks sh 29 -- git status --short
-  tasks sh 29 -- ./scripts/check
+  tasks sh 29 -- ./run-checks
 
 Put tasks options before NUMBER. After NUMBER and an optional --, the command
 and its arguments are passed as-is. For shell syntax, use sh -c '...'.
