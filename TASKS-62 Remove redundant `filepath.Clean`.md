@@ -1,6 +1,6 @@
 # TASKS-62: Remove redundant `filepath.Clean`
 
-Status: active
+Status: merged
 
 ## Description
 
