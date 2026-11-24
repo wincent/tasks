@@ -1,6 +1,6 @@
 # TASKS-42: Deal with staged renames in `tasks show`
 
-Status: open
+Status: active
 
 ## Description
 
