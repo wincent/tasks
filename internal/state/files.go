@@ -97,7 +97,6 @@ func (batch *Batch) SyncDirectories() error {
 }
 
 func (batch *Batch) record(directory string) {
-	directory = filepath.Clean(directory)
 	if batch.seen == nil {
 		batch.seen = make(map[string]bool)
 	}
