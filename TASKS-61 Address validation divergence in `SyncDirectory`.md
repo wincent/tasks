@@ -1,6 +1,6 @@
 # TASKS-61: Address validation divergence in `SyncDirectory`
 
-Status: active
+Status: merged
 
 ## Description
 
