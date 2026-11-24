@@ -169,32 +169,58 @@ func requireUnrecordedDestination(repo *git.Repository, prefix store.Prefix, ref
 	return nil
 }
 
-func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (destination, error) {
+type cleanupTarget struct {
+	destination destination
+	metadata    git.ID // Zero means the tasks ref must remain absent.
+}
+
+func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (cleanupTarget, error) {
+	target := cleanupTarget{destination: "main"}
 	tasks, err := inspectCleanupStore(repo, prefix)
 	if err != nil {
-		return "", err
+		return cleanupTarget{}, err
 	}
 	if tasks == nil {
-		return "main", nil
+		return target, nil
 	}
 	defer tasks.Close()
-	task, err := tasks.Read(n)
-	if errors.Is(err, store.ErrTaskNotFound) {
-		// Keep supporting legacy branches with no task record.
-		return "main", nil
-	}
+	head, err := tasks.Head()
 	if err != nil {
-		return "", err
+		return cleanupTarget{}, err
 	}
-	if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
-		return "", err
+	if head.Branch != store.Branch || head.ID == (git.ID{}) {
+		return cleanupTarget{}, errors.New("task checkout is not on the committed tasks branch")
 	}
-	return taskDestination(task.Content)
+	target.metadata = head.ID
+
+	task, err := tasks.Read(n)
+	if !errors.Is(err, store.ErrTaskNotFound) {
+		if err != nil {
+			return cleanupTarget{}, err
+		}
+		if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
+			return cleanupTarget{}, err
+		}
+		target.destination, err = taskDestination(task.Content)
+		if err != nil {
+			return cleanupTarget{}, err
+		}
+	}
+	// Pin the revision even when no record exists: a commit can add one.
+	current, err := tasks.Head()
+	if err != nil {
+		return cleanupTarget{}, err
+	}
+	if current != head {
+		return cleanupTarget{}, errors.New("task metadata changed during destination selection; retry")
+	}
+	return target, nil
 }
 
 // Eligibility uses actual Git history, not the status written in Markdown.
 // The caller holds the task lock whenever it requests removal.
-func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, dest destination, apply bool) error {
+func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, selected cleanupTarget, apply bool) error {
+	dest := selected.destination
 	n := taskBranchNumber(prefix, entry.Head.Branch)
 	if entry.Name == "" || entry.Locked || entry.Invalid != "" || n == 0 {
 		return errors.New("not an unlocked linked task checkout")
@@ -309,7 +335,9 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 		return err
 	}
 	defer lock.Close()
-	refs, err := repo.LockRefs(map[string]git.ID{entry.Head.Branch: entry.Head.ID, dest.ref(): base})
+	refs, err := repo.LockRefs(map[string]git.ID{
+		entry.Head.Branch: entry.Head.ID, dest.ref(): base, store.Branch: selected.metadata,
+	})
 	if err != nil {
 		return err
 	}

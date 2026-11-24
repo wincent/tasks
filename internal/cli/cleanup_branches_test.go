@@ -299,8 +299,12 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 	}
 	commitImplementation(t, root, "main.txt", "another merged commit\n")
 	systemGit(t, root, "branch", "-f", "task/example-7", "main")
+	target, err := cleanupDestination(repo, "EXAMPLE", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var changed *git.ChangedError
-	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", true); !errors.As(err, &changed) {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", target, true); !errors.As(err, &changed) {
 		t.Fatalf("expected changed ref error, got %v", err)
 	}
 	ref, err = repo.Reference(name)
@@ -308,7 +312,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemGit(t, root, "worktree", "add", filepath.Join(t.TempDir(), "new"), "task/example-7")
-	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", true); err == nil || !strings.Contains(err.Error(), "still checked out") {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", target, true); err == nil || !strings.Contains(err.Error(), "still checked out") {
 		t.Fatalf("expected refusal with new checkout, got %v", err)
 	}
 	if actual, err := repo.Reference(name); err != nil || actual != ref {

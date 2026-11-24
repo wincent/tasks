@@ -160,7 +160,15 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 		fmt.Fprintf(streams.Out, "Session: %s\n", saved.SessionFile)
 	}
 	if source.Paths.WorkDir != "" {
-		if err := cleanMerged(repo, source, cwd, prefix, target, true); err != nil {
+		cleanup, err := cleanupDestination(repo, prefix, n)
+		if err == nil {
+			if cleanup.destination != target {
+				err = fmt.Errorf("topic changed from %q to %q; review and retry", target, cleanup.destination)
+			} else {
+				err = cleanMerged(repo, source, cwd, prefix, cleanup, true)
+			}
+		}
+		if err != nil {
 			fmt.Fprintf(streams.Err, "Kept checkout %s: %v\n", source.Paths.WorkDir, err)
 		}
 	}
