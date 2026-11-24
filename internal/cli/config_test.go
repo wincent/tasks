@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"maps"
 	"os"
 	"path/filepath"
@@ -678,6 +680,258 @@ func TestLoadUserConfigXDGAndErrors(t *testing.T) {
 		}
 		if got := cfg.resolveModel("sol"); got != "from-symlink" {
 			t.Fatalf("resolveModel(sol) = %q, want from-symlink", got)
+		}
+	})
+}
+
+func TestFormatUserConfig(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty configs format as empty string", func(t *testing.T) {
+		t.Parallel()
+		for _, cfg := range []userConfig{
+			{},
+			{modelAliases: map[string]string{}},
+		} {
+			if got := formatUserConfig(cfg); got != "" {
+				t.Fatalf("formatUserConfig(%#v) = %q, want empty", cfg, got)
+			}
+		}
+	})
+
+	t.Run("standard aliases are sorted and plain", func(t *testing.T) {
+		t.Parallel()
+		cfg := userConfig{
+			modelAliases: map[string]string{
+				"sol":    "openai-codex/gpt-6.2-sol",
+				"fast":   "datadog-anthropic/claude-haiku-4-5:low",
+				"local":  "ollama/llama3:8b",
+				"tagged": "provider/model#v2",
+			},
+		}
+		want := strings.Join([]string{
+			"models:",
+			"  aliases:",
+			"    fast: datadog-anthropic/claude-haiku-4-5:low",
+			"    local: ollama/llama3:8b",
+			"    sol: openai-codex/gpt-6.2-sol",
+			"    tagged: provider/model#v2",
+			"",
+		}, "\n")
+		got := formatUserConfig(cfg)
+		if got != want {
+			t.Fatalf("formatUserConfig() =\n%s\nwant:\n%s", got, want)
+		}
+		parsed, err := parseUserConfig([]byte(got))
+		if err != nil {
+			t.Fatalf("round-trip parse failed: %v", err)
+		}
+		if !maps.Equal(parsed.modelAliases, cfg.modelAliases) {
+			t.Fatalf("round-trip aliases = %#v, want %#v", parsed.modelAliases, cfg.modelAliases)
+		}
+	})
+
+	t.Run("special keys and values are quoted and round-trip cleanly", func(t *testing.T) {
+		t.Parallel()
+		cfg := userConfig{
+			modelAliases: map[string]string{
+				"#hash":     "provider/model # comment",
+				"---":       "foo: bar",
+				"...":       "foo:",
+				"-":         "- item",
+				"?":         "? key",
+				"%pct":      ": val",
+				"'quoted'":  " leading-and-trailing ",
+				`"dq"`:      "tab\there",
+				"esc":       "a\x1b\"b\\c\x01\x7f",
+				"unicode":   "provider/modèl-é",
+				"plain-ish": "it's:low",
+			},
+		}
+		got := formatUserConfig(cfg)
+		if strings.ContainsAny(got, "\x1b\x01\x7f") {
+			t.Fatalf("formatted config must not contain raw control characters: %q", got)
+		}
+		parsed, err := parseUserConfig([]byte(got))
+		if err != nil {
+			t.Fatalf("round-trip parse failed for:\n%s\nerr: %v", got, err)
+		}
+		if !maps.Equal(parsed.modelAliases, cfg.modelAliases) {
+			t.Fatalf("round-trip aliases = %#v, want %#v", parsed.modelAliases, cfg.modelAliases)
+		}
+	})
+}
+
+func TestConfigCommand(t *testing.T) {
+	t.Parallel()
+
+	writeConfig := func(t *testing.T, path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runConfig := func(cwd string, env []string, args ...string) (string, string, error) {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), cwd, args, IO{Out: &out, Err: &stderr, Env: env})
+		return out.String(), stderr.String(), err
+	}
+
+	// Config does not require a Git repository or even an existing cwd.
+	outsideRepo := filepath.Join(t.TempDir(), "missing")
+
+	t.Run("missing config prints nothing", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		out, stderr, err := runConfig(outsideRepo, []string{"HOME=" + home}, "config")
+		if err != nil || out != "" || stderr != "" {
+			t.Fatalf("got out=%q stderr=%q err=%v, want empty and nil", out, stderr, err)
+		}
+	})
+
+	t.Run("unset HOME and XDG_CONFIG_HOME prints nothing", func(t *testing.T) {
+		t.Parallel()
+		out, stderr, err := runConfig(outsideRepo, []string{}, "config")
+		if err != nil || out != "" || stderr != "" {
+			t.Fatalf("got out=%q stderr=%q err=%v, want empty and nil", out, stderr, err)
+		}
+	})
+
+	t.Run("empty and comment-only configs print nothing", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name    string
+			content string
+		}{
+			{"empty", ""},
+			{"comments only", "# just a comment\n\n"},
+			{"empty models", "models:\n"},
+			{"empty aliases", "models:\n  aliases:\n"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				xdg := t.TempDir()
+				writeConfig(t, filepath.Join(xdg, "tasks", "config.yml"), tc.content)
+				out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg}, "config")
+				if err != nil || out != "" || stderr != "" {
+					t.Fatalf("got out=%q stderr=%q err=%v, want empty and nil", out, stderr, err)
+				}
+			})
+		}
+	})
+
+	t.Run("prints normalized parsed config from HOME", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		writeConfig(t, filepath.Join(home, ".config", "tasks", "config.yml"), strings.Join([]string{
+			"# User config",
+			"\"models\":",
+			"   'aliases':",
+			"        sol: openai-codex/gpt-6.2-sol # comment",
+			"        fast: 'datadog-anthropic/claude-haiku-4-5:low'",
+			"        hashed: 'provider/model # literal'",
+		}, "\r\n"))
+
+		out, stderr, err := runConfig(outsideRepo, []string{"HOME=" + home}, "config")
+		want := strings.Join([]string{
+			"models:",
+			"  aliases:",
+			"    fast: datadog-anthropic/claude-haiku-4-5:low",
+			`    hashed: "provider/model # literal"`,
+			"    sol: openai-codex/gpt-6.2-sol",
+			"",
+		}, "\n")
+		if err != nil || out != want || stderr != "" {
+			t.Fatalf("got out=%q stderr=%q err=%v, want out=%q", out, stderr, err, want)
+		}
+	})
+
+	t.Run("respects XDG_CONFIG_HOME precedence and fallback", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		xdg := t.TempDir()
+		emptyXDG := t.TempDir()
+		writeConfig(t, filepath.Join(home, ".config", "tasks", "config.yml"), "models:\n  aliases:\n    sol: from-home\n")
+		writeConfig(t, filepath.Join(xdg, "tasks", "config.yml"), "models:\n  aliases:\n    sol: from-xdg\n")
+
+		out, stderr, err := runConfig(outsideRepo, []string{"HOME=" + home, "XDG_CONFIG_HOME=" + xdg}, "config")
+		wantXDG := "models:\n  aliases:\n    sol: from-xdg\n"
+		if err != nil || out != wantXDG || stderr != "" {
+			t.Fatalf("xdg: got out=%q stderr=%q err=%v, want %q", out, stderr, err, wantXDG)
+		}
+
+		out, stderr, err = runConfig(outsideRepo, []string{"HOME=" + home, "XDG_CONFIG_HOME=" + emptyXDG}, "config")
+		if err != nil || out != "" || stderr != "" {
+			t.Fatalf("missing xdg: got out=%q stderr=%q err=%v, want empty", out, stderr, err)
+		}
+
+		out, stderr, err = runConfig(outsideRepo, []string{"HOME=" + home, "XDG_CONFIG_HOME=relative/xdg"}, "config")
+		wantHome := "models:\n  aliases:\n    sol: from-home\n"
+		if err != nil || out != wantHome || stderr != "" {
+			t.Fatalf("relative xdg: got out=%q stderr=%q err=%v, want %q", out, stderr, err, wantHome)
+		}
+	})
+
+	t.Run("invalid config returns error with no stdout", func(t *testing.T) {
+		t.Parallel()
+		xdg := t.TempDir()
+		cfgPath := filepath.Join(xdg, "tasks", "config.yml")
+		writeConfig(t, cfgPath, "models:\n  unknown: bad\n")
+
+		out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg}, "config")
+		if err == nil || ExitCode(err) != 1 || out != "" || stderr != "" {
+			t.Fatalf("got out=%q stderr=%q err=%v (exit %d), want exit 1 error and no output", out, stderr, err, ExitCode(err))
+		}
+		if !strings.Contains(err.Error(), "invalid config") || !strings.Contains(err.Error(), cfgPath) || !strings.Contains(err.Error(), "line 2:") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("unreadable config path returns error with no stdout", func(t *testing.T) {
+		t.Parallel()
+		xdg := t.TempDir()
+		dirPath := filepath.Join(xdg, "tasks", "config.yml")
+		if err := os.MkdirAll(dirPath, 0700); err != nil {
+			t.Fatal(err)
+		}
+
+		out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg}, "config")
+		if err == nil || ExitCode(err) != 1 || out != "" || stderr != "" || !strings.Contains(err.Error(), dirPath) {
+			t.Fatalf("got out=%q stderr=%q err=%v, want read error referencing %s", out, stderr, err, dirPath)
+		}
+	})
+
+	t.Run("rejects positional arguments and unknown options", func(t *testing.T) {
+		t.Parallel()
+		xdg := t.TempDir()
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"config", "models"}, "`tasks config` expects 0 positional argument(s)"},
+			{[]string{"config", "--json"}, "unrecognized argument: --json"},
+		} {
+			out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg}, tc.args...)
+			if err == nil || ExitCode(err) != 2 || err.Error() != tc.want || out != "" || stderr != "" {
+				t.Fatalf("%v: got out=%q stderr=%q err=%v (exit %d), want usage error %q", tc.args, out, stderr, err, ExitCode(err), tc.want)
+			}
+		}
+	})
+
+	t.Run("autocorrects typo outside repository", func(t *testing.T) {
+		t.Parallel()
+		xdg := t.TempDir()
+		writeConfig(t, filepath.Join(xdg, "tasks", "config.yml"), "models:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n")
+
+		out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg}, "cofnig")
+		wantOut := "models:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n"
+		wantErr := "warning: subcommand `cofnig` does not exist; using `config` instead.\n"
+		if err != nil || out != wantOut || stderr != wantErr {
+			t.Fatalf("got out=%q stderr=%q err=%v, want out=%q stderr=%q", out, stderr, err, wantOut, wantErr)
 		}
 	})
 }

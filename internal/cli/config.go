@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -44,6 +46,98 @@ func loadUserConfig(streams IO) (userConfig, error) {
 		return userConfig{}, fmt.Errorf("invalid config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+func formatUserConfig(cfg userConfig) string {
+	if len(cfg.modelAliases) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("models:\n  aliases:\n")
+	for _, name := range slices.Sorted(maps.Keys(cfg.modelAliases)) {
+		b.WriteString("    ")
+		b.WriteString(formatYAMLScalar(name))
+		b.WriteString(": ")
+		b.WriteString(formatYAMLScalar(cfg.modelAliases[name]))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func formatYAMLScalar(s string) string {
+	if !needsYAMLQuoting(s) {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch ch {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case 0:
+			b.WriteString(`\0`)
+		case '\a':
+			b.WriteString(`\a`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\v':
+			b.WriteString(`\v`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		case 0x1b:
+			b.WriteString(`\e`)
+		default:
+			if ch < 0x20 || ch == 0x7f {
+				fmt.Fprintf(&b, `\x%02x`, ch)
+			} else {
+				b.WriteByte(ch)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func needsYAMLQuoting(s string) bool {
+	if s == "" {
+		return true
+	}
+	if s[0] == ' ' || s[0] == '\t' || s[len(s)-1] == ' ' || s[len(s)-1] == '\t' {
+		return true
+	}
+	switch s[0] {
+	case '#', '\'', '"', '|', '>', '{', '[', '&', '*', '!', '@', '`', '%':
+		return true
+	}
+	if s == "-" || strings.HasPrefix(s, "- ") || strings.HasPrefix(s, "-\t") ||
+		s == "?" || strings.HasPrefix(s, "? ") || strings.HasPrefix(s, "?\t") ||
+		s == ":" || strings.HasPrefix(s, ": ") || strings.HasPrefix(s, ":\t") ||
+		s == "---" || strings.HasPrefix(s, "--- ") || strings.HasPrefix(s, "---\t") ||
+		s == "..." || strings.HasPrefix(s, "... ") || strings.HasPrefix(s, "...\t") {
+		return true
+	}
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch < 0x20 || ch == 0x7f {
+			return true
+		}
+		if ch == '#' && i > 0 && (s[i-1] == ' ' || s[i-1] == '\t') {
+			return true
+		}
+		if ch == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveModelOption(a arguments, streams IO) (string, bool, error) {

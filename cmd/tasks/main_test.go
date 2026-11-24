@@ -99,6 +99,51 @@ func TestExecutableVersionOutsideRepository(t *testing.T) {
 	}
 }
 
+func TestExecutableConfigOutsideRepository(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd := t.TempDir()
+	xdg := t.TempDir()
+	run := func() (string, string, int) {
+		command := exec.Command(executable, "config")
+		command.Dir = cwd
+		command.Env = append(os.Environ(), "TASK_TEST_MAIN_HELPER=1", "XDG_CONFIG_HOME="+xdg)
+		var stderr bytes.Buffer
+		command.Stderr = &stderr
+		stdout, err := command.Output()
+		code := 0
+		if err != nil {
+			code = command.ProcessState.ExitCode()
+		}
+		return string(stdout), stderr.String(), code
+	}
+
+	if stdout, stderr, code := run(); code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("missing config: stdout=%q stderr=%q code=%d, want empty and exit 0", stdout, stderr, code)
+	}
+
+	cfgPath := filepath.Join(xdg, "tasks", "config.yml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, []byte("models:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const want = "models:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n"
+	if stdout, stderr, code := run(); code != 0 || stdout != want || stderr != "" {
+		t.Fatalf("valid config: stdout=%q stderr=%q code=%d, want %q and exit 0", stdout, stderr, code, want)
+	}
+
+	if err := os.WriteFile(cfgPath, []byte("models:\n  bad: oops\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, stderr, code := run(); code != 1 || stdout != "" || !strings.HasPrefix(stderr, "tasks: invalid config ") {
+		t.Fatalf("invalid config: stdout=%q stderr=%q code=%d, want exit 1 with invalid config error", stdout, stderr, code)
+	}
+}
+
 func TestExecutableForwardsAndPreservesSignalsAfterChildCleanup(t *testing.T) {
 	for _, value := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(value.String(), func(t *testing.T) {

@@ -26,6 +26,7 @@ Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
 | `tasks cleanup`   | Preview removal of merged task checkouts and branches.        |
 | `tasks close`     | Close a task with a note, without merging or discarding work. |
 | `tasks comment`   | Add a Markdown comment to a task.                             |
+| `tasks config`    | Show parsed user configuration.                               |
 | `tasks edit`      | Edit a task's Markdown in your editor.                        |
 | `tasks go`        | Create and run a task from its title alone.                   |
 | `tasks help`      | Show help for tasks or a specific command.                    |
@@ -99,6 +100,8 @@ git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
 
 ## Configuration
 
+Run `tasks config` to display the parsed user configuration from `$XDG_CONFIG_HOME/tasks/config.yml` (when `XDG_CONFIG_HOME` is an absolute path) or `~/.config/tasks/config.yml`. It prints nothing if the file is missing or empty, and exits with an error if it is invalid.
+
 ### Model aliases
 
 You can define shorthand model aliases for `--model` (used by `tasks run`, `tasks pi`, and `tasks go`) in `$XDG_CONFIG_HOME/tasks/config.yml` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/tasks/config.yml` otherwise:
@@ -121,7 +124,7 @@ tasks run 10 --model fast:high
 - Exact alias matches expand directly to the configured target.
 - When passing `<alias>:<thinking>`, if the alias target already ends with a Pi thinking-level suffix (`:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, `:max`), that suffix is replaced by `:<thinking>`; otherwise `:<thinking>` is appended, preserving non-thinking colons in model IDs such as `ollama/llama3:8b`.
 - Lookups are single-step (aliases do not chain to other aliases), and unmatched `--model` values pass through to Pi unchanged.
-- The config file is loaded only when `--model` is supplied to `tasks run`, `tasks pi`, or `tasks go`. A missing file is treated as empty; an unreadable or invalid file fails before mutating task, worktree, or session state.
+- For launch commands, the config file is loaded only when `--model` is supplied to `tasks run`, `tasks pi`, or `tasks go`. A missing file is treated as empty; an unreadable or invalid file fails before mutating task, worktree, or session state.
 - `config.yml` uses a strict UTF-8 YAML subset: space-indented block mappings under `models.aliases`, plain or single/double-quoted keys and scalar values, blank lines, and `#` comments.
 
 ## License
