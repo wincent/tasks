@@ -1,6 +1,6 @@
 # TASKS-40: Ensure that recording a merge result does not undo a concurrent retarget
 
-Status: active
+Status: merged
 
 ## Description
 
