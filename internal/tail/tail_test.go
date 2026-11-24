@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -46,13 +45,12 @@ func readWindow(file *os.File, root string, out, diagnostic io.Writer) error {
 
 type callbackWriter struct {
 	buffer   bytes.Buffer
-	once     sync.Once
-	callback func()
+	callback func([]byte)
 }
 
 func (w *callbackWriter) Write(data []byte) (int, error) {
 	n, err := w.buffer.Write(data)
-	w.once.Do(w.callback)
+	w.callback(data)
 	return n, err
 }
 
@@ -62,7 +60,7 @@ func TestFollowDetectsReplacementTruncationAndCancellation(t *testing.T) {
 			file, root := session(t, record("assistant", "first"))
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			writer := &callbackWriter{callback: func() {
+			writer := &callbackWriter{callback: func([]byte) {
 				switch mode {
 				case "replacement":
 					if err := os.Rename(file.Name(), file.Name()+".old"); err != nil {
@@ -93,26 +91,33 @@ func TestFollowDetectsReplacementTruncationAndCancellation(t *testing.T) {
 }
 
 func TestFollowCompletesPartialRecordWithoutSwitchingSession(t *testing.T) {
-	partial := strings.TrimSuffix(record("assistant", "late final output"), "\n")
-	file, root := session(t, record("assistant", "first")+partial)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	const first = "first"
+	const final = "late final output"
+	partial := strings.TrimSuffix(record("assistant", final), "\n")
+	file, root := session(t, record("assistant", first)+partial)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	writer := &callbackWriter{callback: func() {
-		f, err := os.OpenFile(file.Name(), os.O_WRONLY|os.O_APPEND, 0600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		if _, err := f.WriteString("\n"); err != nil {
-			t.Fatal(err)
+	writer := &callbackWriter{callback: func(data []byte) {
+		switch {
+		case bytes.Contains(data, []byte(final)):
+			cancel()
+		case bytes.Contains(data, []byte(first)):
+			f, err := os.OpenFile(file.Name(), os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if _, err := f.WriteString("\n"); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}}
 	var diagnostic bytes.Buffer
 	err := Follow(ctx, file, root, "exact-session", false, writer, &diagnostic)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal(err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected follow to stop after writing %q, got %v", final, err)
 	}
-	if strings.Count(writer.buffer.String(), "late final output") != 1 {
+	if strings.Count(writer.buffer.String(), final) != 1 {
 		t.Fatal(writer.buffer.String())
 	}
 }
