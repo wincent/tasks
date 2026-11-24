@@ -44,16 +44,15 @@ func checkouts(repo *git.Repository) ([]checkout, error) {
 		return nil, err
 	}
 	if !primary.Bare {
-		opened, err := git.Open(primary.WorkDir)
+		opened, summary, err := git.OpenCheckout(primary.WorkDir, "")
 		if err != nil {
 			return nil, err
 		}
-		head, err := opened.Head()
 		opened.Close()
-		if err != nil {
-			return nil, err
+		if summary.HeadErr != nil {
+			return nil, summary.HeadErr
 		}
-		result = append(result, checkout{Paths: primary, Head: head})
+		result = append(result, checkout{Paths: primary, Head: summary.Head})
 	}
 	trees, err := repo.Worktrees()
 	if err != nil {
@@ -62,18 +61,15 @@ func checkouts(repo *git.Repository) ([]checkout, error) {
 	for _, tree := range trees {
 		item := checkout{Name: tree.Name, Locked: tree.Locked, Invalid: tree.InvalidReason, Paths: git.Paths{WorkDir: tree.Path}}
 		if tree.InvalidReason == "" {
-			opened, err := git.Open(tree.Path)
+			opened, summary, err := git.OpenCheckout(tree.Path, "")
 			if err != nil {
 				return nil, err
-			}
-			item.Paths, err = opened.Paths()
-			if err == nil {
-				item.Head, err = opened.Head()
 			}
 			opened.Close()
-			if err != nil {
-				return nil, err
+			if summary.HeadErr != nil {
+				return nil, summary.HeadErr
 			}
+			item.Paths, item.Head = summary.Paths, summary.Head
 		}
 		result = append(result, item)
 	}

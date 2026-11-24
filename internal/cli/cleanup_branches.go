@@ -13,6 +13,10 @@ import (
 
 // The caller holds the task lock in apply mode.
 func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, selected cleanupTarget, apply bool) error {
+	return cleanMergedBranchWithPreview(repo, name, ref, retained, prefix, selected, apply, nil)
+}
+
+func cleanMergedBranchWithPreview(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, selected cleanupTarget, apply bool, preview *cleanupPreview) error {
 	dest := selected.destination
 	if ref.Symbolic != "" {
 		return errors.New("symbolic branch refs are protected")
@@ -29,7 +33,11 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 		return fmt.Errorf("branch is not merged into local %s", dest)
 	}
 	if !apply {
-		if err := requireUnrecordedDestination(repo, prefix, name); err != nil {
+		if preview != nil {
+			if err := preview.requireUnrecordedDestination(name); err != nil {
+				return err
+			}
+		} else if err := requireUnrecordedDestination(repo, prefix, name); err != nil {
 			return err
 		}
 		return checkBranchReservations(retained, name)

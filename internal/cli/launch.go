@@ -67,7 +67,7 @@ func setResultForTopic(ctx context.Context, repo *git.Repository, prefix store.P
 	})
 }
 
-func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error {
+func launchTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 	prefix, n := a.prefix, a.number()
 	interactive := a.action == "pi"
 	if interactive && (!terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Out)) {
@@ -76,11 +76,6 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 	if _, supplied := a.values["--worktree"]; supplied && a.value("--worktree") == "" {
 		return errors.New("--worktree requires a nonempty path")
 	}
-	repo, err := git.Open(cwd)
-	if err != nil {
-		return err
-	}
-	defer repo.Close()
 	if err := store.RequireLocalHistory(repo); err != nil {
 		return err
 	}

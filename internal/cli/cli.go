@@ -216,14 +216,14 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 	}
 	run := commands[a.action].run
 	if a.action == "help" || a.action == "version" {
-		return run(ctx, cwd, a, streams)
+		return run(ctx, cwd, nil, a, streams)
 	}
 	repo, err := git.Open(cwd)
 	if err != nil {
 		return err
 	}
+	defer repo.Close()
 	a.prefix, err = store.LoadPrefix(repo)
-	repo.Close()
 	if err != nil {
 		return err
 	}
@@ -238,5 +238,5 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 		}
 		seen[task.number] = true
 	}
-	return run(ctx, cwd, a, streams)
+	return run(ctx, cwd, repo, a, streams)
 }

@@ -52,12 +52,16 @@ func (s *Session) NextTaskNumber(prefix Prefix) (int, error) {
 
 func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 	names := []string{}
-	path, err := Location(s.Repository)
+	paths, worktrees, err := s.Repository.PathsAndWorktrees()
+	if err != nil {
+		return nil, err
+	}
+	path, common, err := locationFromPaths(paths)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		store, err := Open(s.Repository)
+		store, err := openWith(s.Repository, path, common, worktrees)
 		if err != nil {
 			return nil, err
 		}

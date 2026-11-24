@@ -236,19 +236,44 @@ func (r *Repository) callNative(operation string, configured bool, f func(*C.git
 	return f(r.ptr)
 }
 
+// CheckoutSummary captures paths, HEAD, and an optional named reference from a
+// freshly opened repository under the same configuration validation pass.
+// Head and reference errors are returned on the summary so callers can check
+// repository identity (Paths) before inspecting HEAD or refs.
+type CheckoutSummary struct {
+	Paths     Paths
+	Head      Head
+	HeadErr   error
+	Reference Reference
+	RefErr    error
+}
+
 // Open discovers a repository from a checkout, subdirectory, or Git directory.
 // The explicit path determines identity; unsupported ambient overrides fail
 // explicitly rather than silently redirecting or changing private worktrees.
 func Open(path string) (*Repository, error) {
+	repo, _, err := openRepository(path, "", false)
+	return repo, err
+}
+
+// OpenCheckout opens a repository like Open and immediately reads Paths, Head,
+// and (when refName is nonempty) Reference(refName) under the same initial
+// configuration application, avoiding redundant follow-up config refreshes.
+func OpenCheckout(path, refName string) (*Repository, CheckoutSummary, error) {
+	return openRepository(path, refName, true)
+}
+
+func openRepository(path, refName string, inspect bool) (*Repository, CheckoutSummary, error) {
+	var summary CheckoutSummary
 	if err := validateEnvironment(); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	if err := initialize(); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	configuration, err := prepareEnvironmentConfiguration()
 	if err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	retained := false
 	defer func() {
@@ -258,11 +283,11 @@ func Open(path string) (*Repository, error) {
 	}()
 	path, err = filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	name, err := cstring(path)
 	if err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	defer free(name)
 	runtime.LockOSThread()
@@ -271,7 +296,7 @@ func Open(path string) (*Repository, error) {
 	if value := os.Getenv("GIT_CEILING_DIRECTORIES"); value != "" {
 		ceiling, err = cstring(value)
 		if err != nil {
-			return nil, err
+			return nil, summary, err
 		}
 		defer free(ceiling)
 	}
@@ -281,7 +306,7 @@ func Open(path string) (*Repository, error) {
 	case "1", "true", "yes", "on":
 		flags |= C.GIT_REPOSITORY_OPEN_CROSS_FS
 	default:
-		return nil, errors.New("GIT_DISCOVERY_ACROSS_FILESYSTEM must be a boolean")
+		return nil, summary, errors.New("GIT_DISCOVERY_ACROSS_FILESYSTEM must be a boolean")
 	}
 	// Public discovery is read-only and does not perform ownership admission.
 	var discovered C.git_buf
@@ -291,31 +316,38 @@ func Open(path string) (*Repository, error) {
 		across = 1
 	}
 	if err := nativeError("discover ownership include context", C.git_repository_discover(&discovered, name, across, ceiling)); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	context, err := configurationAdmissionContext(C.GoString(discovered.ptr), "")
 	if err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	if err := configuration.validateConditionalOwnership(context); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	if err := validateBareDiscoveryPolicy(path, flags, ceiling, configuration); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	if err := validateRepositoryFormat(name, flags, ceiling); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	var repo *C.git_repository
 	if err := nativeError("open repository", C.git_repository_open_ext(&repo, name, flags, ceiling)); err != nil {
-		return nil, err
+		return nil, summary, err
 	}
 	if err := configuration.apply(repo); err != nil {
 		C.git_repository_free(repo)
-		return nil, err
+		return nil, summary, err
+	}
+	if inspect {
+		summary.Paths = readPaths(repo)
+		summary.Head, summary.HeadErr = readHead(repo)
+		if refName != "" {
+			summary.Reference, summary.RefErr = lookup(repo, refName)
+		}
 	}
 	retained = true
-	return &Repository{ptr: repo, configuration: configuration}, nil
+	return &Repository{ptr: repo, configuration: configuration}, summary, nil
 }
 
 // Init creates a repository without reinitializing an existing one. For a
@@ -410,15 +442,21 @@ type Paths struct {
 	Bare      bool
 }
 
+func readPaths(repo *C.git_repository) Paths {
+	var paths Paths
+	paths.GitDir = filepath.Clean(C.GoString(C.git_repository_path(repo)))
+	paths.CommonDir = filepath.Clean(C.GoString(C.git_repository_commondir(repo)))
+	if work := C.git_repository_workdir(repo); work != nil {
+		paths.WorkDir = filepath.Clean(C.GoString(work))
+	}
+	paths.Bare = C.git_repository_is_bare(repo) != 0
+	return paths
+}
+
 func (r *Repository) Paths() (Paths, error) {
 	var paths Paths
 	err := r.call("repository paths", func(repo *C.git_repository) error {
-		paths.GitDir = filepath.Clean(C.GoString(C.git_repository_path(repo)))
-		paths.CommonDir = filepath.Clean(C.GoString(C.git_repository_commondir(repo)))
-		if work := C.git_repository_workdir(repo); work != nil {
-			paths.WorkDir = filepath.Clean(C.GoString(work))
-		}
-		paths.Bare = C.git_repository_is_bare(repo) != 0
+		paths = readPaths(repo)
 		return nil
 	})
 	return paths, err

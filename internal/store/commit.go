@@ -80,6 +80,10 @@ func (store *Store) RequireClean(names ...string) error {
 }
 
 func (store *Store) cleanSelected(names []string) error {
+	return store.cleanSelectedWithIndex(names, nil, false)
+}
+
+func (store *Store) cleanSelectedWithIndex(names []string, entries []git.IndexEntry, haveIndex bool) error {
 	// Check the complete selection before status inspection or any index,
 	// object, content or reference preparation. Do not reject unrelated paths.
 	if err := store.Repository.ValidateWorktreePaths(names); err != nil {
@@ -101,9 +105,11 @@ func (store *Store) cleanSelected(names []string) error {
 			return fmt.Errorf("manual changes to %s; commit or move those changes before retrying", filepath.Join(store.Path, change.Path))
 		}
 	}
-	entries, err := store.Repository.IndexEntries()
-	if err != nil {
-		return err
+	if !haveIndex {
+		entries, err = store.Repository.IndexEntries()
+		if err != nil {
+			return err
+		}
 	}
 	for _, entry := range entries {
 		if selected[entry.Path] && (entry.AssumeValid || entry.SkipWorktree || entry.IntentToAdd || entry.Stage != 0) {
@@ -166,6 +172,14 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		return revision, err
 	}
 	defer store.Close()
+	storeDirInfo, err := os.Lstat(store.Path)
+	if err != nil {
+		return revision, err
+	}
+	storeGitDirInfo, err := os.Lstat(store.Paths.GitDir)
+	if err != nil {
+		return revision, err
+	}
 	actors := git.Signatures{Author: options.Signature, Committer: options.Signature}
 	if options.FromEnvironment {
 		actors, err = store.Repository.Signatures()
@@ -178,8 +192,10 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 		return revision, err
 	}
 	checkSelected := func() error {
+		var indexEntries []git.IndexEntry
+		var indexedTickets map[ticketKey][]string
 		for _, move := range options.moves {
-			if err := move.check(store, head.ID); err != nil {
+			if err := move.check(store, head.ID, &indexEntries, &indexedTickets); err != nil {
 				return err
 			}
 		}
@@ -188,13 +204,7 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 				return err
 			}
 		}
-		return store.cleanSelected(names)
-	}
-	if err := checkSelected(); err != nil {
-		return revision, err
-	}
-	if err := store.Repository.ValidateWorktreeContents(contents); err != nil {
-		return revision, err
+		return store.cleanSelectedWithIndex(names, indexEntries, indexedTickets != nil)
 	}
 	if value, exists := expected[Branch]; exists && value != head.ID {
 		return revision, errors.New("tasks ref differs from caller expectation")
@@ -313,16 +323,27 @@ func commitFiles(ctx context.Context, repository *git.Repository, changes map[st
 	if err := ctx.Err(); err != nil {
 		return revision, err
 	}
-	fresh, err := Open(repository)
-	if err != nil {
-		return revision, err
-	}
-	fresh.Close()
-	if fresh.Paths != store.Paths {
+	if currentDir, statErr := os.Lstat(store.Path); statErr != nil || !os.SameFile(storeDirInfo, currentDir) {
 		return revision, errors.New("task checkout identity changed during metadata commit")
 	}
-	if err := checkSelected(); err != nil {
+	if currentGitDir, statErr := os.Lstat(store.Paths.GitDir); statErr != nil || !os.SameFile(storeGitDirInfo, currentGitDir) {
+		return revision, errors.New("task checkout identity changed during metadata commit")
+	}
+	if err := store.noOperation(); err != nil {
 		return revision, err
+	}
+	if options.BeforePublish != nil {
+		fresh, err := Open(repository)
+		if err != nil {
+			return revision, err
+		}
+		fresh.Close()
+		if fresh.Paths != store.Paths {
+			return revision, errors.New("task checkout identity changed during metadata commit")
+		}
+		if err := checkSelected(); err != nil {
+			return revision, err
+		}
 	}
 	if current, statErr := os.Lstat(indexLockPath); statErr != nil || !os.SameFile(ownedIndexLock, current) {
 		return revision, errors.New("task index lock identity changed during metadata commit")

@@ -151,7 +151,29 @@ func (s *Session) moveTasks(tasks *Store, head git.ID, selected []Task, archive 
 	return moved, nil
 }
 
-func (move *archiveMove) check(store *Store, head git.ID) error {
+type ticketKey struct {
+	prefix Prefix
+	number int
+}
+
+func indexTicketPaths(entries []git.IndexEntry) map[ticketKey][]string {
+	result := make(map[ticketKey][]string)
+	for _, entry := range entries {
+		match := ticketName.FindStringSubmatch(filepath.Base(entry.Path))
+		if match == nil {
+			continue
+		}
+		number, err := strconv.Atoi(match[2])
+		if err != nil || !inTicketLocation(entry.Path, number) {
+			continue
+		}
+		key := ticketKey{prefix: Prefix(match[1]), number: number}
+		result[key] = append(result[key], entry.Path)
+	}
+	return result
+}
+
+func (move *archiveMove) check(store *Store, head git.ID, indexEntries *[]git.IndexEntry, indexedTickets *map[ticketKey][]string) error {
 	if err := store.requireNewPaths(move.directory(), "archive move destination", []string{move.destination}, head); err != nil {
 		return err
 	}
@@ -163,16 +185,17 @@ func (move *archiveMove) check(store *Store, head git.ID) error {
 	if store.RelativePath(task) != move.source {
 		return fmt.Errorf("%s moved during archive planning; retry", task.ID())
 	}
-	entries, err := store.Repository.IndexEntries()
-	if err != nil {
-		return err
+	if *indexedTickets == nil {
+		entries, err := store.Repository.IndexEntries()
+		if err != nil {
+			return err
+		}
+		*indexEntries = entries
+		*indexedTickets = indexTicketPaths(entries)
 	}
-	for _, entry := range entries {
-		if entry.Path != move.source && inTicketLocation(entry.Path, move.number) {
-			match := store.matchTicket(filepath.Base(entry.Path))
-			if match != nil && match[2] == strconv.Itoa(move.number) {
-				return fmt.Errorf("ambiguous %s: duplicate path in the task index: %s", task.ID(), entry.Path)
-			}
+	for _, path := range (*indexedTickets)[ticketKey{prefix: move.prefix, number: move.number}] {
+		if path != move.source {
+			return fmt.Errorf("ambiguous %s: duplicate path in the task index: %s", task.ID(), path)
 		}
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/store"
 )
 
@@ -22,14 +23,14 @@ func init() {
 confirmation; when stdout is redirected, print the task's file path.
 
 ` + "Options:\n" + topicHelp + "\n" + bodyOptionsHelp,
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
-			_, err := createTask(ctx, cwd, a, streams, true)
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
+			_, err := createTask(ctx, cwd, repo, a, streams, true)
 			return err
 		},
 	})
 }
 
-func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBody bool) (int, error) {
+func createTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO, withBody bool) (int, error) {
 	var number int
 	create := withTaskStore(storeRequirements{mutation: true, body: withBody, prepare: func(a arguments) error {
 		if !store.ValidTitle(strings.TrimSpace(a.positional[0])) {
@@ -70,6 +71,6 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 		number = n
 		return taskResult(streams.Out, "Created", id, title, filepath.Clean(path))
 	})
-	err := create(ctx, cwd, a, streams)
+	err := create(ctx, cwd, repo, a, streams)
 	return number, err
 }

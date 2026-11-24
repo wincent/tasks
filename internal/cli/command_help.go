@@ -1,6 +1,10 @@
 package cli
 
-import "context"
+import (
+	"context"
+
+	"github.com/wincent/tasks/internal/git"
+)
 
 func init() {
 	commands.register(commandSpec{
@@ -16,7 +20,7 @@ func init() {
 			}
 			return nil
 		},
-		run: func(_ context.Context, _ string, a arguments, streams IO) error {
+		run: func(_ context.Context, _ string, _ *git.Repository, a arguments, streams IO) error {
 			if len(a.positional) == 1 {
 				return help(a.positional[0], streams.Out)
 			}

@@ -11,12 +11,16 @@ import (
 // Callers must preflight before Ensure, ledger allocation, or claim mutation;
 // commitFiles resolves again in the actual commit repository before writing.
 func MetadataSignatures(repository *git.Repository) (git.Signatures, error) {
-	path, err := Location(repository)
+	paths, worktrees, err := repository.PathsAndWorktrees()
+	if err != nil {
+		return git.Signatures{}, err
+	}
+	path, common, err := locationFromPaths(paths)
 	if err != nil {
 		return git.Signatures{}, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		tasks, err := Open(repository)
+		tasks, err := openWith(repository, path, common, worktrees)
 		if err != nil {
 			return git.Signatures{}, err
 		}
