@@ -1,6 +1,6 @@
 # TASKS-64: Comment why state package imports testing
 
-Status: active
+Status: merged
 
 ## Description
 
