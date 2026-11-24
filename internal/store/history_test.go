@@ -242,15 +242,19 @@ func wideTaskHistory(t testing.TB, tickets, commits int) (taskHistoryFixture, gi
 	}
 	for i := 1; i <= commits; i++ {
 		var number int
+		var path string
 		if i%2 == 0 {
 			number = i / 2
-			bucket[number-1].ID = blob2
-			root[len(root)-1] = f.archive("0", bucket...)
+			path = "archive/0/" + bucket[number-1].Name
 		} else {
 			number = 1000 + i/2
-			root[number-1000].ID = blob2
+			path = root[number-1000].Name
 		}
-		head = f.commit(f.tree(root...), i, head)
+		tree, err := f.Repository.EditTree(head, []git.TreeEdit{{Path: path, ID: blob2, Mode: 0100644}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		head = f.commit(tree, i, head)
 		tips[number] = head
 	}
 	return f, head, tips
