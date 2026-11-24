@@ -1,6 +1,6 @@
 # TASKS-38: Ensure --prompt does not swallow --no-merge
 
-Status: active
+Status: merged
 
 ## Description
 
