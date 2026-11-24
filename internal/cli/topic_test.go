@@ -87,6 +87,46 @@ func TestGoUsesExistingTopicAndUpdatesItsCheckout(t *testing.T) {
 	}
 }
 
+func TestRerunMergedTopicTaskStartsAtCurrentTopicTip(t *testing.T) {
+	_, root := taskWorkflowFixture(t)
+	main := systemGit(t, root, "rev-parse", "main")
+	systemGit(t, root, "switch", "-c", "delivery")
+	systemGit(t, root, "config", "merge.ff", "only")
+	run(t, root, "create", "Deliver", "--topic", "delivery", "--body", "Topic only.")
+
+	var worktree, branch, first string
+	out, err := invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		worktree = piWorktree(t, child)
+		branch = systemGit(t, worktree, "symbolic-ref", "HEAD")
+		first = commitImplementation(t, worktree, "first.txt", "first run\n")
+		return process.Result{}
+	}, "run", "1")
+	if err != nil || systemGit(t, root, "rev-parse", "delivery") != first {
+		t.Fatalf("first run did not merge: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("checkout retained after merge: %v", err)
+	}
+	topic := commitImplementation(t, root, "meanwhile.txt", "delivery advanced\n")
+
+	var second string
+	out, err = invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
+		worktree := piWorktree(t, child)
+		if head := systemGit(t, worktree, "rev-parse", "HEAD"); head != topic {
+			t.Fatalf("rerun started at %s, want current topic tip %s", head, topic)
+		}
+		second = commitImplementation(t, worktree, "second.txt", "second run\n")
+		return process.Result{}
+	}, "run", "1")
+	if err != nil || systemGit(t, root, "rev-parse", "delivery") != second {
+		t.Fatalf("rerun did not fast-forward delivery: %v\n%s", err, out)
+	}
+	assertStatus(t, root, "merged")
+	if systemGit(t, root, "rev-parse", branch) != first || systemGit(t, root, "rev-parse", "main") != main {
+		t.Fatal("rerun changed the old task branch or main")
+	}
+}
+
 func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 	_, root := taskWorkflowFixture(t)
 	main := systemGit(t, root, "rev-parse", "main")

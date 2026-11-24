@@ -137,9 +137,9 @@ func launchTask(ctx context.Context, cwd string, a arguments, streams IO) error 
 		return err
 	}
 	if source.Paths.WorkDir == "" {
-		if previous.Branch != "" && target == "main" {
-			// Preserve the default workflow: after merging into main,
-			// a new checkout starts from the latest main.
+		if previous.Branch != "" {
+			// Resume the retained branch only if it has commits that
+			// are not in the destination.
 			merged, err := repo.IsAncestor(previous.ID, base)
 			if err != nil {
 				return err
