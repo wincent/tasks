@@ -15,16 +15,20 @@ func (s *Session) Ensure(who git.Signature) (*Store, error) {
 	if err := s.check(); err != nil {
 		return nil, err
 	}
-	path, err := Location(s.Repository)
+	paths, worktrees, err := s.Repository.PathsAndWorktrees()
+	if err != nil {
+		return nil, err
+	}
+	path, common, err := locationFromPaths(paths)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		store, err := Open(s.Repository)
+		store, err := openWith(s.Repository, path, common, worktrees)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.ignoreCheckout(); err != nil {
+		if err := s.ignoreCheckoutAt(paths.CommonDir); err != nil {
 			store.Close()
 			return nil, err
 		}
@@ -32,12 +36,12 @@ func (s *Session) Ensure(who git.Signature) (*Store, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	preview, err := inspect(s.Repository)
+	preview, err := inspectWith(s.Repository, path, common, worktrees)
 	if err != nil {
 		return nil, err
 	}
 	preview.Close()
-	if err := s.ignoreCheckout(); err != nil {
+	if err := s.ignoreCheckoutAt(paths.CommonDir); err != nil {
 		return nil, err
 	}
 	if err := s.Repository.AddWorktree("tasks", path, Branch); err != nil {
@@ -46,12 +50,8 @@ func (s *Session) Ensure(who git.Signature) (*Store, error) {
 	return Open(s.Repository)
 }
 
-func (s *Session) ignoreCheckout() error {
-	paths, err := s.Repository.Paths()
-	if err != nil {
-		return err
-	}
-	directory := filepath.Join(paths.CommonDir, "info")
+func (s *Session) ignoreCheckoutAt(commonDir string) error {
+	directory := filepath.Join(commonDir, "info")
 	if err := os.Mkdir(directory, 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}

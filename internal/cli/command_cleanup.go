@@ -33,17 +33,23 @@ Options:
 	})
 }
 
-func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error {
-	repo, err := git.Open(cwd)
-	if err != nil {
-		return err
-	}
-	defer repo.Close()
+func cleanupTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 	paths, err := repo.Paths()
 	if err != nil {
 		return err
 	}
 	apply := a.flags["--apply"]
+	var preview *cleanupPreview
+	if !apply {
+		preview = &cleanupPreview{repo: repo, prefix: a.prefix}
+		defer preview.close()
+	}
+	selectDestination := func(n int) (cleanupTarget, error) {
+		if preview != nil {
+			return preview.destination(n)
+		}
+		return cleanupDestination(repo, a.prefix, n)
+	}
 	directory := stateDirectory(paths)
 	if apply {
 		directory, err = operationState(repo)
@@ -98,11 +104,11 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, entry.Head.Branch)
 		if !matches(n) || entry.Name == "" || !attempt(n, entry.Paths.WorkDir, func() error {
-			target, err := cleanupDestination(repo, a.prefix, n)
+			target, err := selectDestination(n)
 			if err != nil {
 				return err
 			}
-			return cleanMerged(repo, entry, cwd, a.prefix, target, apply)
+			return cleanMergedWithPreview(repo, entry, cwd, a.prefix, target, apply, preview)
 		}) {
 			retained = append(retained, entry)
 		}
@@ -120,14 +126,83 @@ func cleanupTask(ctx context.Context, cwd string, a arguments, streams IO) error
 		}
 		n := taskBranchNumber(a.prefix, name)
 		attempt(n, "branch "+strings.TrimPrefix(name, "refs/heads/"), func() error {
-			target, err := cleanupDestination(repo, a.prefix, n)
+			target, err := selectDestination(n)
 			if err != nil {
 				return err
 			}
-			return cleanMergedBranch(repo, name, refs[name], retained, a.prefix, target, apply)
+			return cleanMergedBranchWithPreview(repo, name, refs[name], retained, a.prefix, target, apply, preview)
 		})
 	}
 	return nil
+}
+
+type cachedCleanupTarget struct {
+	target cleanupTarget
+	err    error
+}
+
+// cleanupPreview reuses one open store handle, per-task destinations, and one
+// RecordedTopics scan across a read-only preview pass.
+type cleanupPreview struct {
+	repo         *git.Repository
+	prefix       store.Prefix
+	storeLoaded  bool
+	tasks        *store.Store
+	storeErr     error
+	topicsLoaded bool
+	topics       map[string]string
+	topicsErr    error
+	targets      map[int]cachedCleanupTarget
+}
+
+func (p *cleanupPreview) close() {
+	if p != nil && p.tasks != nil {
+		p.tasks.Close()
+		p.tasks = nil
+	}
+}
+
+func (p *cleanupPreview) store() (*store.Store, error) {
+	if !p.storeLoaded {
+		p.tasks, p.storeErr = inspectCleanupStore(p.repo, p.prefix)
+		p.storeLoaded = true
+	}
+	return p.tasks, p.storeErr
+}
+
+func (p *cleanupPreview) destination(n int) (cleanupTarget, error) {
+	if cached, ok := p.targets[n]; ok {
+		return cached.target, cached.err
+	}
+	tasks, err := p.store()
+	if err != nil {
+		return cleanupTarget{}, err
+	}
+	target, err := cleanupDestinationWithStore(tasks, n)
+	if p.targets == nil {
+		p.targets = make(map[int]cachedCleanupTarget)
+	}
+	p.targets[n] = cachedCleanupTarget{target: target, err: err}
+	return target, err
+}
+
+func (p *cleanupPreview) requireUnrecordedDestination(ref string) error {
+	if !p.topicsLoaded {
+		tasks, err := p.store()
+		if err != nil {
+			p.topicsErr = fmt.Errorf("cannot verify task destinations: %w", err)
+		} else if tasks != nil {
+			p.topics, p.topicsErr = tasks.RecordedTopics()
+			if p.topicsErr != nil {
+				p.topicsErr = fmt.Errorf("cannot verify task destinations: %w", p.topicsErr)
+			}
+		}
+		p.topicsLoaded = true
+	}
+	if p.topicsErr != nil {
+		return p.topicsErr
+	}
+	return checkUnrecordedDestination(p.topics, ref)
 }
 
 // A nil store permits legacy main-only cleanup. An unavailable store must
@@ -147,6 +222,15 @@ func inspectCleanupStore(repo *git.Repository, prefix store.Prefix) (*store.Stor
 	return nil, nil
 }
 
+func checkUnrecordedDestination(topics map[string]string, ref string) error {
+	for topic, id := range topics {
+		if strings.EqualFold(destination(topic).ref(), ref) {
+			return fmt.Errorf("branch is the recorded destination for %s; retarget that task first", id)
+		}
+	}
+	return nil
+}
+
 // Check records across all tickets, even for numbered or automatic cleanup.
 func requireUnrecordedDestination(repo *git.Repository, prefix store.Prefix, ref string) error {
 	tasks, err := inspectCleanupStore(repo, prefix)
@@ -161,12 +245,7 @@ func requireUnrecordedDestination(repo *git.Repository, prefix store.Prefix, ref
 	if err != nil {
 		return fmt.Errorf("cannot verify task destinations: %w", err)
 	}
-	for topic, id := range topics {
-		if strings.EqualFold(destination(topic).ref(), ref) {
-			return fmt.Errorf("branch is the recorded destination for %s; retarget that task first", id)
-		}
-	}
-	return nil
+	return checkUnrecordedDestination(topics, ref)
 }
 
 type cleanupTarget struct {
@@ -175,15 +254,21 @@ type cleanupTarget struct {
 }
 
 func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (cleanupTarget, error) {
-	target := cleanupTarget{destination: "main"}
 	tasks, err := inspectCleanupStore(repo, prefix)
 	if err != nil {
 		return cleanupTarget{}, err
 	}
+	if tasks != nil {
+		defer tasks.Close()
+	}
+	return cleanupDestinationWithStore(tasks, n)
+}
+
+func cleanupDestinationWithStore(tasks *store.Store, n int) (cleanupTarget, error) {
+	target := cleanupTarget{destination: "main"}
 	if tasks == nil {
 		return target, nil
 	}
-	defer tasks.Close()
 	head, err := tasks.Head()
 	if err != nil {
 		return cleanupTarget{}, err
@@ -220,6 +305,10 @@ func cleanupDestination(repo *git.Repository, prefix store.Prefix, n int) (clean
 // Eligibility uses actual Git history, not the status written in Markdown.
 // The caller holds the task lock whenever it requests removal.
 func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, selected cleanupTarget, apply bool) error {
+	return cleanMergedWithPreview(repo, entry, cwd, prefix, selected, apply, nil)
+}
+
+func cleanMergedWithPreview(repo *git.Repository, entry checkout, cwd string, prefix store.Prefix, selected cleanupTarget, apply bool, preview *cleanupPreview) error {
 	dest := selected.destination
 	n := taskBranchNumber(prefix, entry.Head.Branch)
 	if entry.Name == "" || entry.Locked || entry.Invalid != "" || n == 0 {
@@ -302,7 +391,11 @@ func cleanMerged(repo *git.Repository, entry checkout, cwd string, prefix store.
 	}
 	leasePath := checkoutUseLockPath(stateDirectory(entry.Paths), prefix, n)
 	if !apply {
-		if err := requireUnrecordedDestination(repo, prefix, entry.Head.Branch); err != nil {
+		if preview != nil {
+			if err := preview.requireUnrecordedDestination(entry.Head.Branch); err != nil {
+				return err
+			}
+		} else if err := requireUnrecordedDestination(repo, prefix, entry.Head.Branch); err != nil {
 			return err
 		}
 		probe, err := state.ProbeExclusiveLock(leasePath)

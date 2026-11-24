@@ -40,7 +40,7 @@ func usesBodyEditor(a arguments) bool {
 // withTaskStore preserves the shared precondition and cleanup order. Commands
 // explicitly choose facilities; read-only commands never acquire an actor.
 func withTaskStore(require storeRequirements, run func(context.Context, string, arguments, IO, storeInvocation) error) commandHandler {
-	return func(ctx context.Context, cwd string, a arguments, streams IO) error {
+	return func(ctx context.Context, cwd string, repository *git.Repository, a arguments, streams IO) error {
 		if require.prepare != nil {
 			if err := require.prepare(a); err != nil {
 				return err
@@ -51,7 +51,7 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 		if require.body {
 			switch {
 			case usesBodyEditor(a):
-				body, err = editorBody(ctx, cwd, a, streams)
+				body, err = editorBody(ctx, cwd, repository, a, streams)
 				if err != nil {
 					return err
 				}
@@ -78,11 +78,6 @@ func withTaskStore(require storeRequirements, run func(context.Context, string, 
 				return errors.New("task text must not be empty")
 			}
 		}
-		repository, err := git.Open(cwd)
-		if err != nil {
-			return err
-		}
-		defer repository.Close()
 		paths, err := repository.Paths()
 		if err != nil {
 			return err
@@ -145,12 +140,7 @@ func lockTasks(directory string, prefix store.Prefix, numbers []int) (func(), er
 }
 
 func withTasks(run func(context.Context, string, arguments, IO, storeInvocation, *store.Store) error) commandHandler {
-	return func(ctx context.Context, cwd string, a arguments, streams IO) error {
-		repo, err := git.Open(cwd)
-		if err != nil {
-			return err
-		}
-		defer repo.Close()
+	return func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 		if err := store.RequireLocalHistory(repo); err != nil {
 			return err
 		}

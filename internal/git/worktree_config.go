@@ -100,7 +100,7 @@ func preflightWorktree(source *C.git_repository, config *C.git_config, tree *C.g
 			}
 			cleaned := make(map[string][]byte, len(paths))
 			for _, path := range paths {
-				output, err := cleanWorktreeBuffer(repo, path, contents[path])
+				output, err := cleanValidatedWorktreeBuffer(repo, path, contents[path])
 				if err == nil {
 					cleaned[path] = append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(output.ptr)), int(output.size))...)
 				}

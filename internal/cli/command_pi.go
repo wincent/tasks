@@ -1,6 +1,10 @@
 package cli
 
-import "context"
+import (
+	"context"
+
+	"github.com/wincent/tasks/internal/git"
+)
 
 func init() {
 	commands.register(commandSpec{
@@ -12,8 +16,8 @@ func init() {
 			"Fresh checkouts start from the recorded topic (local main by default).\n" +
 			"When ready, use `tasks merge NUMBER` to merge committed work.\n\n" +
 			"Options:\n" + modelHelp + promptHelp + worktreeHelp,
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
-			return launchTask(ctx, cwd, a, streams)
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
+			return launchTask(ctx, cwd, repo, a, streams)
 		},
 	})
 }

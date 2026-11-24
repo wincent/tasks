@@ -1,6 +1,10 @@
 package cli
 
-import "context"
+import (
+	"context"
+
+	"github.com/wincent/tasks/internal/git"
+)
 
 func init() {
 	commands.register(commandSpec{
@@ -17,8 +21,8 @@ func init() {
 			"  --no-merge       Keep the work for review. Use `tasks merge NUMBER` later.\n" +
 			promptHelp +
 			worktreeHelp,
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
-			return launchTask(ctx, cwd, a, streams)
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
+			return launchTask(ctx, cwd, repo, a, streams)
 		},
 	})
 }

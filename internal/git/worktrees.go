@@ -22,42 +22,63 @@ type Worktree struct {
 	InvalidReason string
 }
 
+func readWorktrees(repo *C.git_repository) ([]Worktree, error) {
+	var result []Worktree
+	var names C.git_strarray
+	if err := nativeError("list worktree names", C.git_worktree_list(&names, repo)); err != nil {
+		return nil, err
+	}
+	defer C.git_strarray_dispose(&names)
+	for _, name := range unsafe.Slice(names.strings, int(names.count)) {
+		var worktree *C.git_worktree
+		if err := nativeError("lookup worktree", C.git_worktree_lookup(&worktree, repo, name)); err != nil {
+			return nil, err
+		}
+		entry := Worktree{Name: C.GoString(C.git_worktree_name(worktree)), Path: filepath.Clean(C.GoString(C.git_worktree_path(worktree)))}
+		var reason C.git_buf
+		code := C.git_worktree_is_locked(&reason, worktree)
+		if err := nativeError("read worktree lock", code); err != nil {
+			C.git_buf_dispose(&reason)
+			C.git_worktree_free(worktree)
+			return nil, err
+		}
+		entry.Locked = code > 0
+		if reason.ptr != nil {
+			entry.LockReason = C.GoString(reason.ptr)
+		}
+		C.git_buf_dispose(&reason)
+		if err := nativeError("validate worktree", C.git_worktree_validate(worktree)); err != nil {
+			entry.InvalidReason = err.Error()
+		}
+		C.git_worktree_free(worktree)
+		result = append(result, entry)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
+	return result, nil
+}
+
 func (r *Repository) Worktrees() ([]Worktree, error) {
 	var result []Worktree
 	err := r.call("list linked worktrees", func(repo *C.git_repository) error {
-		var names C.git_strarray
-		if err := nativeError("list worktree names", C.git_worktree_list(&names, repo)); err != nil {
-			return err
-		}
-		defer C.git_strarray_dispose(&names)
-		for _, name := range unsafe.Slice(names.strings, int(names.count)) {
-			var worktree *C.git_worktree
-			if err := nativeError("lookup worktree", C.git_worktree_lookup(&worktree, repo, name)); err != nil {
-				return err
-			}
-			entry := Worktree{Name: C.GoString(C.git_worktree_name(worktree)), Path: filepath.Clean(C.GoString(C.git_worktree_path(worktree)))}
-			var reason C.git_buf
-			code := C.git_worktree_is_locked(&reason, worktree)
-			if err := nativeError("read worktree lock", code); err != nil {
-				C.git_buf_dispose(&reason)
-				C.git_worktree_free(worktree)
-				return err
-			}
-			entry.Locked = code > 0
-			if reason.ptr != nil {
-				entry.LockReason = C.GoString(reason.ptr)
-			}
-			C.git_buf_dispose(&reason)
-			if err := nativeError("validate worktree", C.git_worktree_validate(worktree)); err != nil {
-				entry.InvalidReason = err.Error()
-			}
-			C.git_worktree_free(worktree)
-			result = append(result, entry)
-		}
-		return nil
+		var err error
+		result, err = readWorktrees(repo)
+		return err
 	})
-	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
 	return result, err
+}
+
+// PathsAndWorktrees reads repository paths and linked worktrees under one
+// configuration validation pass.
+func (r *Repository) PathsAndWorktrees() (Paths, []Worktree, error) {
+	var paths Paths
+	var result []Worktree
+	err := r.call("list linked worktrees", func(repo *C.git_repository) error {
+		paths = readPaths(repo)
+		var err error
+		result, err = readWorktrees(repo)
+		return err
+	})
+	return paths, result, err
 }
 
 // PrimaryPaths discovers the primary repository, not the invoking linked

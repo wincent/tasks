@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/wincent/tasks/internal/git"
 )
 
 // Reserve reference-shaped titles even if the number is out of range.
@@ -40,13 +42,13 @@ func init() {
 			}
 			return validateTopicOption(a)
 		},
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
-			n, err := createTask(ctx, cwd, a, streams, false)
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
+			n, err := createTask(ctx, cwd, repo, a, streams, false)
 			if err != nil {
 				return err
 			}
 			// Creation has released the metadata lock that launchTask needs.
-			return launchTask(ctx, cwd, arguments{
+			return launchTask(ctx, cwd, repo, arguments{
 				action: "run",
 				prefix: a.prefix,
 				tasks:  []taskArgument{{number: n}},

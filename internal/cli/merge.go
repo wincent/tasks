@@ -34,15 +34,10 @@ Options:
 	})
 }
 
-func mergeTask(ctx context.Context, cwd string, a arguments, streams IO) error {
+func mergeTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 	if _, supplied := a.values["--worktree"]; supplied && a.value("--worktree") == "" {
 		return errors.New("--worktree requires a nonempty path")
 	}
-	repo, err := git.Open(cwd)
-	if err != nil {
-		return err
-	}
-	defer repo.Close()
 	prefix, n := a.prefix, a.number()
 	if n == 0 {
 		head, err := repo.Head()

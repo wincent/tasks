@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/store"
 	"github.com/wincent/tasks/internal/terminal"
 )
@@ -43,9 +44,9 @@ Archive only the previewed tickets in a single commit after you type yes in a
 terminal. Without a terminal, print the preview without changing any tickets.
 
 ` + queryHelp("tasks archive -q 'updated: < 3 days ago'"),
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 			if a.query != nil {
-				return bulk(ctx, cwd, a, streams)
+				return bulk(ctx, cwd, repo, a, streams)
 			}
 			// Explicit numbers normally skip confirmation. Do not let a
 			// corrected spelling take that shortcut.
@@ -62,7 +63,7 @@ terminal. Without a terminal, print the preview without changing any tickets.
 					return err
 				}
 			}
-			return explicit(ctx, cwd, a, streams)
+			return explicit(ctx, cwd, repo, a, streams)
 		},
 	})
 	commands.register(commandSpec{

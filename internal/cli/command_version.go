@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+
+	"github.com/wincent/tasks/internal/git"
 )
 
 func init() {
 	commands.register(commandSpec{
 		name: "version", autoCorrect: allowCorrection,
 		summary: "Print the version and exit.",
-		run: func(_ context.Context, _ string, _ arguments, streams IO) error {
+		run: func(_ context.Context, _ string, _ *git.Repository, _ arguments, streams IO) error {
 			_, err := fmt.Fprintln(streams.Out, buildVersion())
 			return err
 		},

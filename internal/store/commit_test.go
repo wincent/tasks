@@ -356,3 +356,64 @@ func TestStoreRejectsRelatedHistoryAndWrongBranch(t *testing.T) {
 		t.Fatal("task store confused with local state")
 	}
 }
+
+func TestBatchArchiveMoveChecksSharedIndexEntries(t *testing.T) {
+	repo, tasks, _ := fixture(t)
+	ctx := context.Background()
+	files := map[string][]byte{
+		"EXAMPLE-1 First.md":  []byte("# EXAMPLE-1: First\n\nStatus: merged\n"),
+		"EXAMPLE-2 Second.md": []byte("# EXAMPLE-2: Second\n\nStatus: merged\n"),
+		"EXAMPLE-3 Third.md":  []byte("# EXAMPLE-3: Third\n\nStatus: merged\n"),
+	}
+	if _, err := CommitFiles(ctx, repo, files, options()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage a duplicate index path for EXAMPLE-2 in its archive bucket; the
+	// batch move must reject it while reading the index once per check.
+	blob, err := repo.WriteBlob([]byte("duplicate\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(tasks.Paths.GitDir, "index")
+	isolated := filepath.Join(tasks.Paths.GitDir, "batch-check-index")
+	mustWrite(t, isolated, mustRead(t, index))
+	dupPath := filepath.Join("archive", "0", "EXAMPLE-2 Duplicate.md")
+	if err := tasks.Repository.EditIndexFile(isolated, git.ID{}, []git.TreeEdit{{Path: dupPath, ID: blob, Mode: 0100644}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(isolated, index); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := Begin(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	_, err = session.MoveTasks("EXAMPLE", []int{1, 2, 3}, true)
+	if err == nil || !strings.Contains(err.Error(), "duplicate path in the task index") {
+		t.Fatalf("expected duplicate index path rejection, got %v", err)
+	}
+
+	// Remove the duplicate index entry and confirm the whole batch succeeds.
+	mustWrite(t, isolated, mustRead(t, index))
+	if err := tasks.Repository.EditIndexFile(isolated, git.ID{}, []git.TreeEdit{{Path: dupPath}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(isolated, index); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := session.MoveTasks("EXAMPLE", []int{1, 2, 3}, true)
+	if err != nil {
+		t.Fatalf("batch archive failed: %v", err)
+	}
+	if len(moved) != 3 {
+		t.Fatalf("expected 3 moved tasks, got %d", len(moved))
+	}
+	for _, task := range moved {
+		if !task.Archived {
+			t.Fatalf("expected %s to be archived", task.ID())
+		}
+	}
+}

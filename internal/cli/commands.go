@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+
+	"github.com/wincent/tasks/internal/git"
 )
 
 type optionKind uint8
@@ -13,7 +15,7 @@ const (
 	valueOption
 )
 
-type commandHandler func(context.Context, string, arguments, IO) error
+type commandHandler func(context.Context, string, *git.Repository, arguments, IO) error
 
 type commandSpec struct {
 	name            string

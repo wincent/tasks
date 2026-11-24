@@ -121,3 +121,48 @@ func TestCleanupProtectsWorkingOnlyDestination(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestCleanupPreviewReusesDestinationsAcrossMultipleBranches(t *testing.T) {
+	_, root := fixture(t)
+	const protected = "task/example-1-protected"
+	const removableA = "task/example-2-first"
+	const removableB = "task/example-2-second"
+	const unmerged = "task/example-4-unmerged"
+
+	run(t, root, "create", "Parent", "--body", "Protected by child topic")
+	run(t, root, "create", "Removable", "--body", "Merged into main")
+	childPath := strings.TrimSpace(run(t, root, "create", "Child", "--body", "Uses protected branch"))
+	run(t, root, "create", "Pending", "--body", "Has unmerged commits")
+	content := string(uiBytes(t, childPath))
+	writeSafetyFile(t, childPath, strings.Replace(content, "Status: open\n", "Status: open\nTopic: "+protected+"\n", 1))
+	metadata := filepath.Dir(childPath)
+	systemGit(t, metadata, "add", "--", filepath.Base(childPath))
+	systemGit(t, metadata, "commit", "-m", "record protected destination")
+
+	systemGit(t, root, "branch", protected)
+	systemGit(t, root, "branch", removableA)
+	systemGit(t, root, "branch", removableB)
+	systemGit(t, root, "switch", "-c", unmerged)
+	commitImplementation(t, root, "unmerged.txt", "pending work\n")
+	systemGit(t, root, "switch", "main")
+
+	worktreeDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(worktreeDir, "example-2")
+	systemGit(t, root, "worktree", "add", wt, removableA)
+
+	out := run(t, root, "cleanup")
+	for _, want := range []string{
+		"Would remove " + wt,
+		"Keep branch " + protected + ": branch is the recorded destination for EXAMPLE-3; retarget that task first",
+		"Would remove branch " + removableA,
+		"Would remove branch " + removableB,
+		"Keep branch " + unmerged + ": branch is not merged into local main",
+	} {
+		if !strings.Contains(out, want+"\n") {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}

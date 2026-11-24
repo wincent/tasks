@@ -240,11 +240,17 @@ func validateCheckoutOperation(repo *C.git_repository, base, target *C.git_tree,
 // Validate the entire regular-file selection before any object or file writes.
 // Lstat deliberately excludes symlinks; their target bytes are never encoded.
 func validateWorktreeContent(repo *C.git_repository, paths []string) error {
+	return validateWorktreeContentWithValidation(repo, paths, true)
+}
+
+func validateWorktreeContentWithValidation(repo *C.git_repository, paths []string, validatePaths bool) error {
 	var regular []string
 	contents := make(map[string][]byte)
 	for _, path := range paths {
-		if err := literalPath(path); err != nil {
-			return err
+		if validatePaths {
+			if err := literalPath(path); err != nil {
+				return err
+			}
 		}
 		full := filepath.Join(C.GoString(C.git_repository_workdir(repo)), filepath.FromSlash(path))
 		info, err := os.Lstat(full)
@@ -264,8 +270,10 @@ func validateWorktreeContent(repo *C.git_repository, paths []string) error {
 		regular = append(regular, path)
 		contents[path] = data
 	}
-	if err := validateOperationPaths(repo, regular, "clean", false); err != nil {
-		return err
+	if validatePaths {
+		if err := validateOperationPaths(repo, regular, "clean", false); err != nil {
+			return err
+		}
 	}
 	for _, path := range regular {
 		if err := validateEncodingContent(repo, path, contents[path], true, false); err != nil {
@@ -312,7 +320,7 @@ func (r *Repository) ValidateWorktreePaths(paths []string) error {
 		if err := validateOperationPaths(repo, paths, "clean", false); err != nil {
 			return err
 		}
-		return validateWorktreeContent(repo, paths)
+		return validateWorktreeContentWithValidation(repo, paths, false)
 	})
 }
 
@@ -332,7 +340,7 @@ func (r *Repository) ValidateWorktreeContents(contents map[string][]byte) error 
 			return err
 		}
 		for _, path := range paths {
-			output, err := cleanWorktreeBuffer(repo, path, contents[path])
+			output, err := cleanValidatedWorktreeBuffer(repo, path, contents[path])
 			C.git_buf_dispose(&output)
 			if err != nil {
 				return err
@@ -346,6 +354,10 @@ func cleanWorktreeBuffer(repo *C.git_repository, path string, data []byte) (outp
 	if err := validateOperationPaths(repo, []string{path}, "clean", false); err != nil {
 		return output, err
 	}
+	return cleanValidatedWorktreeBuffer(repo, path, data)
+}
+
+func cleanValidatedWorktreeBuffer(repo *C.git_repository, path string, data []byte) (output C.git_buf, err error) {
 	if err := validateEncodingContent(repo, path, data, true, false); err != nil {
 		return output, err
 	}

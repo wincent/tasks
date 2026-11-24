@@ -42,34 +42,27 @@ func runEditor(ctx context.Context, cwd string, command []string, draft string, 
 	return nil
 }
 
-func openForEditor(ctx context.Context, cwd string, prefix store.Prefix) (*git.Repository, *store.Session, *store.Store, error) {
-	repo, err := git.Open(cwd)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+func openForEditor(ctx context.Context, repo *git.Repository, prefix store.Prefix) (*store.Session, *store.Store, error) {
 	if _, err := store.MetadataSignatures(repo); err != nil {
-		repo.Close()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	session, err := store.Begin(ctx, repo)
 	if err != nil {
-		repo.Close()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	tasks, err := session.Preview(prefix)
 	if err != nil {
 		session.Close()
-		repo.Close()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return repo, session, tasks, nil
+	return session, tasks, nil
 }
 
-func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (string, error) {
+func editorBody(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) (string, error) {
 	if !terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err) {
 		return "", errors.New("--body or --body-file is required outside an interactive terminal (use `--body-file -` for stdin)")
 	}
-	repo, session, tasks, err := openForEditor(ctx, cwd, a.prefix)
+	session, tasks, err := openForEditor(ctx, repo, a.prefix)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +75,6 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 		if err != nil {
 			tasks.Close()
 			session.Close()
-			repo.Close()
 			return "", err
 		}
 		label = p.task(task.ID(), task.Title, ": ")
@@ -91,7 +83,6 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 	}
 	tasks.Close()
 	session.Close()
-	repo.Close()
 	command, err := editorCommand()
 	if err != nil {
 		return "", err
@@ -127,12 +118,11 @@ func editorBody(ctx context.Context, cwd string, a arguments, streams IO) (strin
 	return body, nil
 }
 
-func editTask(ctx context.Context, cwd string, prefix store.Prefix, n int, streams IO) (err error) {
-	repo, session, tasks, err := openForEditor(ctx, cwd, prefix)
+func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix store.Prefix, n int, streams IO) (err error) {
+	session, tasks, err := openForEditor(ctx, repo, prefix)
 	if err != nil {
 		return err
 	}
-	defer repo.Close()
 	task, err := tasks.ReadWorking(n)
 	if err == nil && (!terminal.IsTerminal(streams.In) || !terminal.IsTerminal(streams.Err)) {
 		err = errors.New("`tasks edit` requires an interactive terminal")

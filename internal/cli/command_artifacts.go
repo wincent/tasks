@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/store"
 )
 
@@ -26,11 +27,11 @@ paths starting with a dash.
 
 With no paths, list committed artifacts for the task. Printed paths are
 relative to the directory you ran the command from.`,
-		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
+		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 			if len(a.positional) == 1 {
-				return list(ctx, cwd, a, streams)
+				return list(ctx, cwd, repo, a, streams)
 			}
-			return save(ctx, cwd, a, streams)
+			return save(ctx, cwd, repo, a, streams)
 		},
 	})
 }

@@ -30,17 +30,21 @@ func Inspect(repo *git.Repository, prefix Prefix) (*Store, error) {
 }
 
 func inspect(repo *git.Repository) (*Store, error) {
-	path, err := Location(repo)
+	paths, trees, err := repo.PathsAndWorktrees()
 	if err != nil {
 		return nil, err
 	}
+	path, common, err := locationFromPaths(paths)
+	if err != nil {
+		return nil, err
+	}
+	return inspectWith(repo, path, common, trees)
+}
+
+func inspectWith(repo *git.Repository, path, originalCommon string, trees []git.Worktree) (*Store, error) {
 	if _, err := os.Lstat(path); err == nil {
-		return Open(repo)
+		return openWith(repo, path, originalCommon, trees)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	trees, err := repo.Worktrees()
-	if err != nil {
 		return nil, err
 	}
 	for _, tree := range trees {
@@ -48,16 +52,15 @@ func inspect(repo *git.Repository) (*Store, error) {
 		if tree.InvalidReason != "" {
 			return nil, fmt.Errorf("inspect invalid worktree %s before bootstrapping tasks: %s", tree.Path, tree.InvalidReason)
 		}
-		other, err := git.Open(tree.Path)
+		other, summary, err := git.OpenCheckout(tree.Path, "")
 		if err != nil {
 			return nil, err
 		}
-		head, err := other.Head()
 		other.Close()
-		if err != nil {
-			return nil, err
+		if summary.HeadErr != nil {
+			return nil, summary.HeadErr
 		}
-		if head.Branch == Branch {
+		if summary.Head.Branch == Branch {
 			return nil, fmt.Errorf("tasks is checked out at %s; relocate it to %s without resetting it", tree.Path, path)
 		}
 	}
