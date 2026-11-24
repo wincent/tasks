@@ -16,7 +16,7 @@ jobs:
     if: github.ref_type == 'tag' && github.event.created == true
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    environment: release
+    environment: Release
     permissions:
       contents: read
       actions: read

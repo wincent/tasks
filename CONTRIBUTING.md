@@ -31,11 +31,11 @@ The repository settings are:
       - Tag targeting criteria: Include by pattern `v*`
       - Rules: "Restrict updates" and "Restrict deletions"
   - Environments:
-    - "release":
+    - "Release":
       - Selected branches and tags: `v*`
       - Environment variables:
         - `RELEASE_REPOSITORY`: `wincent/tasks`
-        - `RELEASE_GPG_PUBLIC_KEYS`: combined export of authorized signing keys[^keys], set via `gpg --armor --export CA35A4528D888CDF264D0A2A4838AEDCA8CE883C 4282ED4A05CC894D53A541C3F962DC1A1941CCC4 | gh variable set RELEASE_GPG_PUBLIC_KEYS --repo wincent/tasks --env release`
+        - `RELEASE_GPG_PUBLIC_KEYS`: combined export of authorized signing keys[^keys], set via `gpg --armor --export CA35A4528D888CDF264D0A2A4838AEDCA8CE883C 4282ED4A05CC894D53A541C3F962DC1A1941CCC4 | gh variable set RELEASE_GPG_PUBLIC_KEYS --repo wincent/tasks --env Release`
 
 [^keys]: The keys associated with my work and personal email addresses, identified by fingerprints CA35A4528D888CDF264D0A2A4838AEDCA8CE883C and 4282ED4A05CC894D53A541C3F962DC1A1941CCC4 respectively.
 
