@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unsafe"
 )
@@ -315,79 +314,6 @@ func (r *Repository) Blob(id ID) ([]byte, error) {
 		result = append([]byte{}, unsafe.Slice((*byte)(C.git_blob_rawcontent(blob)), int(size))...)
 		return nil
 	})
-	return result, err
-}
-
-// HistoryPaths observes every root entry in every reachable commit, plus
-// entries up to depth levels within directory (if nonempty). Visiting trees
-// includes deleted files and both sides of merges.
-func (r *Repository) HistoryPaths(tips []ID, directory string, depth int) ([]string, error) {
-	paths := make(map[string]bool)
-	err := r.callNative("read historical paths", false, func(repo *C.git_repository) error {
-		seen := make(map[TreeEntry]bool)
-		var visit func(TreeEntry, int) error
-		visit = func(entry TreeEntry, depth int) error {
-			paths[entry.Name] = true
-			if depth <= 0 || entry.Mode != 0040000 || seen[entry] {
-				return nil
-			}
-			seen[entry] = true
-			var tree *C.git_tree
-			id := nativeID(entry.ID)
-			if err := nativeError("read historical subtree", C.git_tree_lookup(&tree, repo, &id)); err != nil {
-				return err
-			}
-			defer C.git_tree_free(tree)
-			for _, child := range treeEntries(tree) {
-				child.Name = entry.Name + "/" + child.Name
-				if err := visit(child, depth-1); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		var walk *C.git_revwalk
-		if err := nativeError("create history walker", C.git_revwalk_new(&walk, repo)); err != nil {
-			return err
-		}
-		defer C.git_revwalk_free(walk)
-		for _, tip := range tips {
-			id := nativeID(tip)
-			if err := nativeError("add history tip", C.git_revwalk_push(walk, &id)); err != nil {
-				return err
-			}
-		}
-		for {
-			var id C.git_oid
-			code := C.git_revwalk_next(&id, walk)
-			if code == C.GIT_ITEROVER {
-				return nil
-			}
-			if err := nativeError("walk history", code); err != nil {
-				return err
-			}
-			tree, err := commitTree(repo, objectID(&id))
-			if err != nil {
-				return err
-			}
-			entries := treeEntries(tree)
-			C.git_tree_free(tree)
-			for _, entry := range entries {
-				if entry.Name == directory {
-					if err := visit(entry, depth); err != nil {
-						return err
-					}
-				} else {
-					paths[entry.Name] = true
-				}
-			}
-		}
-	})
-	result := make([]string, 0, len(paths))
-	for path := range paths {
-		result = append(result, path)
-	}
-	sort.Strings(result)
 	return result, err
 }
 

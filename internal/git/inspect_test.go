@@ -249,6 +249,214 @@ func TestMergeBasesAndHistoricalNames(t *testing.T) {
 	}
 }
 
+func TestHistoryPathsSubtreesAndDeduplication(t *testing.T) {
+	r, _ := fixture(t, false)
+	blob, err := r.WriteBlob([]byte("task"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyTree, err := r.WriteTree(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two archive buckets with identical contents share a subtree OID under
+	// distinct prefixes; both prefixes must appear in the result.
+	sharedBucket, err := r.WriteTree([]TreeEntry{
+		{Name: "EXAMPLE-1 shared.md", ID: blob, Mode: 0100644},
+		{Name: "nested", ID: emptyTree, Mode: 0040000},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deepLeaf, err := r.WriteTree([]TreeEntry{{Name: "too-deep.md", ID: blob, Mode: 0100644}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deepBucket, err := r.WriteTree([]TreeEntry{{Name: "sub", ID: deepLeaf, Mode: 0040000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveTree, err := r.WriteTree([]TreeEntry{
+		{Name: "0000", ID: sharedBucket, Mode: 0040000},
+		{Name: "0001", ID: sharedBucket, Mode: 0040000},
+		{Name: "0002", ID: deepBucket, Mode: 0040000},
+		{Name: "README.md", ID: blob, Mode: 0100644},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSubtree, err := r.WriteTree([]TreeEntry{{Name: "ignored.md", ID: blob, Mode: 0100644}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Commit 1: "archive" is a regular file, not a directory.
+	tree1, err := r.WriteTree([]TreeEntry{
+		{Name: "archive", ID: blob, Mode: 0100644},
+		{Name: "EXAMPLE-10 a.md", ID: blob, Mode: 0100644},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1, err := r.WriteCommit(tree1, nil, testSignature, testSignature, "file archive\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Commit 2: "archive" becomes a directory, plus an unrelated subtree.
+	tree2, err := r.WriteTree([]TreeEntry{
+		{Name: "archive", ID: archiveTree, Mode: 0040000},
+		{Name: "other", ID: otherSubtree, Mode: 0040000},
+		{Name: "EXAMPLE-10 a.md", ID: blob, Mode: 0100644},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := r.WriteCommit(tree2, []ID{c1}, testSignature, testSignature, "dir archive\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Commit 3: identical root tree OID to commit 2.
+	c3, err := r.WriteCommit(tree2, []ID{c2}, testSignature, testSignature, "same root tree\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Commit 4: deleted file and different root tree reusing archiveTree.
+	tree4, err := r.WriteTree([]TreeEntry{
+		{Name: "archive", ID: archiveTree, Mode: 0040000},
+		{Name: "EXAMPLE-11 b.md", ID: blob, Mode: 0100644},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c4, err := r.WriteCommit(tree4, []ID{c3}, testSignature, testSignature, "next\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := r.HistoryPaths([]ID{c4}, "archive", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"EXAMPLE-10 a.md",
+		"EXAMPLE-11 b.md",
+		"archive",
+		"archive/0000",
+		"archive/0000/EXAMPLE-1 shared.md",
+		"archive/0000/nested",
+		"archive/0001",
+		"archive/0001/EXAMPLE-1 shared.md",
+		"archive/0001/nested",
+		"archive/0002",
+		"archive/0002/sub",
+		"archive/README.md",
+		"other",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("depth 2:\ngot:  %v\nwant: %v", got, want)
+	}
+
+	gotDepth1, err := r.HistoryPaths([]ID{c4}, "archive", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDepth1 := []string{
+		"EXAMPLE-10 a.md",
+		"EXAMPLE-11 b.md",
+		"archive",
+		"archive/0000",
+		"archive/0001",
+		"archive/0002",
+		"archive/README.md",
+		"other",
+	}
+	if !reflect.DeepEqual(gotDepth1, wantDepth1) {
+		t.Fatalf("depth 1:\ngot:  %v\nwant: %v", gotDepth1, wantDepth1)
+	}
+
+	gotDepth0, err := r.HistoryPaths([]ID{c4}, "archive", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDepth0 := []string{
+		"EXAMPLE-10 a.md",
+		"EXAMPLE-11 b.md",
+		"archive",
+		"other",
+	}
+	if !reflect.DeepEqual(gotDepth0, wantDepth0) {
+		t.Fatalf("depth 0:\ngot:  %v\nwant: %v", gotDepth0, wantDepth0)
+	}
+
+	// Non-matching directory with NUL byte should behave like a non-match.
+	gotNul, err := r.HistoryPaths([]ID{c4}, "archive\x00", 2)
+	if err != nil || !reflect.DeepEqual(gotNul, wantDepth0) {
+		t.Fatalf("nul directory: %v %v", gotNul, err)
+	}
+
+	// Verify libgit2 error code and message are preserved on invalid tip.
+	_, err = r.HistoryPaths([]ID{{1}}, "archive", 2)
+	var nativeErr *Error
+	if !errors.As(err, &nativeErr) || nativeErr.Code != NotFound || nativeErr.Message == "" {
+		t.Fatalf("invalid tip error: %#v", err)
+	}
+}
+
+func BenchmarkHistoryPaths(b *testing.B) {
+	root := filepath.Join(b.TempDir(), "repository")
+	r, err := Init(root, "", true)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer r.Close()
+	blob, err := r.WriteBlob([]byte("task body\n"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	const width = 200
+	const commits = 150
+	entries := make([]TreeEntry, 0, width)
+	for i := range width {
+		entries = append(entries, TreeEntry{Name: fmt.Sprintf("TASKS-%d Task title %d.md", i+1, i+1), ID: blob, Mode: 0100644})
+	}
+	tree, err := r.WriteTree(entries)
+	if err != nil {
+		b.Fatal(err)
+	}
+	tip, err := r.WriteCommit(tree, nil, testSignature, testSignature, "seed\n")
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 1; i < commits; i++ {
+		if i%3 == 0 {
+			// Repeated root tree OID (e.g., empty/revert commits).
+			tip, err = r.WriteCommit(tree, []ID{tip}, testSignature, testSignature, "repeat\n")
+			if err != nil {
+				b.Fatal(err)
+			}
+			continue
+		}
+		updated, err := r.WriteBlob([]byte(fmt.Sprintf("task body %d\n", i)))
+		if err != nil {
+			b.Fatal(err)
+		}
+		tree, err = r.EditTree(tip, []TreeEdit{{Path: fmt.Sprintf("TASKS-%d Task title %d.md", (i%width)+1, (i%width)+1), ID: updated, Mode: 0100644}})
+		if err != nil {
+			b.Fatal(err)
+		}
+		tip, err = r.WriteCommit(tree, []ID{tip}, testSignature, testSignature, fmt.Sprintf("commit %d\n", i))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		paths, err := r.HistoryPaths([]ID{tip}, "archive", 2)
+		if err != nil || len(paths) != width {
+			b.Fatalf("HistoryPaths: %d %v", len(paths), err)
+		}
+	}
+}
+
 func TestLiteralTreeAndBlobReading(t *testing.T) {
 	r, _ := fixture(t, false)
 	data := []byte{0, '\r', '\n', 0xff, 'x'}
