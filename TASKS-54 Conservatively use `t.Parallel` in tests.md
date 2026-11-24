@@ -1,6 +1,6 @@
 # TASKS-54: Conservatively use `t.Parallel` in tests
 
-Status: active
+Status: merged
 
 ## Description
 
