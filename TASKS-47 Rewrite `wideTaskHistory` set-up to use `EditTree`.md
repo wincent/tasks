@@ -1,6 +1,6 @@
 # TASKS-47: Rewrite `wideTaskHistory` set-up to use `EditTree`
 
-Status: open
+Status: active
 
 ## Description
 
