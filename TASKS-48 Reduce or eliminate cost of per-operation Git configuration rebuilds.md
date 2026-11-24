@@ -1,6 +1,6 @@
 # TASKS-48: Reduce or eliminate cost of per-operation Git configuration rebuilds
 
-Status: open
+Status: merged
 
 ## Description
 
