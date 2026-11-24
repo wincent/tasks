@@ -1,6 +1,6 @@
 # TASKS-55: Add a --model override to tasks run, go, and pi
 
-Status: active
+Status: merged
 
 ## Description
 
