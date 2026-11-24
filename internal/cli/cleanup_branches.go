@@ -12,7 +12,8 @@ import (
 )
 
 // The caller holds the task lock in apply mode.
-func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, dest destination, apply bool) error {
+func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, selected cleanupTarget, apply bool) error {
+	dest := selected.destination
 	if ref.Symbolic != "" {
 		return errors.New("symbolic branch refs are protected")
 	}
@@ -34,9 +35,11 @@ func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, ret
 		return checkBranchReservations(retained, name)
 	}
 
-	// Verify both tips under ref locks so a concurrent update cannot
-	// invalidate the merge check before deletion.
-	tx, err := repo.Prepare(name, git.ID{}, map[string]git.ID{name: ref.ID, dest.ref(): tip}, git.Signature{}, "")
+	// Keep the merge check and the metadata that selected its destination
+	// valid through deletion.
+	tx, err := repo.Prepare(name, git.ID{}, map[string]git.ID{
+		name: ref.ID, dest.ref(): tip, store.Branch: selected.metadata,
+	}, git.Signature{}, "")
 	if err != nil {
 		return err
 	}
