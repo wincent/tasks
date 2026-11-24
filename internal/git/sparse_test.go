@@ -167,6 +167,83 @@ func TestSparsePatterns(t *testing.T) {
 			t.Fatalf("malformed bracket %q: %v", pattern, err)
 		}
 	}
+	// Non-ASCII and raw high bytes must still match byte-by-byte with optional
+	// ASCII case folding and directory/ancestor slicing.
+	for _, tc := range []struct {
+		name       string
+		patterns   string
+		ignoreCase bool
+		included   []string
+		omitted    []string
+	}{
+		{
+			name:       "utf8-and-high-bytes",
+			patterns:   "/café/\n!/café/SKIP*\n/\xff/ok\n",
+			ignoreCase: true,
+			included:   []string{"CAFé/file", "café/nested/file", "\xff/OK"},
+			omitted:    []string{"café/skip.txt", "CAFé/SKIP/child", "\xfe/ok"},
+		},
+		{
+			name:       "empty-and-slashes",
+			patterns:   "/*\n!/*/\n/a//b\n",
+			ignoreCase: false,
+			included:   []string{"", "root", "a//b"},
+			omitted:    []string{"a/", "a/b"},
+		},
+		{
+			name:       "empty-rules",
+			patterns:   "",
+			ignoreCase: false,
+			included:   nil,
+			omitted:    []string{"", "a", "a/b"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rules, err := parseSparsePatterns(tc.patterns, tc.ignoreCase)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range tc.included {
+				if !rules.includes(path) {
+					t.Errorf("omitted %q", path)
+				}
+			}
+			for _, path := range tc.omitted {
+				if rules.includes(path) {
+					t.Errorf("included %q", path)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSparsePatternsIncludes(b *testing.B) {
+	patterns := "/*\n!/*/\n/cmd/\n/internal/\n!/internal/vendor/\n/docs/**/README*\n*.go\n!secret*\n"
+	paths := []string{
+		"internal/git/sparse_patterns.go",
+		"internal/vendor/pkg/nested/file.go",
+		"docs/a/b/c/README.md",
+		"other/deep/nested/path/file.txt",
+		"café/nested/UPPER/file.go",
+	}
+	for _, ignoreCase := range []bool{false, true} {
+		name := "case-sensitive"
+		if ignoreCase {
+			name = "ignore-case"
+		}
+		rules, err := parseSparsePatterns(patterns, ignoreCase)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(name, func(b *testing.B) {
+			b.ResetTimer()
+			for b.Loop() {
+				for _, path := range paths {
+					_ = rules.includes(path)
+				}
+			}
+		})
+	}
 }
 
 func TestSparseStatusMissingAndStaged(t *testing.T) {

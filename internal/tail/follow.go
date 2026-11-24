@@ -69,6 +69,38 @@ func ValidateHeader(line []byte, worktree, sessionID string) error {
 	return nil
 }
 
+const scanBufferSize = 64 * 1024
+
+// scanHistoryWindow finds the starting byte offset of the last HistoryLines
+// complete lines in [start, size) and the count of skipped complete lines,
+// using ReadSlice and a fixed ring buffer to avoid per-line allocations.
+func scanHistoryWindow(reader *bufio.Reader, start, size int64) (int64, int, error) {
+	var offsets [HistoryLines]int64
+	count := 0
+	lineStart := start
+	offset := start
+	for offset < size {
+		slice, err := reader.ReadSlice('\n')
+		offset += int64(len(slice))
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if err != nil && err != io.EOF {
+			return 0, 0, err
+		}
+		if len(slice) == 0 || slice[len(slice)-1] != '\n' {
+			break
+		}
+		offsets[count%HistoryLines] = lineStart
+		count++
+		lineStart = offset
+	}
+	if count > HistoryLines {
+		return offsets[count%HistoryLines], count - HistoryLines, nil
+	}
+	return start, 0, nil
+}
+
 // Follow consumes the header then a fixed initial window of complete physical
 // lines. It follows the same file identity after task completion; it never picks
 // a different session based on timestamps or the newest record.
@@ -77,7 +109,7 @@ func Follow(ctx context.Context, file *os.File, worktree, sessionID string, colo
 	if err != nil {
 		return err
 	}
-	reader := bufio.NewReader(io.NewSectionReader(file, 0, identity.Size()))
+	reader := bufio.NewReaderSize(io.NewSectionReader(file, 0, identity.Size()), scanBufferSize)
 	header, err := reader.ReadBytes('\n')
 	if err != nil {
 		return errors.New("invalid saved Pi session header")
@@ -85,30 +117,10 @@ func Follow(ctx context.Context, file *os.File, worktree, sessionID string, colo
 	if err := ValidateHeader(header, worktree, sessionID); err != nil {
 		return err
 	}
-	start := int64(len(header))
-	offset := start
-	count := 0
-	offsets := make([]int64, 0, HistoryLines)
-	for offset < identity.Size() {
-		line, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return err
-		}
-		if len(line) == 0 || line[len(line)-1] != '\n' {
-			break
-		}
-		if len(offsets) == HistoryLines {
-			copy(offsets, offsets[1:])
-			offsets = offsets[:HistoryLines-1]
-		}
-		offsets = append(offsets, offset)
-		count++
-		offset += int64(len(line))
+	start, skipped, err := scanHistoryWindow(reader, int64(len(header)), identity.Size())
+	if err != nil {
+		return err
 	}
-	if len(offsets) > 0 {
-		start = offsets[0]
-	}
-	skipped := count - len(offsets)
 	lineNumber := 1 + skipped
 	renderer := Renderer{Color: color}
 	if skipped > 0 {
@@ -119,8 +131,8 @@ func Follow(ctx context.Context, file *os.File, worktree, sessionID string, colo
 	if _, err := file.Seek(start, io.SeekStart); err != nil {
 		return err
 	}
-	reader = bufio.NewReader(file)
-	offset = start
+	reader.Reset(file)
+	offset := start
 	pending := []byte{}
 	for {
 		if err := ctx.Err(); err != nil {

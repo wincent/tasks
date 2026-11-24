@@ -171,3 +171,105 @@ func TestRendererSafetyVisibilityAndPreview(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestFollowHandlesLinesLargerThanScanBuffer(t *testing.T) {
+	// Exercise lines that span multiple 64 KiB bufio reads in the skipped
+	// prefix, inside the retained window, and as a trailing partial line of
+	// exact and non-exact buffer multiples.
+	const oversize = 70 * 1024
+	bigPayload := strings.Repeat("x", oversize)
+
+	for _, tc := range []struct {
+		name     string
+		trailing string
+	}{
+		{"none", ""},
+		{"exact-buffer", strings.Repeat("p", scanBufferSize)}, // exact buffer-sized partial line without '\n'
+		{"oversize", strings.Repeat("q", oversize)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body strings.Builder
+			// 5 skipped lines, including an oversized line.
+			body.WriteString(record("assistant", "skip-0"))
+			body.WriteString(record("assistant", "skip-big "+bigPayload))
+			for range 3 {
+				body.WriteString(record("assistant", "skip-more"))
+			}
+			// 40 retained lines: include a malformed line and an oversized line.
+			body.WriteString(record("assistant", "keep-0"))
+			body.WriteString("malformed\n")
+			body.WriteString(record("assistant", "keep-big "+bigPayload))
+			for i := 3; i < HistoryLines-1; i++ {
+				body.WriteString(record("assistant", "keep-mid"))
+			}
+			body.WriteString(record("assistant", "keep-last"))
+			body.WriteString(tc.trailing)
+
+			file, root := session(t, body.String())
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			writer := &callbackWriter{callback: func(data []byte) {
+				if bytes.Contains(data, []byte("keep-last")) {
+					cancel()
+				}
+			}}
+			var diagnostic bytes.Buffer
+			err := Follow(ctx, file, root, "exact-session", false, writer, &diagnostic)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("Follow: %v", err)
+			}
+			got := writer.buffer.String()
+			if !strings.Contains(got, "[showing recent session activity; skipped 5 lines]") {
+				t.Fatalf("missing skipped banner:\n%s", got)
+			}
+			if strings.Contains(got, "skip-0") || strings.Contains(got, "skip-big") {
+				t.Fatalf("emitted skipped line")
+			}
+			if !strings.Contains(got, "keep-0") || !strings.Contains(got, "keep-big") || !strings.Contains(got, "keep-last") {
+				t.Fatalf("missing retained lines")
+			}
+			// Line 1 = header, lines 2..6 = 5 skipped, line 7 = keep-0, line 8 = malformed.
+			if diagnostic.String() != "tasks tail: skipping malformed session record at line 8\n" {
+				t.Fatalf("diagnostic: %q", diagnostic.String())
+			}
+		})
+	}
+}
+
+func BenchmarkFollowInitialScan(b *testing.B) {
+	var body strings.Builder
+	payload := strings.Repeat("a", 200)
+	for range 5000 {
+		body.WriteString(record("assistant", payload))
+	}
+	body.WriteString(record("assistant", "END-MARKER"))
+	directory := b.TempDir()
+	header, _ := json.Marshal(map[string]any{"type": "session", "id": "exact-session", "cwd": directory})
+	path := filepath.Join(directory, "session.jsonl")
+	if err := os.WriteFile(path, append(append(header, '\n'), []byte(body.String())...), 0600); err != nil {
+		b.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer file.Close()
+
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			b.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		writer := &callbackWriter{callback: func(data []byte) {
+			if bytes.Contains(data, []byte("END-MARKER")) {
+				cancel()
+			}
+		}}
+		err := Follow(ctx, file, directory, "exact-session", false, writer, io.Discard)
+		cancel()
+		if !errors.Is(err, context.Canceled) {
+			b.Fatalf("Follow: %v", err)
+		}
+	}
+}

@@ -115,26 +115,62 @@ func parseSparsePatterns(data string, ignoreCase bool) (sparsePatterns, error) {
 	return rules, nil
 }
 
+// Git wildmatch operates on bytes, not Unicode code points. Encode each raw
+// byte as its corresponding Latin-1 rune so RE2 matches byte-for-byte. Pure
+// ASCII strings are already in this form and require no allocation.
+func sparseByteString(value string) string {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= 0x80 {
+			var out strings.Builder
+			out.Grow(2*len(value) - i)
+			out.WriteString(value[:i])
+			for j := i; j < len(value); j++ {
+				out.WriteRune(rune(value[j]))
+			}
+			return out.String()
+		}
+	}
+	return value
+}
+
 func (rules sparsePatterns) includes(path string) bool {
+	if len(rules) == 0 {
+		return false
+	}
+	// Bytes >= 0x80 encode to multi-byte UTF-8 sequences with high bits set, so
+	// '/' boundaries and ASCII uppercase letters are unchanged by encoding once.
+	encoded := sparseByteString(path)
+	var folded string
+	foldedReady := false
 	included := false
-	parts := strings.Split(path, "/")
-	for i := range parts {
-		prefix := strings.Join(parts[:i+1], "/")
-		directory := i < len(parts)-1
+	for start := 0; ; {
+		slash := strings.IndexByte(encoded[start:], '/')
+		directory := slash >= 0
+		end := len(encoded)
+		if directory {
+			end = start + slash
+		}
+		prefix := encoded[:end]
 		for _, rule := range rules {
+			if rule.directory && !directory {
+				continue
+			}
 			candidate := prefix
 			if rule.ignoreCase {
-				candidate = sparseFoldASCII(candidate)
+				if !foldedReady {
+					folded = sparseFoldASCII(encoded)
+					foldedReady = true
+				}
+				candidate = folded[:end]
 			}
-			// Git wildmatch operates on bytes, not Unicode code points.
-			bytes := make([]rune, len(candidate))
-			for j := range len(candidate) {
-				bytes[j] = rune(candidate[j])
-			}
-			if (!rule.directory || directory) && rule.match.MatchString(string(bytes)) {
+			if rule.match.MatchString(candidate) {
 				included = rule.include
 			}
 		}
+		if !directory {
+			break
+		}
+		start = end + 1
 	}
 	return included
 }
