@@ -79,12 +79,17 @@ func (batch *Batch) AtomicCreate(path string, data []byte) (installed bool, err 
 }
 
 // SyncDirectories flushes each unique containing directory recorded by the
-// batch once.
+// batch once. On error, the failed directory and any unattempted directories
+// remain pending for a retry.
 func (batch *Batch) SyncDirectories() error {
-	for _, directory := range batch.directories {
+	for len(batch.directories) > 0 {
+		directory := batch.directories[0]
 		if err := SyncDirectory(directory); err != nil {
 			return fmt.Errorf("state installed but directory sync failed for %s: %w", directory, err)
 		}
+		delete(batch.seen, directory)
+		batch.directories[0] = ""
+		batch.directories = batch.directories[1:]
 	}
 	batch.directories = nil
 	batch.seen = nil

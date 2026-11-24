@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -173,6 +174,51 @@ func TestBatchDeduplicatesDirectoriesAndInstallsFiles(t *testing.T) {
 	}
 	if err := batch.SyncDirectories(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("SyncDirectories on removed dir = %v, want os.ErrNotExist", err)
+	}
+}
+
+func TestBatchSyncDirectoriesResumesAfterFailure(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dirA := filepath.Join(root, "a")
+	dirB := filepath.Join(root, "b")
+	dirC := filepath.Join(root, "c")
+	var batch Batch
+	for _, dir := range []string{dirA, dirB, dirC} {
+		if err := os.Mkdir(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := batch.AtomicWrite(filepath.Join(dir, "file"), []byte("data")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	moved := filepath.Join(root, "moved")
+	if err := os.Rename(dirB, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.SyncDirectories(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SyncDirectories with missing directory = %v, want os.ErrNotExist", err)
+	}
+	if want := []string{dirB, dirC}; !slices.Equal(batch.directories, want) {
+		t.Fatalf("pending directories = %v, want %v", batch.directories, want)
+	}
+	if want := map[string]bool{dirB: true, dirC: true}; !maps.Equal(batch.seen, want) {
+		t.Fatalf("seen directories = %v, want %v", batch.seen, want)
+	}
+
+	// Restore the failed directory and make the completed directory unavailable.
+	if err := os.Rename(moved, dirB); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(dirA, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := batch.SyncDirectories(); err != nil {
+		t.Fatalf("SyncDirectories retry: %v", err)
+	}
+	if len(batch.directories) != 0 || len(batch.seen) != 0 {
+		t.Fatalf("batch not cleared after retry: directories=%v seen=%v", batch.directories, batch.seen)
 	}
 }
 
