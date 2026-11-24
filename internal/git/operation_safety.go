@@ -303,10 +303,10 @@ func validateIndexContent(repo *C.git_repository, index *C.git_index, paths []st
 // ValidateWorktreePaths must be called for the complete selection before a
 // caller writes selected files, objects, indexes or refs.
 func (r *Repository) ValidateWorktreePaths(paths []string) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	return r.call("validate selected paths", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		// Proposed metadata files can be absent. They still require clean
 		// driver validation before reservation or object creation.
 		if err := validateOperationPaths(repo, paths, "clean", false); err != nil {
@@ -319,15 +319,15 @@ func (r *Repository) ValidateWorktreePaths(paths []string) error {
 // ValidateWorktreeContents checks every proposed regular-file value without
 // writing objects. Callers retain these exact bytes through publication.
 func (r *Repository) ValidateWorktreeContents(contents map[string][]byte) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	paths := make([]string, 0, len(contents))
 	for path := range contents {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	return r.call("validate proposed content", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		if err := validateOperationPaths(repo, paths, "clean", false); err != nil {
 			return err
 		}

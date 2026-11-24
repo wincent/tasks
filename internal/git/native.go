@@ -122,7 +122,8 @@ func nativeError(op string, code C.int) error {
 
 var library struct {
 	sync.Once
-	err error
+	home string
+	err  error
 }
 
 func initialize() error {
@@ -146,6 +147,17 @@ func initialize() error {
 		library.err = nativeError("initialize libgit2", C.git_libgit2_init())
 		if library.err == nil {
 			library.err = initializeEncodingFilter()
+		}
+		if library.err == nil {
+			// libgit2 resolves its process-lifetime home directory during init.
+			// Capture it once so ~/ config paths avoid per-call cgo crossings.
+			tilde := C.CString("~")
+			var expanded C.git_buf
+			if C.git_config_parse_path(&expanded, tilde) == 0 && expanded.ptr != nil {
+				library.home = C.GoString(expanded.ptr)
+			}
+			C.git_buf_dispose(&expanded)
+			free(tilde)
 		}
 	})
 	// Keep libgit2 initialized for the process lifetime. Shutting it down while
@@ -420,7 +432,7 @@ func (r *Repository) Reference(name string) (Reference, error) {
 
 func (r *Repository) IsAncestor(ancestor, descendant ID) (bool, error) {
 	var result bool
-	err := r.call("check ancestry", func(repo *C.git_repository) error {
+	err := r.callNative("check ancestry", false, func(repo *C.git_repository) error {
 		a, d := nativeID(ancestor), nativeID(descendant)
 		// Equality is ancestry too, but nonexistent or non-commit IDs are not.
 		for _, id := range []*C.git_oid{&a, &d} {
@@ -447,7 +459,7 @@ func (r *Repository) IsAncestor(ancestor, descendant ID) (bool, error) {
 // WriteBlob writes bytes to the object database, without filters or worktree IO.
 func (r *Repository) WriteBlob(data []byte) (ID, error) {
 	var result ID
-	err := r.call("write blob", func(repo *C.git_repository) error {
+	err := r.callNative("write blob", false, func(repo *C.git_repository) error {
 		var id C.git_oid
 		var buffer unsafe.Pointer
 		if len(data) != 0 {
@@ -472,7 +484,7 @@ type TreeEntry struct {
 // entries, not slash-containing paths or paths interpreted as pathspecs.
 func (r *Repository) WriteTree(entries []TreeEntry) (ID, error) {
 	var result ID
-	err := r.call("write tree", func(repo *C.git_repository) error {
+	err := r.callNative("write tree", false, func(repo *C.git_repository) error {
 		var builder *C.git_treebuilder
 		if err := nativeError("create tree builder", C.git_treebuilder_new(&builder, repo, nil)); err != nil {
 			return err
@@ -534,7 +546,7 @@ func signature(value Signature) (*C.git_signature, error) {
 // prepared reference transaction with explicit expected old values.
 func (r *Repository) WriteCommit(treeID ID, parents []ID, author, committer Signature, message string) (ID, error) {
 	var result ID
-	err := r.call("write commit", func(repo *C.git_repository) error {
+	err := r.callNative("write commit", false, func(repo *C.git_repository) error {
 		text, err := cstring(message)
 		if err != nil {
 			return err
@@ -589,10 +601,10 @@ func (r *Repository) AddWorktree(name, path, branch string) error {
 	if !strings.HasPrefix(branch, "refs/heads/") {
 		return errors.New("worktree requires a fully qualified branch reference")
 	}
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	return r.call("add worktree", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		n, err := cstring(name)
 		if err != nil {
 			return err

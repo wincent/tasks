@@ -47,14 +47,18 @@ type IndexEntry struct {
 	IntentToAdd  bool
 }
 
+func validateRepositoryIndex(repo *C.git_repository) error {
+	return validateIndexFormat(filepath.Clean(C.GoString(C.git_repository_path(repo))) + "/index")
+}
+
 // IndexEntries opens a new handle to the on-disk index, not a repository-cached
 // copy. It never creates, refreshes or writes the real index.
 func (r *Repository) IndexEntries() ([]IndexEntry, error) {
-	if err := r.validateIndex(); err != nil {
-		return nil, err
-	}
 	var result []IndexEntry
 	err := r.call("read index entries", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		var cached, index *C.git_index
 		if err := nativeError("locate index", C.git_repository_index(&cached, repo)); err != nil {
 			return err
@@ -141,7 +145,7 @@ func editIndex(repo *C.git_repository, index *C.git_index, edits []TreeEdit) err
 // memory. A zero base starts an empty tree. The real index is never involved.
 func (r *Repository) EditTree(base ID, edits []TreeEdit) (ID, error) {
 	var result ID
-	err := r.call("edit tree", func(repo *C.git_repository) error {
+	err := r.callNative("edit tree", false, func(repo *C.git_repository) error {
 		var index *C.git_index
 		if err := nativeError("create memory index", C.git_index_new(&index)); err != nil {
 			return err
@@ -175,17 +179,17 @@ func (r *Repository) EditTree(base ID, edits []TreeEdit) (ID, error) {
 // optional base initializes a missing index from a commit. Existing conflict
 // stages and unrelated entry flags survive edits to other paths.
 func (r *Repository) EditIndexFile(path string, base ID, edits []TreeEdit) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
-	if err := validateIndexFormat(path); err != nil {
-		return err
-	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
 	return r.call("edit isolated index", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
+		if err := validateIndexFormat(path); err != nil {
+			return err
+		}
 		var real *C.git_index
 		if err := nativeError("locate real index", C.git_repository_index(&real, repo)); err != nil {
 			return err
@@ -255,10 +259,10 @@ func (r *Repository) EditIndexFile(path string, base ID, edits []TreeEdit) error
 // verified ref locks, protect ignored/untracked content, and record recovery
 // evidence before calling. Native filters apply; external filters are rejected.
 func (r *Repository) CheckoutMetadata(base, target ID) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	return r.call("checkout tree", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		restore := encodingComparison(repo)
 		defer restore()
 		next, err := commitTree(repo, target)

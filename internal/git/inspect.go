@@ -159,7 +159,7 @@ func (r *Repository) References(prefix string) (map[string]Reference, error) {
 // An empty result means independent histories; missing objects remain errors.
 func (r *Repository) MergeBases(a, b ID) ([]ID, error) {
 	var result []ID
-	err := r.call("find merge bases", func(repo *C.git_repository) error {
+	err := r.callNative("find merge bases", false, func(repo *C.git_repository) error {
 		left, right := nativeID(a), nativeID(b)
 		// ENOTFOUND can mean either unrelated histories or a missing object.
 		for _, id := range []*C.git_oid{&left, &right} {
@@ -216,7 +216,7 @@ func treeEntries(tree *C.git_tree) []TreeEntry {
 // Tree returns root entries of a commit, without touching its checkout/index.
 func (r *Repository) Tree(revision ID) ([]TreeEntry, error) {
 	var result []TreeEntry
-	err := r.call("read tree", func(repo *C.git_repository) error {
+	err := r.callNative("read tree", false, func(repo *C.git_repository) error {
 		tree, err := commitTree(repo, revision)
 		if err != nil {
 			return err
@@ -228,17 +228,36 @@ func (r *Repository) Tree(revision ID) ([]TreeEntry, error) {
 	return result, err
 }
 
+func lookupTreeEntry(repo *C.git_repository, revision ID, path string) (TreeEntry, error) {
+	tree, err := commitTree(repo, revision)
+	if err != nil {
+		return TreeEntry{}, err
+	}
+	defer C.git_tree_free(tree)
+	name, _ := cstring(path)
+	defer free(name)
+	var entry *C.git_tree_entry
+	if err := nativeError("lookup tree path", C.git_tree_entry_bypath(&entry, tree, name)); err != nil {
+		return TreeEntry{}, err
+	}
+	defer C.git_tree_entry_free(entry)
+	return TreeEntry{Name: path, ID: objectID(C.git_tree_entry_id(entry)), Mode: uint32(C.git_tree_entry_filemode_raw(entry))}, nil
+}
+
 // TreeAt returns the immediate entries of a literal directory in a commit.
 func (r *Repository) TreeAt(revision ID, path string) ([]TreeEntry, error) {
-	entry, err := r.Entry(revision, path)
-	if err != nil {
+	if err := literalPath(path); err != nil {
 		return nil, err
 	}
-	if entry.Mode != 0040000 {
-		return nil, fmt.Errorf("expected a directory in the committed tree: %q", path)
-	}
 	var result []TreeEntry
-	err = r.call("read subtree", func(repo *C.git_repository) error {
+	err := r.callNative("read subtree", false, func(repo *C.git_repository) error {
+		entry, err := lookupTreeEntry(repo, revision, path)
+		if err != nil {
+			return err
+		}
+		if entry.Mode != 0040000 {
+			return fmt.Errorf("expected a directory in the committed tree: %q", path)
+		}
 		var tree *C.git_tree
 		id := nativeID(entry.ID)
 		if err := nativeError("lookup subtree", C.git_tree_lookup(&tree, repo, &id)); err != nil {
@@ -270,21 +289,10 @@ func (r *Repository) Entry(revision ID, path string) (TreeEntry, error) {
 	if err := literalPath(path); err != nil {
 		return result, err
 	}
-	err := r.call("read tree entry", func(repo *C.git_repository) error {
-		tree, err := commitTree(repo, revision)
-		if err != nil {
-			return err
-		}
-		defer C.git_tree_free(tree)
-		name, _ := cstring(path)
-		defer free(name)
-		var entry *C.git_tree_entry
-		if err := nativeError("lookup tree path", C.git_tree_entry_bypath(&entry, tree, name)); err != nil {
-			return err
-		}
-		defer C.git_tree_entry_free(entry)
-		result = TreeEntry{Name: path, ID: objectID(C.git_tree_entry_id(entry)), Mode: uint32(C.git_tree_entry_filemode_raw(entry))}
-		return nil
+	err := r.callNative("read tree entry", false, func(repo *C.git_repository) error {
+		var err error
+		result, err = lookupTreeEntry(repo, revision, path)
+		return err
 	})
 	return result, err
 }
@@ -293,7 +301,7 @@ func (r *Repository) Entry(revision ID, path string) (TreeEntry, error) {
 // conversion), for metadata and revision-pinned completion evidence.
 func (r *Repository) Blob(id ID) ([]byte, error) {
 	var result []byte
-	err := r.call("read blob", func(repo *C.git_repository) error {
+	err := r.callNative("read blob", false, func(repo *C.git_repository) error {
 		native := nativeID(id)
 		var blob *C.git_blob
 		if err := nativeError("lookup blob", C.git_blob_lookup(&blob, repo, &native)); err != nil {
@@ -315,7 +323,7 @@ func (r *Repository) Blob(id ID) ([]byte, error) {
 // includes deleted files and both sides of merges.
 func (r *Repository) HistoryPaths(tips []ID, directory string, depth int) ([]string, error) {
 	paths := make(map[string]bool)
-	err := r.call("read historical paths", func(repo *C.git_repository) error {
+	err := r.callNative("read historical paths", false, func(repo *C.git_repository) error {
 		seen := make(map[TreeEntry]bool)
 		var visit func(TreeEntry, int) error
 		visit = func(entry TreeEntry, depth int) error {
@@ -497,11 +505,11 @@ func readableDirectories(repo *C.git_repository, index *C.git_index, includeIgno
 // Status never refreshes/writes the real index, including on read-only query
 // paths. A fresh index read avoids cached state on a long-lived native handle.
 func (r *Repository) Status(includeIgnored bool) ([]Change, error) {
-	if err := r.validateIndex(); err != nil {
-		return nil, err
-	}
 	var result []Change
 	err := r.call("read status", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		restore := encodingComparison(repo)
 		defer restore()
 		var index *C.git_index
