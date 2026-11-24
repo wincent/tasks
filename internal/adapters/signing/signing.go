@@ -40,14 +40,19 @@ func trust(value string) (int, error) {
 	return 0, fmt.Errorf("invalid signature trust level %q", value)
 }
 
-// Load retains traversal order: gpg.program and gpg.openpgp.program are aliases,
-// not a fixed-precedence pair. Read this from the actual candidate repository.
+// Load reads the signature policy of the repository's current checkout.
 func Load(repo *git.Repository) (Policy, error) {
-	p := Policy{Format: "openpgp", Programs: map[string]string{"openpgp": "gpg", "x509": "gpgsm", "ssh": "ssh-keygen"}, MinimumTrust: 2}
 	entries, err := repo.ConfigurationEntries()
 	if err != nil {
-		return p, err
+		return Policy{}, err
 	}
+	return ParsePolicy(entries)
+}
+
+// ParsePolicy retains traversal order: gpg.program and gpg.openpgp.program
+// are aliases, not a fixed-precedence pair.
+func ParsePolicy(entries []git.ConfigurationEntry) (Policy, error) {
+	p := Policy{Format: "openpgp", Programs: map[string]string{"openpgp": "gpg", "x509": "gpgsm", "ssh": "ssh-keygen"}, MinimumTrust: 2}
 	// Parse all assignments in order, including invalid shadowed booleans,
 	// from the same snapshot as the crypto settings.
 	for _, entry := range entries {
@@ -77,6 +82,7 @@ func Load(repo *git.Repository) (Policy, error) {
 		default:
 			continue
 		}
+		var err error
 		switch key {
 		case "user.signingkey":
 			p.Key, p.HasKey = value, true

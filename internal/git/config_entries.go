@@ -6,6 +6,8 @@ package git
 import "C"
 
 import (
+	"errors"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -44,6 +46,39 @@ func (r *Repository) ConfigurationEntries() ([]ConfigurationEntry, error) {
 			}
 			entries = append(entries, ConfigurationEntry{C.GoString(entry.name), C.GoString(entry.value), entry.value != nil})
 		}
+	})
+	return entries, err
+}
+
+// BranchConfigurationEntries resolves configuration for an unchecked-out
+// branch. gitdir conditions use the common Git directory, and no worktree's
+// private configuration applies.
+func (r *Repository) BranchConfigurationEntries(branch string) ([]ConfigurationEntry, error) {
+	if !strings.HasPrefix(branch, "refs/heads/") || branch == "refs/heads/" {
+		return nil, errors.New("branch configuration requires a fully qualified branch reference")
+	}
+	var entries []ConfigurationEntry
+	err := r.callNative("read branch configuration", false, func(repo *C.git_repository) error {
+		if r.configuration == nil {
+			return errors.New("branch configuration requires an open repository, not a planning view")
+		}
+		context := configurationContext{
+			gitdir: filepath.Clean(C.GoString(C.git_repository_commondir(repo))),
+			branch: branch,
+		}
+		records, err := r.configuration.effectiveRecords(repo, &context)
+		if err != nil {
+			return err
+		}
+		entries = make([]ConfigurationEntry, 0, len(records))
+		for _, record := range records {
+			entry := ConfigurationEntry{Name: record.name}
+			if record.value != nil {
+				entry.Value, entry.HasValue = *record.value, true
+			}
+			entries = append(entries, entry)
+		}
+		return nil
 	})
 	return entries, err
 }
