@@ -1,6 +1,6 @@
 # TASKS-56: Evaluate macOS F_FULLFSYNC test-time overhead and Sync batching
 
-Status: active
+Status: merged
 
 ## Description
 
