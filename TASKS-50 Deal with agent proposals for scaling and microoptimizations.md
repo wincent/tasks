@@ -1,6 +1,6 @@
 # TASKS-50: Deal with agent proposals for scaling and microoptimizations
 
-Status: open
+Status: active
 
 ## Description
 
