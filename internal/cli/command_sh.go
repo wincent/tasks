@@ -20,7 +20,9 @@ func init() {
 		positionalError: "`tasks sh` expects a task number and a command",
 		usage:           "[--worktree PATH] NUMBER [--] COMMAND [ARG ...]",
 		summary:         "Run a command in a task's existing checkout.",
-		details: `Example: tasks sh 29 -- git status --short
+		details: `Examples:
+  tasks sh 29 -- git status --short
+  tasks sh 29 -- ./scripts/check
 
 Put tasks options before NUMBER. After NUMBER and an optional --, the command
 and its arguments are passed as-is. For shell syntax, use sh -c '...'.
