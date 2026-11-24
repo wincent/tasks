@@ -369,6 +369,12 @@ func TestStoreRejectsRelatedHistoryAndWrongBranch(t *testing.T) {
 func TestBatchArchiveMoveChecksSharedIndexEntries(t *testing.T) {
 	t.Parallel()
 	repo, tasks, _ := fixture(t)
+	// MoveTasks resolves commit identity instead of taking an explicit signature.
+	for key, value := range map[string]string{"user.name": signature.Name, "user.email": signature.Email} {
+		if err := repo.SetLocalConfig(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx := context.Background()
 	files := map[string][]byte{
 		"EXAMPLE-1 First.md":  []byte("# EXAMPLE-1: First\n\nStatus: merged\n"),
