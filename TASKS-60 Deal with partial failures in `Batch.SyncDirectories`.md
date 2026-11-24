@@ -1,6 +1,6 @@
 # TASKS-60: Deal with partial failures in `Batch.SyncDirectories`
 
-Status: active
+Status: merged
 
 ## Description
 
