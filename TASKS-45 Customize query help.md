@@ -1,6 +1,6 @@
 # TASKS-45: Customize query help
 
-Status: active
+Status: blocked
 
 ## Description
 
