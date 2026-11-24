@@ -1,6 +1,6 @@
 # TASKS-39: Ensure `cleanup` does not use a stale destination
 
-Status: active
+Status: merged
 
 ## Description
 
