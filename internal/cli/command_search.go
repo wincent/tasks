@@ -41,7 +41,7 @@ func init() {
 			"  --json              Print the results as JSON.\n" +
 			"  -v, --verbose       Include saved checkout and Pi session details.\n\n" +
 			"If nothing matches, the command succeeds with no results (or [] in JSON).\n\n" +
-			queryHelp + listingHelp,
+			queryHelp(`tasks search "export report" -q 'status:open'`) + listingHelp,
 		run: withTasks(func(ctx context.Context, cwd string, a arguments, streams IO, invocation storeInvocation, tasks *store.Store) error {
 			status := a.value("--status")
 			if status == "" {

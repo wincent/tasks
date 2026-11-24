@@ -42,7 +42,7 @@ Options:
 Archive only the previewed tickets in a single commit after you type yes in a
 terminal. Without a terminal, print the preview without changing any tickets.
 
-` + queryHelp,
+` + queryHelp("tasks archive -q 'updated: < 3 days ago'"),
 		run: func(ctx context.Context, cwd string, a arguments, streams IO) error {
 			if a.query != nil {
 				return bulk(ctx, cwd, a, streams)

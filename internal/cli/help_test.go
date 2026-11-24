@@ -92,6 +92,28 @@ func TestHelp(t *testing.T) {
 	}
 }
 
+func TestHelpQueryExamples(t *testing.T) {
+	cwd := filepath.Join(t.TempDir(), "missing")
+	for _, tc := range []struct {
+		name    string
+		example string
+	}{
+		{"list", "tasks list all -q 'status:merged AND updated: < 30 days ago'"},
+		{"search", `tasks search "export report" -q 'status:open'`},
+		{"archive", "tasks archive -q 'updated: < 3 days ago'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, stderr, err := invoke(cwd, "", "help", tc.name)
+			if err != nil || stderr != "" {
+				t.Fatalf("help %s: %v; stderr: %q", tc.name, err, stderr)
+			}
+			if !strings.Contains(out, "\nExample:\n  "+tc.example+"\n") {
+				t.Errorf("missing query example %q in help: %q", tc.example, out)
+			}
+		})
+	}
+}
+
 func TestHelpUsageErrors(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "missing")
 	for _, tc := range []struct {

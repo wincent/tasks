@@ -9,7 +9,8 @@ import (
 	"github.com/wincent/tasks/internal/store"
 )
 
-const queryHelp = `Queries use recorded status (status:merged), a case-insensitive title
+func queryHelp(example string) string {
+	return `Queries use recorded status (status:merged), a case-insensitive title
 substring (title:"export report"), or the last committed ticket edit
 (updated:<30.days.ago). Combine predicates with NOT, AND, OR (in that order
 of precedence) and parentheses. Use quotes around the whole expression
@@ -20,9 +21,8 @@ months (for example, 30 days ago or 30.days.ago). Comparators use the
 exact cutoff; without one, match its UTC day, hour, or minute.
 
 Example:
-  tasks archive -q 'updated: < 3 days ago'
-
-`
+  ` + example + "\n\n"
+}
 
 type queryMatcher struct {
 	expr    *query.Expression

@@ -38,7 +38,7 @@ Options:
   --json              Print the results as JSON.
   -v, --verbose       Include saved checkout and Pi session details.
 
-` + queryHelp + listingHelp,
+` + queryHelp("tasks list all -q 'status:merged AND updated: < 30 days ago'") + listingHelp,
 		run: withTasks(func(ctx context.Context, cwd string, a arguments, streams IO, invocation storeInvocation, tasks *store.Store) error {
 			status := a.value("--status")
 			if len(a.positional) > 0 {
