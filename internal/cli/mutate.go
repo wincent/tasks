@@ -37,6 +37,12 @@ func updateTask(session *store.Session, prefix store.Prefix, n int, status, head
 		return store.Task{}, err
 	}
 	defer tasks.Close()
+	// Bind the read and write to the same revision. A direct Git commit can
+	// change the task even while we hold the metadata session lock.
+	head, err := tasks.Head()
+	if err != nil {
+		return store.Task{}, err
+	}
 	task, err := tasks.ReadWorking(n)
 	if err != nil {
 		return store.Task{}, err
@@ -57,7 +63,7 @@ func updateTask(session *store.Session, prefix store.Prefix, n int, status, head
 		content = strings.TrimSpace(content) + "\n\n## " + heading + " (" + time.Now().UTC().Format(time.RFC3339) + ")\n\n" + strings.TrimSpace(note) + "\n"
 	}
 	if content != task.Content {
-		path, err := writeTask(session, prefix, filepath.Base(task.Path), content, action+" "+task.ID())
+		path, err := writeTask(session, tasks, head.ID, filepath.Base(task.Path), content, action+" "+task.ID())
 		if err != nil {
 			return store.Task{}, err
 		}
@@ -66,17 +72,8 @@ func updateTask(session *store.Session, prefix store.Prefix, n int, status, head
 	return task, nil
 }
 
-func writeTask(session *store.Session, prefix store.Prefix, name, content, message string) (string, error) {
-	tasks, err := session.Preview(prefix)
-	if err != nil {
-		return "", err
-	}
-	defer tasks.Close()
+func writeTask(session *store.Session, tasks *store.Store, expected git.ID, name, content, message string) (string, error) {
 	if err := tasks.RequireClean(name); err != nil {
-		return "", err
-	}
-	head, err := tasks.Head()
-	if err != nil {
 		return "", err
 	}
 	changes := map[string][]byte{name: []byte(content)}
@@ -89,7 +86,7 @@ func writeTask(session *store.Session, prefix store.Prefix, name, content, messa
 	}
 	opened.Close()
 	if _, err := session.CommitFiles(changes, store.CommitOptions{
-		FromEnvironment: true, Message: "chore: " + message, ExpectedRefs: map[string]git.ID{store.Branch: head.ID},
+		FromEnvironment: true, Message: "chore: " + message, ExpectedRefs: map[string]git.ID{store.Branch: expected},
 	}); err != nil {
 		return "", err
 	}

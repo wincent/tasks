@@ -38,6 +38,15 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 		return nil
 	}}, func(_ context.Context, _ string, a arguments, streams IO, invocation storeInvocation) error {
 		session := invocation.session
+		tasks, err := session.Preview(a.prefix)
+		if err != nil {
+			return err
+		}
+		defer tasks.Close()
+		head, err := tasks.Head()
+		if err != nil {
+			return err
+		}
 		n, err := session.NextTaskNumber(a.prefix)
 		if err != nil {
 			return err
@@ -54,7 +63,7 @@ func createTask(ctx context.Context, cwd string, a arguments, streams IO, withBo
 			topicLine = "\nTopic: " + topic
 		}
 		content := fmt.Sprintf("# %s: %s\n\nStatus: open%s\n\n## Description\n\n%s\n", id, title, topicLine, description)
-		path, err := writeTask(session, a.prefix, name, content, "create "+id)
+		path, err := writeTask(session, tasks, head.ID, name, content, "create "+id)
 		if err != nil {
 			return err
 		}
