@@ -1,6 +1,6 @@
 # TASKS-63: Use batching with `archiveMove.install`
 
-Status: active
+Status: merged
 
 ## Description
 
