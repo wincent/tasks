@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/wincent/tasks/internal/adapters/signing"
@@ -232,28 +233,51 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 		return err
 	}
 	config := repo
+	var entries []git.ConfigurationEntry
 	if destinationRepo != nil {
 		config = destinationRepo
+		entries, err = config.ConfigurationEntries()
+	} else {
+		entries, err = repo.BranchConfigurationEntries(target.ref())
 	}
-	ffSetting, err := config.Config("merge.ff")
-	if err != nil && !git.HasCode(err, git.NotFound) {
-		return err
+	if err != nil {
+		return fmt.Errorf("read merge configuration for %s: %w", target, err)
 	}
-	if ffSetting == "only" && !ff {
-		return fmt.Errorf("merge.ff=only: merge local %s into the task branch, then retry", target)
-	}
-	if ffSetting != "" && ffSetting != "only" {
-		allowed, err := config.ConfigBool("merge.ff")
-		if err != nil {
-			return err
+	for _, entry := range slices.Backward(entries) {
+		if entry.Name != "merge.ff" {
+			continue
 		}
-		ff = ff && allowed
+		switch entry.Value {
+		case "only":
+			if !ff {
+				return fmt.Errorf("merge.ff=only: merge local %s into the task branch, then retry", target)
+			}
+		case "":
+			// Preserve the default for a missing or empty setting.
+		default:
+			allowed, err := git.ConfigurationBool(entry)
+			if err != nil {
+				return fmt.Errorf("merge.ff: %w", err)
+			}
+			ff = ff && allowed
+		}
+		break
 	}
-	policy, err := signing.Load(config)
+	policy, err := signing.ParsePolicy(entries)
+	if err != nil {
+		return fmt.Errorf("read signature policy for %s: %w", target, err)
+	}
+	paths, err := config.Paths()
 	if err != nil {
 		return err
 	}
-	crypto := signing.Adapter{Runner: streams.Runner, Directory: configPath(config), Environment: os.Environ(), Diagnostic: streams.Err}
+	cryptoDir := paths.WorkDir
+	if destinationRepo == nil {
+		// Without a destination worktree, do not resolve relative crypto paths
+		// within whichever checkout the caller happened to use.
+		cryptoDir = paths.CommonDir
+	}
+	crypto := signing.Adapter{Runner: streams.Runner, Directory: cryptoDir, Environment: os.Environ(), Diagnostic: streams.Err}
 	if policy.Verify {
 		sig, payload, err := repo.ExtractCommitSignature(source.Head.ID)
 		if err == nil {
@@ -333,11 +357,6 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 		}
 	}
 	return nil
-}
-
-func configPath(repo *git.Repository) string {
-	paths, _ := repo.Paths()
-	return paths.WorkDir
 }
 
 func buildMerge(ctx context.Context, repo *git.Repository, source checkout, task store.Task, target destination, base git.ID, policy signing.Policy, crypto signing.Adapter, streams IO) (id git.ID, err error) {

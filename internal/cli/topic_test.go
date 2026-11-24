@@ -137,6 +137,54 @@ func TestTopicReviewResumeAndExplicitMerge(t *testing.T) {
 	}
 }
 
+func TestUncheckedOutTopicEnforcesSignaturePolicy(t *testing.T) {
+	tests := []struct {
+		name, policy, failure string
+	}{
+		{"signing", "[merge]\nff = false\n[commit]\ngpgSign = true\n[gpg]\nformat = openpgp\n[gpg \"openpgp\"]\nprogram = ./topic-signer\n", "topic signer refused"},
+		{"verification", "[merge]\nverifySignatures = true\n", "verify incoming commit signature"},
+		{"invalid policy", "[merge]\nverifySignatures = invalid\n", "merge.verifysignatures"},
+		{"ignore caller policy", "[merge]\nverifySignatures = false\n", ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo, root := taskWorkflowFixture(t)
+			const topic = "release/delivery"
+			run(t, root, "create", "Deliver", "--topic", topic, "--body", "Topic only.")
+			systemGit(t, root, "branch", topic, "main")
+			base := systemGit(t, root, "rev-parse", topic)
+			source := filepath.Join(t.TempDir(), "task")
+			systemGit(t, root, "worktree", "add", "-b", "task/example-1", source, topic)
+			implementation := commitImplementation(t, source, "delivery.txt", "done\n")
+
+			common := filepath.Join(root, ".git")
+			if test.name == "signing" {
+				if err := os.WriteFile(filepath.Join(common, "topic-signer"), []byte("#!/bin/sh\necho 'topic signer refused' >&2\nexit 1\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeSafetyFile(t, filepath.Join(common, "topic-policy"), test.policy)
+			if err := repo.SetLocalConfig("includeIf.onbranch:release/.path", "topic-policy"); err != nil {
+				t.Fatal(err)
+			}
+			if test.failure == "" {
+				systemGit(t, root, "config", "extensions.worktreeConfig", "true")
+				systemGit(t, source, "config", "--worktree", "merge.verifySignatures", "true")
+				run(t, source, "merge", "1")
+				if got := systemGit(t, root, "rev-parse", topic); got != implementation {
+					t.Fatalf("expected %s to fast-forward to %s, got %s", topic, implementation, got)
+				}
+				return
+			}
+			fails(t, source, test.failure, "merge", "1")
+			if got := systemGit(t, root, "rev-parse", topic); got != base {
+				t.Fatalf("merge moved %s from %s to %s despite its policy", topic, base, got)
+			}
+			assertStatus(t, root, "blocked")
+		})
+	}
+}
+
 func TestTopicCleanupUsesEachRecordedDestination(t *testing.T) {
 	_, root := taskWorkflowFixture(t)
 	main := systemGit(t, root, "rev-parse", "main")
