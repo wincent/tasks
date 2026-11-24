@@ -1,6 +1,6 @@
 # TASKS-52: Reduce reliance on `systemGit` in tests
 
-Status: active
+Status: merged
 
 ## Description
 
