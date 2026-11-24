@@ -1,6 +1,6 @@
 # TASKS-58: Fix CI failure
 
-Status: active
+Status: merged
 
 ## Description
 
