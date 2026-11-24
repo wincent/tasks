@@ -1,6 +1,6 @@
 # TASKS-53: Avoid hardcoded 300ms wait
 
-Status: active
+Status: merged
 
 ## Description
 
