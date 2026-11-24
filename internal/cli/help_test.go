@@ -68,7 +68,7 @@ func TestHelp(t *testing.T) {
 				t.Errorf("help %s differs from %s --help: %q", name, name, alias)
 			}
 
-			usage, _, _ := strings.Cut(out, "\n")
+			usage, _, _ := strings.Cut(out, "\n\n")
 			if usage != "Usage: tasks "+strings.TrimSpace(name+" "+spec.usage) {
 				t.Errorf("unexpected usage: %q", usage)
 			}

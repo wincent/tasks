@@ -124,7 +124,9 @@ func TestSearchArguments(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	if err := help("search", &out); err != nil || !strings.Contains(out.String(), "Matches part of a title, ignoring case.") {
+	if err := help("search", &out); err != nil ||
+		!strings.Contains(out.String(), "Matches part of a title, ignoring case.") ||
+		!strings.Contains(out.String(), "--include-archived  Include archived") {
 		t.Fatalf("search help: %v %s", err, out.String())
 	}
 }
