@@ -1,6 +1,6 @@
 # TASKS-57: Allow user to define model aliases in config
 
-Status: open
+Status: active
 
 ## Description
 
