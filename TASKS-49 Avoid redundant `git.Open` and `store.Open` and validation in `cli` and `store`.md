@@ -1,6 +1,6 @@
 # TASKS-49: Avoid redundant `git.Open` and `store.Open` and validation in `cli` and `store`
 
-Status: blocked
+Status: active
 
 ## Description
 
