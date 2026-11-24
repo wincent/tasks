@@ -1,6 +1,6 @@
 # TASKS-51: Isolate HOME and XDG_CONFIG_HOME in `TestMain`
 
-Status: open
+Status: active
 
 ## Description
 
