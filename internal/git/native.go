@@ -41,6 +41,38 @@ static int task_worktree_add(git_worktree **out, git_repository *repo,
     opts.checkout_options.checkout_strategy = GIT_CHECKOUT_NONE | GIT_CHECKOUT_DONT_UPDATE_INDEX;
     return git_worktree_add(out, repo, name, path, &opts);
 }
+
+typedef struct {
+    size_t name_offset;
+    git_oid id;
+    git_filemode_t mode;
+} task_tree_entry;
+
+static int task_write_tree(git_oid *out, git_repository *repo,
+                           const char *names, const task_tree_entry *entries,
+                           size_t count, const char **failed_op) {
+    git_treebuilder *builder = NULL;
+    int error = git_treebuilder_new(&builder, repo, NULL);
+    if (error < 0) {
+        *failed_op = "create tree builder";
+        return error;
+    }
+    for (size_t i = 0; i < count; i++) {
+        error = git_treebuilder_insert(NULL, builder, names + entries[i].name_offset,
+                                       &entries[i].id, entries[i].mode);
+        if (error < 0) {
+            *failed_op = "insert tree entry";
+            git_treebuilder_free(builder);
+            return error;
+        }
+    }
+    error = git_treebuilder_write(out, builder);
+    if (error < 0) {
+        *failed_op = "write tree";
+    }
+    git_treebuilder_free(builder);
+    return error;
+}
 */
 import "C"
 
@@ -485,31 +517,53 @@ type TreeEntry struct {
 func (r *Repository) WriteTree(entries []TreeEntry) (ID, error) {
 	var result ID
 	err := r.callNative("write tree", false, func(repo *C.git_repository) error {
-		var builder *C.git_treebuilder
-		if err := nativeError("create tree builder", C.git_treebuilder_new(&builder, repo, nil)); err != nil {
-			return err
+		var names []byte
+		var items []C.task_tree_entry
+		if len(entries) > 0 {
+			totalNameBytes := 0
+			for _, entry := range entries {
+				totalNameBytes += len(entry.Name) + 1
+			}
+			names = make([]byte, 0, totalNameBytes)
+			items = make([]C.task_tree_entry, len(entries))
+			var seen map[string]struct{}
+			if len(entries) > 1 {
+				seen = make(map[string]struct{}, len(entries))
+			}
+			for i, entry := range entries {
+				if seen != nil {
+					if _, duplicate := seen[entry.Name]; duplicate {
+						return fmt.Errorf("duplicate tree entry %q", entry.Name)
+					}
+					seen[entry.Name] = struct{}{}
+				}
+				if strings.ContainsRune(entry.Name, 0) {
+					return errors.New("Git argument contains NUL")
+				}
+				items[i] = C.task_tree_entry{
+					name_offset: C.size_t(len(names)),
+					id:          nativeID(entry.ID),
+					mode:        C.git_filemode_t(entry.Mode),
+				}
+				names = append(names, entry.Name...)
+				names = append(names, 0)
+			}
 		}
-		defer C.git_treebuilder_free(builder)
-		seen := make(map[string]bool)
-		for _, entry := range entries {
-			if seen[entry.Name] {
-				return fmt.Errorf("duplicate tree entry %q", entry.Name)
-			}
-			seen[entry.Name] = true
-			name, err := cstring(entry.Name)
-			if err != nil {
-				return err
-			}
-			id := nativeID(entry.ID)
-			code := C.git_treebuilder_insert(nil, builder, name, &id, C.git_filemode_t(entry.Mode))
-			free(name)
-			if err := nativeError("insert tree entry", code); err != nil {
-				return err
-			}
+		var namesPtr *C.char
+		var itemsPtr *C.task_tree_entry
+		if len(items) > 0 {
+			namesPtr = (*C.char)(unsafe.Pointer(&names[0]))
+			itemsPtr = &items[0]
 		}
 		var id C.git_oid
-		if err := nativeError("write tree", C.git_treebuilder_write(&id, builder)); err != nil {
-			return err
+		var failedOp *C.char
+		code := C.task_write_tree(&id, repo, namesPtr, itemsPtr, C.size_t(len(items)), &failedOp)
+		if code < 0 {
+			op := "write tree"
+			if failedOp != nil {
+				op = C.GoString(failedOp)
+			}
+			return nativeError(op, code)
 		}
 		result = objectID(&id)
 		return nil

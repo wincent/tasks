@@ -217,6 +217,67 @@ func TestObjectsAndAncestry(t *testing.T) {
 	if _, err := r.WriteTree([]TreeEntry{duplicate, duplicate}); err == nil {
 		t.Fatal("duplicate entry accepted")
 	}
+	// Missing object must still be rejected with a libgit2 error.
+	if _, err := r.WriteTree([]TreeEntry{{Name: "missing.txt", ID: ID{1}, Mode: 0100644}}); err == nil {
+		t.Fatal("missing object accepted in tree")
+	} else {
+		var nativeErr *Error
+		if !errors.As(err, &nativeErr) || nativeErr.Message == "" {
+			t.Fatalf("expected native error with message, got %#v", err)
+		}
+	}
+	// Wide tree writes preserve exact ordering and entries.
+	wide := make([]TreeEntry, 0, 256)
+	for i := 255; i >= 0; i-- {
+		wide = append(wide, TreeEntry{Name: fmt.Sprintf("entry-%03d.txt", i), ID: empty, Mode: 0100644})
+	}
+	wideTree, err := r.WriteTree(wide)
+	if err != nil {
+		t.Fatalf("wide WriteTree: %v", err)
+	}
+	wideCommit, err := r.WriteCommit(wideTree, nil, testSignature, testSignature, "wide\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotWide, err := r.Tree(wideCommit)
+	if err != nil || len(gotWide) != len(wide) || gotWide[0].Name != "entry-000.txt" || gotWide[255].Name != "entry-255.txt" {
+		t.Fatalf("wide tree entries: len=%d err=%v", len(gotWide), err)
+	}
+}
+
+func BenchmarkWriteTree(b *testing.B) {
+	root := filepath.Join(b.TempDir(), "repository")
+	r, err := Init(root, "", true)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer r.Close()
+	blob, err := r.WriteBlob([]byte("task content\n"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	const width = 500
+	blobEntries := make([]TreeEntry, 0, width)
+	linkEntries := make([]TreeEntry, 0, width)
+	for i := range width {
+		name := fmt.Sprintf("TASKS-%04d Benchmark task entry title %d.md", i+1, i+1)
+		blobEntries = append(blobEntries, TreeEntry{Name: name, ID: blob, Mode: 0100644})
+		linkEntries = append(linkEntries, TreeEntry{Name: name, ID: blob, Mode: 0160000})
+	}
+	b.Run("blobs", func(b *testing.B) {
+		for b.Loop() {
+			if _, err := r.WriteTree(blobEntries); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("gitlinks", func(b *testing.B) {
+		for b.Loop() {
+			if _, err := r.WriteTree(linkEntries); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func TestPreparedPublication(t *testing.T) {
