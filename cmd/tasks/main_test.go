@@ -50,7 +50,7 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	os.Exit(testutil.RunWithIsolatedHome(m.Run))
 }
 
 func TestExecutableGoReferenceError(t *testing.T) {

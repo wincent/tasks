@@ -12,11 +12,12 @@ import (
 
 	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/store"
+	"github.com/wincent/tasks/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
 	if os.Getenv("TASK_TEST_COMMAND_HELPER") != "task" {
-		os.Exit(m.Run())
+		os.Exit(testutil.RunWithIsolatedHome(m.Run))
 	}
 	cwd, err := os.Getwd()
 	if err == nil {

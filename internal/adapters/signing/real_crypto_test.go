@@ -45,9 +45,8 @@ func newCryptoFixture(t *testing.T, agent bool) *cryptoFixture {
 	if err := os.Mkdir(f.home, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Isolate only cryptographic keys and agents. Native calls and the Git
-	// oracle retain inherited configuration/security policy and discovery limits;
-	// configuration-source overrides are deliberately unsupported by the backend.
+	// Isolate cryptographic keys and agents in addition to the suite's home.
+	// Leave system Git configuration and discovery limits intact.
 	f.env = append(os.Environ(), "GNUPGHOME="+f.home,
 		"SSH_AUTH_SOCK=", "SSH_AGENT_PID=", "GPG_AGENT_INFO=")
 	f.write(filepath.Join(f.home, "gpg.conf"), "batch\nno-autostart\nno-auto-key-retrieve\n")
