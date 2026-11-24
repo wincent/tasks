@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 type configurationContext struct{ gitdir, branch string }
@@ -84,10 +85,53 @@ func (context configurationContext) matches(condition, origin string) (bool, err
 	return configurationWildmatch(pattern, subject, fold)
 }
 
+const (
+	configurationWildmatchCacheEntries    = 256
+	configurationWildmatchCacheMaxPattern = 4096
+)
+
+type configurationWildmatchKey struct {
+	pattern string
+	fold    bool
+}
+
+var configurationWildmatchCache struct {
+	mu      sync.RWMutex
+	entries map[configurationWildmatchKey]*regexp.Regexp // nil marks a valid-but-unmatchable pattern
+}
+
 // Full-string WM_PATHNAME matching, not gitignore/sparse selection: no comment,
 // negation, basename, ancestor, trailing-space or leading-slash transformations.
 // Only the byte alphabet/literal/bracket primitives are shared with sparse rules.
-func configurationWildmatch(pattern, subject string, fold bool) (bool, error) {
+func compileConfigurationWildmatch(pattern string, fold bool) (*regexp.Regexp, error) {
+	key := configurationWildmatchKey{pattern: pattern, fold: fold}
+	if len(pattern) <= configurationWildmatchCacheMaxPattern {
+		configurationWildmatchCache.mu.RLock()
+		compiled, ok := configurationWildmatchCache.entries[key]
+		configurationWildmatchCache.mu.RUnlock()
+		if ok {
+			return compiled, nil
+		}
+	}
+	compiled, err := buildConfigurationWildmatch(pattern, fold)
+	if err != nil {
+		return nil, err
+	}
+	if len(pattern) <= configurationWildmatchCacheMaxPattern {
+		configurationWildmatchCache.mu.Lock()
+		if len(configurationWildmatchCache.entries) >= configurationWildmatchCacheEntries {
+			configurationWildmatchCache.entries = nil
+		}
+		if configurationWildmatchCache.entries == nil {
+			configurationWildmatchCache.entries = make(map[configurationWildmatchKey]*regexp.Regexp)
+		}
+		configurationWildmatchCache.entries[key] = compiled
+		configurationWildmatchCache.mu.Unlock()
+	}
+	return compiled, nil
+}
+
+func buildConfigurationWildmatch(pattern string, fold bool) (*regexp.Regexp, error) {
 	var expression strings.Builder
 	expression.WriteString("(?s)^")
 	for i := 0; i < len(pattern); i++ {
@@ -95,7 +139,7 @@ func configurationWildmatch(pattern, subject string, fold bool) (bool, error) {
 		case '\\':
 			i++
 			if i == len(pattern) {
-				return false, nil
+				return nil, nil
 			}
 			expression.WriteString(sparseLiteral(pattern[i], fold))
 		case '*':
@@ -124,7 +168,7 @@ func configurationWildmatch(pattern, subject string, fold bool) (bool, error) {
 		case '[':
 			class, end, ok := sparseBracket(pattern, i, fold)
 			if !ok {
-				return false, nil
+				return nil, nil
 			}
 			expression.WriteString(class)
 			i = end
@@ -133,16 +177,29 @@ func configurationWildmatch(pattern, subject string, fold bool) (bool, error) {
 		}
 	}
 	expression.WriteString("$")
-	compiled, err := regexp.Compile(expression.String())
-	if err != nil {
-		return false, err
-	}
+	return regexp.Compile(expression.String())
+}
+
+func configurationWildmatchSubject(subject string, fold bool) string {
 	if fold {
 		subject = sparseFoldASCII(subject)
 	}
-	bytes := make([]rune, len(subject))
-	for i := range len(subject) {
-		bytes[i] = rune(subject[i])
+	for i := 0; i < len(subject); i++ {
+		if subject[i] >= 0x80 {
+			bytes := make([]rune, len(subject))
+			for j := range len(subject) {
+				bytes[j] = rune(subject[j])
+			}
+			return string(bytes)
+		}
 	}
-	return compiled.MatchString(string(bytes)), nil
+	return subject
+}
+
+func configurationWildmatch(pattern, subject string, fold bool) (bool, error) {
+	compiled, err := compileConfigurationWildmatch(pattern, fold)
+	if err != nil || compiled == nil {
+		return false, err
+	}
+	return compiled.MatchString(configurationWildmatchSubject(subject, fold)), nil
 }

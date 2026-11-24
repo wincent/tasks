@@ -360,17 +360,38 @@ func TestConfigurationEffectiveOperationWork(t *testing.T) {
 				t.Fatalf("value = %q, want %q: %v", got, want, err)
 			}
 			operationTime := time.Since(start)
-			evaluations := uint64(6)
+			if work.paths != 2 || work.evaluations != 0 || work.assemblies != 0 || work.nativeRecords != 0 || work.reads < 6 {
+				t.Fatalf("unexpected cached operation work: %+v", work)
+			}
+			// Modifying an active ordinary source invalidates the cached
+			// effective configuration and triggers one fresh re-evaluation and
+			// native overlay assembly.
+			work = configurationWork{}
+			writeCommandInclude(t, leaf, "[tasktool]\nvalue = ordinary-updated\n")
+			updatedWant := "ordinary-updated"
+			if mode == "command" || mode == "worktree" {
+				updatedWant = mode
+			}
+			if got, err := opened.Config("tasktool.value"); err != nil || got != updatedWant {
+				t.Fatalf("updated value = %q, want %q: %v", got, updatedWant, err)
+			}
+			evaluations := uint64(2)
 			if mode == "ordinary" {
-				evaluations = 3
+				evaluations = 1
 			}
-			if work.paths != 2 || work.evaluations != evaluations || work.assemblies != 3 || work.copies != work.nativeRecords || work.reads < 6 {
-				t.Fatalf("unexpected operation work: %+v", work)
+			if work.evaluations != evaluations || work.assemblies != 1 || work.copies != work.nativeRecords || work.reads < 2 {
+				t.Fatalf("unexpected miss operation work: %+v", work)
 			}
-			if count := parseCacheCount(&opened.configuration.parsedFiles) - parses; count != 0 {
-				t.Fatalf("warm operations reparsed %d inputs", count)
+			if got, err := opened.Config("tasktool.value"); err != nil || got != updatedWant {
+				t.Fatalf("recached value = %q, want %q: %v", got, updatedWant, err)
 			}
-			t.Logf("setup=%s open/discovery/admission=%s opens=1 operations=%s parse_misses=0 work=%+v (capture/graph durations overlap)", setupTime, openTime, operationTime, work)
+			if work.evaluations != evaluations || work.assemblies != 1 {
+				t.Fatalf("second read after update did not reuse cached config: %+v", work)
+			}
+			if count := parseCacheCount(&opened.configuration.parsedFiles) - parses; count != 1 {
+				t.Fatalf("expected exactly 1 parse miss for updated leaf, got %d", count)
+			}
+			t.Logf("setup=%s open/discovery/admission=%s opens=1 operations=%s work=%+v (capture/graph durations overlap)", setupTime, openTime, operationTime, work)
 		})
 	}
 }
@@ -396,7 +417,7 @@ func TestHeadWorkdirConfigurationWork(t *testing.T) {
 	if err != nil || got != paths.WorkDir {
 		t.Fatalf("workdir: %q %v; want %q", got, err, paths.WorkDir)
 	}
-	if separate.paths != 1 || separate.assemblies != 2 || combined.paths != 0 || combined.assemblies != 1 || separate.evaluations != 2*combined.evaluations || combined.evaluations == 0 {
+	if separate.paths != 1 || combined.paths != 0 || separate.captures != 2*combined.captures || separate.reads != 2*combined.reads || combined.reads == 0 || separate.assemblies != 0 || combined.assemblies != 0 {
 		t.Fatalf("configuration work: separate=%+v combined=%+v", separate, combined)
 	}
 }
@@ -549,7 +570,11 @@ func TestConfigurationEffectiveReuseRequiresIdenticalSources(t *testing.T) {
 			defer opened.Close()
 			var work configurationWork
 			opened.configuration.work = &work
-			if got, err := opened.Config("tasktool.matched"); err != nil || got != "final" || work.evaluations != 2 {
+			if got, err := opened.Config("tasktool.matched"); err != nil || got != "final" || work.evaluations != 0 || work.assemblies != 0 {
+				t.Fatalf("cached config not reused on unchanged sources: %q %v %+v", got, err, work)
+			}
+			writeCommandInclude(t, leaf, "[tasktool]\nmatched = refreshed\n")
+			if got, err := opened.Config("tasktool.matched"); err != nil || got != "refreshed" || work.evaluations != 2 || work.assemblies != 1 {
 				t.Fatalf("ordinary graph reused despite later URL: %q %v %+v", got, err, work)
 			}
 		})

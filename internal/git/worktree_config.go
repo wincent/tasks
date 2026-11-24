@@ -222,14 +222,14 @@ func (r *Repository) withProspectiveWorktree(name, path, branch string, inspect 
 	if !strings.HasPrefix(branch, "refs/heads/") {
 		return errors.New("worktree requires a fully qualified branch reference")
 	}
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
 	return r.call("validate prospective worktree", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, branch)
 		if err != nil {
 			return err

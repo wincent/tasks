@@ -58,10 +58,16 @@ func hasconfigRemoteURL(name string) bool {
 }
 
 func hasconfigMatches(pattern string, urls []string) (bool, error) {
+	if len(urls) == 0 {
+		return false, nil
+	}
+	compiled, err := compileConfigurationWildmatch(pattern, false)
+	if err != nil || compiled == nil {
+		return false, err
+	}
 	for _, url := range urls {
-		matched, err := configurationWildmatch(pattern, url, false)
-		if err != nil || matched {
-			return matched, err
+		if compiled.MatchString(configurationWildmatchSubject(url, false)) {
+			return true, nil
 		}
 	}
 	return false, nil

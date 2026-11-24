@@ -57,13 +57,13 @@ func (r *Repository) MergeCleanIntoIndex(tip ID) (ID, error) {
 }
 
 func (r *Repository) mergeIntoIndex(tip ID, cleanOnly bool) (ID, error) {
-	if err := r.validateIndex(); err != nil {
-		return ID{}, err
-	}
 	mergeDriverRegistry.Lock()
 	defer mergeDriverRegistry.Unlock()
 	var tree ID
 	err := r.call("merge candidate", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		restore := encodingComparison(repo)
 		defer restore()
 		return withOperationConfig(repo, func() (err error) {
@@ -140,11 +140,11 @@ func (r *Repository) mergeIntoIndex(tip ID, cleanOnly bool) (ID, error) {
 
 // IndexTree snapshots the fresh real index after configured merge hooks.
 func (r *Repository) IndexTree() (ID, error) {
-	if err := r.validateIndex(); err != nil {
-		return ID{}, err
-	}
 	var result ID
 	err := r.call("write index tree", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		var index *C.git_index
 		if err := nativeError("open index", C.git_repository_index(&index, repo)); err != nil {
 			return err
@@ -179,7 +179,7 @@ func (r *Repository) IndexMatches(revision ID) (bool, error) {
 		return false, err
 	}
 	var matches bool
-	err = r.call("compare index tree", func(repo *C.git_repository) error {
+	err = r.callNative("compare index tree", false, func(repo *C.git_repository) error {
 		tree, err := commitTree(repo, revision)
 		if err != nil {
 			return err
@@ -194,10 +194,10 @@ func (r *Repository) IndexMatches(revision ID) (bool, error) {
 // Checkout safely advances a clean implementation checkout, applying native
 // attributes/filters rather than the raw metadata-only checkout policy.
 func (r *Repository) Checkout(base, target ID) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	return r.call("checkout implementation", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		restore := encodingComparison(repo)
 		defer restore()
 		old, err := commitTree(repo, base)

@@ -108,11 +108,3 @@ func validateIndexFormat(path string) error {
 	}
 	return nil
 }
-
-func (r *Repository) validateIndex() error {
-	paths, err := r.Paths()
-	if err != nil {
-		return err
-	}
-	return validateIndexFormat(paths.GitDir + "/index")
-}

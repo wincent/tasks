@@ -28,14 +28,14 @@ import (
 // After writes begin, failures retain evidence rather than remove unknown paths.
 // The checked configuration is retained through checkout, not a filesystem lease.
 func (r *Repository) AddDetachedWorktree(name, path string, revision ID, prepareParent func() error) error {
-	if err := r.validateIndex(); err != nil {
-		return err
-	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
 	return r.call("add detached worktree", func(repo *C.git_repository) error {
+		if err := validateRepositoryIndex(repo); err != nil {
+			return err
+		}
 		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, "")
 		if err != nil {
 			return err

@@ -15,7 +15,7 @@ import (
 // an object or ref. No native pointers escape the serialized repository call.
 func (r *Repository) CommitBuffer(treeID ID, parents []ID, author, committer Signature, message string) ([]byte, error) {
 	var result []byte
-	err := r.call("create commit buffer", func(repo *C.git_repository) error {
+	err := r.callNative("create commit buffer", false, func(repo *C.git_repository) error {
 		text, err := cstring(message)
 		if err != nil {
 			return err
@@ -72,7 +72,7 @@ func (r *Repository) WriteSignedCommit(payload, signature []byte) (ID, error) {
 	if len(signature) == 0 {
 		return result, errors.New("empty commit signature")
 	}
-	err := r.call("write signed commit", func(repo *C.git_repository) error {
+	err := r.callNative("write signed commit", false, func(repo *C.git_repository) error {
 		text, err := cstring(string(payload))
 		if err != nil {
 			return err
@@ -96,7 +96,7 @@ func (r *Repository) WriteSignedCommit(payload, signature []byte) (ID, error) {
 // ExtractCommitSignature returns copied signature and signed payload bytes.
 // An unsigned commit returns the native NotFound error.
 func (r *Repository) ExtractCommitSignature(id ID) (signature, payload []byte, err error) {
-	err = r.call("extract commit signature", func(repo *C.git_repository) error {
+	err = r.callNative("extract commit signature", false, func(repo *C.git_repository) error {
 		var sig, data C.git_buf
 		defer C.git_buf_dispose(&sig)
 		defer C.git_buf_dispose(&data)

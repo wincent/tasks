@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -134,18 +135,181 @@ type configurationFileContents struct {
 	info os.FileInfo
 }
 
+type configurationFileWitness struct {
+	path     string
+	identity string
+	exists   bool
+	info     os.FileInfo
+	data     []byte
+	records  []hasconfigRecord
+}
+
+func readConfigurationFile(file *os.File, info os.FileInfo) ([]byte, error) {
+	if size := info.Size(); size >= 0 && size <= configurationParseCacheBytes {
+		data := make([]byte, 0, int(size)+1)
+		for {
+			n, err := file.Read(data[len(data):cap(data)])
+			data = data[:len(data)+n]
+			if err == io.EOF {
+				return data, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			if len(data) == cap(data) {
+				rest, err := io.ReadAll(file)
+				if err != nil {
+					return nil, err
+				}
+				return append(data, rest...), nil
+			}
+		}
+	}
+	return io.ReadAll(file)
+}
+
 // A fresh capture is created at each operation boundary. Aliases share captured
 // bytes, but retain distinct lexical origins for relative includes and gitdir:./.
 // Neither condition results nor missing files survive the operation boundary.
 type configurationFileCapture struct {
-	work     *configurationWork
-	cache    *configurationParseCache
-	contents map[string]configurationFileContents
-	records  map[string][]hasconfigRecord
+	work         *configurationWork
+	cache        *configurationParseCache
+	contents     map[string]configurationFileContents
+	records      map[string][]hasconfigRecord
+	dirIdentity  map[string]string
+	witnessOrder []configurationFileWitness
+	witnessed    map[string]struct{}
 }
 
 func newConfigurationFileCapture(cache *configurationParseCache) *configurationFileCapture {
 	return &configurationFileCapture{cache: cache, contents: make(map[string]configurationFileContents), records: make(map[string][]hasconfigRecord)}
+}
+
+func (capture *configurationFileCapture) resolveDir(dir string) (string, bool) {
+	if capture.dirIdentity == nil {
+		capture.dirIdentity = make(map[string]string, 4)
+	}
+	if resolved, ok := capture.dirIdentity[dir]; ok {
+		return resolved, true
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", false
+	}
+	capture.dirIdentity[dir] = resolved
+	return resolved, true
+}
+
+func (capture *configurationFileCapture) captureFile(path string) (string, configurationFileContents, error, error) {
+	if filepath.IsAbs(path) && path != "/" && filepath.Clean(path) == path {
+		dir, base := filepath.Dir(path), filepath.Base(path)
+		if resolvedDir, ok := capture.resolveDir(dir); ok {
+			candidate := filepath.Join(resolvedDir, base)
+			if existing, ok := capture.contents[candidate]; ok {
+				if info, err := os.Lstat(candidate); err == nil && info.Mode()&os.ModeSymlink == 0 || os.IsNotExist(err) {
+					return candidate, existing, nil, nil
+				}
+			} else {
+				file, err := os.OpenFile(candidate, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+				if err == nil {
+					if capture.work != nil {
+						capture.work.reads++
+					}
+					var contents configurationFileContents
+					contents.info, err = file.Stat()
+					if err == nil {
+						contents.data, err = readConfigurationFile(file, contents.info)
+					}
+					err = errors.Join(err, file.Close())
+					if err != nil {
+						return candidate, configurationFileContents{}, nil, err
+					}
+					capture.contents[candidate] = contents
+					return candidate, contents, nil, nil
+				}
+				if os.IsNotExist(err) {
+					if capture.work != nil {
+						capture.work.reads++
+					}
+					var contents configurationFileContents
+					capture.contents[candidate] = contents
+					return candidate, contents, nil, nil
+				}
+			}
+		}
+	}
+	identity, err := configurationIncludeIdentity(path)
+	if err != nil {
+		return "", configurationFileContents{}, err, nil
+	}
+	contents, ok := capture.contents[identity]
+	if !ok {
+		if capture.work != nil {
+			capture.work.reads++
+		}
+		file, err := os.Open(path)
+		if os.IsNotExist(err) {
+			capture.contents[identity] = contents
+		} else if err != nil {
+			return identity, configurationFileContents{}, nil, err
+		} else {
+			contents.info, err = file.Stat()
+			if err == nil {
+				contents.data, err = readConfigurationFile(file, contents.info)
+			}
+			err = errors.Join(err, file.Close())
+			if err != nil {
+				return identity, configurationFileContents{}, nil, err
+			}
+			capture.contents[identity] = contents
+		}
+	}
+	return identity, contents, nil, nil
+}
+
+func (capture *configurationFileCapture) recordWitness(w configurationFileWitness) {
+	if capture.witnessed == nil {
+		capture.witnessed = make(map[string]struct{})
+	}
+	if _, ok := capture.witnessed[w.path]; ok {
+		return
+	}
+	capture.witnessed[w.path] = struct{}{}
+	capture.witnessOrder = append(capture.witnessOrder, w)
+}
+
+// validateWitness re-captures w.path at the current operation boundary and
+// checks that its resolved identity, file identity, and exact bytes match w.
+// Errors and mismatches return false without poisoning capture state so full
+// evaluation can run and produce canonical errors.
+func (capture *configurationFileCapture) validateWitness(w configurationFileWitness) bool {
+	if work := capture.work; work != nil {
+		work.captures++
+		start := time.Now()
+		defer func() { work.captureTime += time.Since(start) }()
+	}
+	identity, contents, resolveErr, readErr := capture.captureFile(w.path)
+	if resolveErr != nil || readErr != nil || identity != w.identity {
+		return false
+	}
+	if !w.exists {
+		if contents.info != nil {
+			return false
+		}
+		capture.records[w.path] = nil
+		capture.recordWitness(configurationFileWitness{path: w.path, identity: identity})
+		return true
+	}
+	if contents.info == nil {
+		capture.cache.forget(w.path)
+		return false
+	}
+	if !os.SameFile(w.info, contents.info) || !bytes.Equal(w.data, contents.data) {
+		return false
+	}
+	capture.records[w.path] = w.records
+	capture.recordWitness(w)
+	return true
 }
 
 func (capture *configurationFileCapture) loadRecords(path string) ([]hasconfigRecord, error) {
@@ -168,46 +332,35 @@ func (capture *configurationFileCapture) borrowRecords(path string) ([]hasconfig
 		start := time.Now()
 		defer func() { work.captureTime += time.Since(start) }()
 	}
-	identity, err := configurationIncludeIdentity(path)
-	if err != nil {
+	identity, contents, resolveErr, readErr := capture.captureFile(path)
+	if resolveErr != nil {
 		capture.cache.forget(path)
 		return nil, errors.New("cannot resolve ordinary Git configuration")
 	}
-	contents, ok := capture.contents[identity]
-	if !ok {
-		if capture.work != nil {
-			capture.work.reads++
-		}
-		file, err := os.Open(path)
-		if os.IsNotExist(err) {
-			capture.contents[identity] = contents
-		} else if err != nil {
-			capture.cache.forget(path)
-			return nil, errors.New("cannot read ordinary Git configuration")
-		} else {
-			contents.info, err = file.Stat()
-			if err == nil {
-				contents.data, err = io.ReadAll(file)
-			}
-			err = errors.Join(err, file.Close())
-			if err != nil {
-				capture.cache.forget(path)
-				return nil, errors.New("cannot read ordinary Git configuration")
-			}
-			capture.contents[identity] = contents
-		}
+	if readErr != nil {
+		capture.cache.forget(path)
+		return nil, errors.New("cannot read ordinary Git configuration")
 	}
 	if contents.info == nil {
 		capture.cache.forget(path)
 		capture.records[path] = nil
+		capture.recordWitness(configurationFileWitness{path: path, identity: identity})
 		return nil, nil
 	}
-	records, err := capture.cache.borrowRecords(path, identity, contents)
+	file, _, err := capture.cache.borrowFile(path, identity, contents)
 	if err != nil {
 		return nil, err
 	}
-	capture.records[path] = records
-	return records, nil
+	capture.records[path] = file.records
+	capture.recordWitness(configurationFileWitness{
+		path:     path,
+		identity: identity,
+		exists:   true,
+		info:     file.contents.info,
+		data:     file.contents.data,
+		records:  file.records,
+	})
+	return file.records, nil
 }
 
 // Resolve existing aliases, including an existing parent of a missing target.

@@ -19,13 +19,18 @@ type sparseRule struct {
 type sparsePatterns []sparseRule
 
 func sparseFoldASCII(value string) string {
-	data := []byte(value)
-	for i, b := range data {
-		if b >= 'A' && b <= 'Z' {
-			data[i] += 'a' - 'A'
+	for i := 0; i < len(value); i++ {
+		if value[i] >= 'A' && value[i] <= 'Z' {
+			data := []byte(value)
+			for j := i; j < len(data); j++ {
+				if data[j] >= 'A' && data[j] <= 'Z' {
+					data[j] += 'a' - 'A'
+				}
+			}
+			return string(data)
 		}
 	}
-	return string(data)
+	return value
 }
 
 func parseSparsePatterns(data string, ignoreCase bool) (sparsePatterns, error) {
