@@ -1,6 +1,6 @@
 # TASKS-58: Fix CI failure
 
-Status: open
+Status: active
 
 ## Description
 
