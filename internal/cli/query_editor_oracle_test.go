@@ -38,8 +38,7 @@ func uiTerminal(t *testing.T, root string, args ...string) (string, string, erro
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	if err := master.SetReadDeadline(time.Now().Add(8 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +48,7 @@ func uiTerminal(t *testing.T, root string, args ...string) (string, string, erro
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err = Run(ctx, root, args, IO{In: slave, Out: &out, Err: slave})
+	// Close the slave to let the reader finish draining the master.
 	slave.Close()
 	return out.String(), strings.ReplaceAll(string(<-done), "\r\n", "\n"), err
 }

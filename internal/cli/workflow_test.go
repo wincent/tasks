@@ -389,8 +389,7 @@ func TestPiPromptIsPerInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	go io.Copy(io.Discard, master) // Keep repeated launches from filling the terminal buffer.
 
 	var worktree, session, standard string
@@ -470,8 +469,7 @@ func TestExistingTaskSessionAndDeletedTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	interactive := func(f piFixture) error {
 		return Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: f})
 	}

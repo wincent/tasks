@@ -147,8 +147,7 @@ func archiveAtPrompt(t *testing.T, root string, onPrompt func(context.CancelFunc
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out := &archivePromptOutput{fd: slave.Fd()}

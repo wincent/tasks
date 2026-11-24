@@ -40,3 +40,10 @@ func OpenPTYWithWidth(columns uint16) (*os.File, *os.File, error) {
 	syscall.CloseOnExec(int(slave))
 	return os.NewFile(uintptr(master), "pty master"), os.NewFile(uintptr(slave), "pty slave"), nil
 }
+
+// ClosePTY closes the master before the slave. On Darwin, closing the slave
+// first can stall while waiting for undrained output.
+func ClosePTY(master, slave *os.File) {
+	master.Close()
+	slave.Close()
+}

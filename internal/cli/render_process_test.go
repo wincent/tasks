@@ -53,8 +53,7 @@ func captureTerminal(t *testing.T, root string, shared bool, args ...string) (st
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	if err := master.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +67,7 @@ func captureTerminal(t *testing.T, root string, shared bool, args ...string) (st
 		streams.In, streams.Err = slave, slave
 	}
 	err = Run(ctx, root, args, streams)
+	// Close the slave to let the reader finish draining the master.
 	slave.Close()
 	data := <-done
 	return strings.ReplaceAll(string(data), "\r\n", "\n"), diagnostic.String(), err

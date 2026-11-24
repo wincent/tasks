@@ -33,8 +33,7 @@ func TestPiProgressAttentionPresentation(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer master.Close()
-				defer slave.Close()
+				defer testutil.ClosePTY(master, slave)
 				if err := master.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 					t.Fatal(err)
 				}
@@ -42,6 +41,7 @@ func TestPiProgressAttentionPresentation(t *testing.T) {
 				go func() { data, _ := io.ReadAll(master); done <- data }()
 				progress.out = slave
 				readOutput = func() string {
+					// Close the slave to let the reader finish draining the master.
 					slave.Close()
 					return strings.ReplaceAll(string(<-done), "\r\n", "\n")
 				}

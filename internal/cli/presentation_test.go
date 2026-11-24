@@ -46,13 +46,14 @@ func sizedTerminalOutput(t *testing.T, columns uint16) (*os.File, func() string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { master.Close(); slave.Close() })
+	t.Cleanup(func() { testutil.ClosePTY(master, slave) })
 	if err := master.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan []byte, 1)
 	go func() { data, _ := io.ReadAll(master); done <- data }()
 	return slave, func() string {
+		// Close the slave to let the reader finish draining the master.
 		slave.Close()
 		return strings.ReplaceAll(string(<-done), "\r\n", "\n")
 	}

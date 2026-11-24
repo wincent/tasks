@@ -87,9 +87,7 @@ func runTerminal(t *testing.T, root string, args ...string) (string, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Close the master first: Darwin may wait for undrained output when the
-	// last slave is closed while its master remains open.
-	defer func() { master.Close(); slave.Close() }()
+	defer testutil.ClosePTY(master, slave)
 	var out bytes.Buffer
 	err = Run(context.Background(), root, args, IO{In: slave, Out: &out, Err: slave})
 	return out.String(), err

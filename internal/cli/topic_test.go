@@ -296,8 +296,7 @@ func TestPiCreatesTopicWithoutMerging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer master.Close()
-	defer slave.Close()
+	defer testutil.ClosePTY(master, slave)
 	var worktree string
 	err = Run(context.Background(), root, []string{"pi", "1"}, IO{In: slave, Out: slave, Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
 		worktree = piWorktree(t, child)
