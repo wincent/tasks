@@ -153,12 +153,19 @@ type Task struct {
 }
 
 // Read locates an explicit task number, including archived records, without
-// requiring valid status. It never follows symlinks or opens special files.
+// requiring valid status. It refuses to resolve missing committed records and
+// never follows symlinks or opens special files.
 func (store *Store) Read(number int) (Task, error) {
-	return store.read(number, true)
+	return store.read(number, true, false)
 }
 
-func (store *Store) read(number int, includeArchived bool) (Task, error) {
+// ReadForDisplay locates an explicit task number, including archived records.
+// A unique working-tree record can be shown even if its committed path is gone.
+func (store *Store) ReadForDisplay(number int) (Task, error) {
+	return store.read(number, true, true)
+}
+
+func (store *Store) read(number int, includeArchived, forDisplay bool) (Task, error) {
 	head, err := store.Head()
 	if err != nil {
 		return Task{}, err
@@ -176,7 +183,7 @@ func (store *Store) read(number int, includeArchived bool) (Task, error) {
 		selected = append(selected, store.matchNumber(entries, number)...)
 	}
 	missing := ""
-	if !store.prospective {
+	if !store.prospective && (!forDisplay || len(selected) == 0) {
 		// A committed record missing locally is not a legacy task with no
 		// record. In particular, cleanup must not fall back to main.
 		for _, dir := range dirs {
@@ -236,8 +243,8 @@ func (store *Store) RelativePath(task Task) string {
 	return path
 }
 
-// ReadLatest reads the highest-numbered unarchived task without requiring
-// valid task status.
+// ReadLatest reads the highest-numbered unarchived task for display without
+// requiring valid task status.
 func (store *Store) ReadLatest() (Task, error) {
 	entries, err := store.entries("", store.revision)
 	if err != nil {
@@ -258,7 +265,7 @@ func (store *Store) ReadLatest() (Task, error) {
 	if latest == 0 {
 		return Task{}, errors.New("no tasks in the shared store")
 	}
-	return store.read(latest, false)
+	return store.read(latest, false, true)
 }
 
 func (store *Store) Scan(includeArchived bool) ([]Task, error) {

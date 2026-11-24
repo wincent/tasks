@@ -27,7 +27,7 @@ Options:
 			if len(a.positional) == 0 {
 				task, err = tasks.ReadLatest()
 			} else {
-				task, err = tasks.Read(a.number())
+				task, err = tasks.ReadForDisplay(a.number())
 			}
 			if err != nil {
 				return err

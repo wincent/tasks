@@ -16,6 +16,30 @@ func TestShowNumberValidation(t *testing.T) {
 	}
 }
 
+func TestShowStagedRename(t *testing.T) {
+	repo, root := fixture(t)
+	run(t, root, "init")
+	metadata := filepath.Join(root, "tasks")
+	const oldName = "EXAMPLE-1 Old title.md"
+	const newName = "EXAMPLE-1 New title.md"
+	const content = "# Example task\n\nStatus: open\n"
+	commitTaskText(t, repo, filepath.Join(metadata, oldName), content)
+	systemGit(t, metadata, "mv", "--", oldName, newName)
+
+	for _, args := range [][]string{{"show", "1"}, {"show"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			if got := run(t, root, args...); got != content {
+				t.Fatalf("got %q, want %q", got, content)
+			}
+		})
+	}
+	const ambiguous = "ambiguous EXAMPLE-1: " + oldName + " is committed but missing"
+	if _, err := cleanupDestination(repo, "EXAMPLE", 1); err == nil || !strings.Contains(err.Error(), ambiguous) {
+		t.Fatalf("cleanup destination: expected %q, got %v", ambiguous, err)
+	}
+	fails(t, root, ambiguous, "comment", "1", "--body", "Must not edit an ambiguous ticket")
+}
+
 func TestShowLatestTask(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, root := fixture(t)
@@ -102,6 +126,7 @@ func TestShowLatestTask(t *testing.T) {
 			}
 			fails(t, root, want, "show")
 			fails(t, root, want, "show", "--raw")
+			fails(t, root, want, "show", "10")
 		})
 	}
 }
