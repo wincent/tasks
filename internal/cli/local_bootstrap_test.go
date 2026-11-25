@@ -56,8 +56,12 @@ func TestInitRequiresExplicitLocalTaskHistory(t *testing.T) {
 	if got := strings.TrimSpace(run(t, root, "init")); got != filepath.Join(root, "tasks") {
 		t.Fatal(got)
 	}
+	const guide = "https://github.com/wincent/tasks/blob/main/docs/usage/getting-started.md"
+	if help := run(t, root, "--help"); !strings.Contains(help, guide) {
+		t.Fatalf("help missing setup guide: %s", help)
+	}
 	help := run(t, root, "init", "--help")
-	for _, fragment := range []string{"existing local tasks branch", "README.md in the github.com/wincent/tasks", "does not fetch, push, or reset"} {
+	for _, fragment := range []string{"existing local tasks branch", guide, "does not fetch, push, or reset"} {
 		if !strings.Contains(help, fragment) {
 			t.Fatalf("help missing %q: %s", fragment, help)
 		}

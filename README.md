@@ -2,8 +2,6 @@
 
 A command-line task tracker that stores tickets on a separate branch in your Git repository.
 
-Architectural decisions are recorded in [docs/adrs/](docs/adrs/).
-
 ## Usage
 
 ### Common commands
@@ -67,76 +65,19 @@ go install github.com/wincent/tasks/cmd/tasks@latest
 
 For the GitHub install, put your Go binary directory (`go env GOBIN`, or `$(go env GOPATH)/bin` if unset) on your `PATH`.
 
-## Set up a consuming repository
+## Documentation
 
-Repository-level settings live in a root `.tasks.yml` committed on `refs/heads/tasks`:
+For users:
 
-```yaml
-prefix: DEMO
-default_target_branch: main # optional; defaults to main
-```
+- [Getting started](docs/usage/getting-started.md): Set up a repository and create your first task.
+- [Configuration](docs/usage/configuration.md): Configure per-repository and global (user) settings.
+- [CHANGES.md](CHANGES.md): Project changelog.
 
-- `prefix` (required): uppercase ASCII letters and digits, starting with a letter, without the dash. If the project already has tasks, keep its existing prefix.
-- `default_target_branch` (optional, defaults to `main`): the local implementation branch used when a task has no `Topic:` header (for example, `master`).
+For developers and their agents:
 
-**If shared task history already exists**, fetch it into a local `tasks` branch. Replace `origin` with the appropriate remote, and skip the fetch if the local branch is already present:
-
-```sh
-git fetch origin refs/heads/tasks:refs/heads/tasks
-tasks init
-```
-
-**Only if starting new, independent task history**, create an empty root commit without changing your checkout or index, run `tasks init` to create the `tasks/` checkout, and commit `tasks/.tasks.yml`. The empty expected old value in `git update-ref` prevents overwriting an existing branch:
-
-```sh
-tree=$(git hash-object -w -t tree --stdin </dev/null) &&
-commit=$(git commit-tree "$tree" -m "chore: initialize task store") &&
-git update-ref refs/heads/tasks "$commit" "" &&
-tasks init &&
-printf 'prefix: DEMO\n' > tasks/.tasks.yml &&
-git -C tasks add .tasks.yml &&
-git -C tasks commit -m "chore: configure tasks"
-```
-
-`tasks init` sets up or validates the local task checkout (and may be run before `.tasks.yml` is committed). It does not fetch, push, or reset the branch. Try `tasks create "First task" --body "Describe the work"` and `tasks --help`.
-
-### Push both branches by default
-
-To make a plain `git push` update both your default target branch (for example, `main`) and `tasks` on `origin`, run these commands once in the consuming repository after both branches exist locally. If Git uses a different remote or `default_target_branch`, replace `origin` or `main` accordingly.
-
-```sh
-git config --local --add remote.origin.push refs/heads/main:refs/heads/main
-git config --local --add remote.origin.push refs/heads/tasks:refs/heads/tasks
-```
-
-## Configuration
-
-Run `tasks config` to display the parsed user configuration from `$XDG_CONFIG_HOME/tasks/config.yml` (when `XDG_CONFIG_HOME` is an absolute path) or `~/.config/tasks/config.yml`. It prints nothing if the file is missing or empty, and exits with an error if it is invalid.
-
-### Model aliases
-
-You can define shorthand model aliases for `--model` (used by `tasks run`, `tasks pi`, and `tasks go`) in `$XDG_CONFIG_HOME/tasks/config.yml` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/tasks/config.yml` otherwise:
-
-```yaml
-models:
-  aliases:
-    sol: openai-codex/gpt-6.2-sol
-    fast: datadog-anthropic/claude-haiku-4-5:low
-```
-
-Then pass an alias name with or without a thinking-level suffix:
-
-```sh
-tasks run 10 --model sol
-tasks run 10 --model sol:high
-tasks run 10 --model fast:high
-```
-
-- Exact alias matches expand directly to the configured target.
-- When passing `<alias>:<thinking>`, if the alias target already ends with a Pi thinking-level suffix (`:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, `:max`), that suffix is replaced by `:<thinking>`; otherwise `:<thinking>` is appended, preserving non-thinking colons in model IDs such as `ollama/llama3:8b`.
-- Lookups are single-step (aliases do not chain to other aliases), and unmatched `--model` values pass through to Pi unchanged.
-- For launch commands, the config file is loaded only when `--model` is supplied to `tasks run`, `tasks pi`, or `tasks go`. A missing file is treated as empty; an unreadable or invalid file fails before mutating task, worktree, or session state.
-- `config.yml` uses a strict UTF-8 YAML subset: space-indented block mappings under `models.aliases`, plain or single/double-quoted keys and scalar values, blank lines, and `#` comments.
+- [Architecture decision records](docs/adrs/): Info on project design decisions.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Instructions for maintainers and contributors.
+- [AGENTS.md](AGENTS.md): Agent-specific instructions.
 
 ## License
 

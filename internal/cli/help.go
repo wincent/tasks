@@ -35,6 +35,8 @@ const promptHelp = "  --prompt TEXT    Append instructions to Pi for this run on
 
 const worktreeHelp = "  --worktree PATH  Select an existing checkout for this task."
 
+const setupGuideURL = "https://github.com/wincent/tasks/blob/main/docs/usage/getting-started.md"
+
 const listingHelp = `In text output, (M) marks modified tasks and (?) marks untracked tasks.
 If any task files are invalid, valid results still appear on standard output.
 Errors go to standard error and the command exits with status 1.`
@@ -72,7 +74,7 @@ func help(subject string, out io.Writer) error {
 			"  -h, --help  Show this help.\n"+
 			"  --version   Print the version and exit.\n\n"+
 			"Use `tasks help COMMAND` or `tasks COMMAND --help` for options.\n"+
-			"For setup, see README.md in the github.com/wincent/tasks source repository.\n")
+			"For repository setup, see:\n  "+setupGuideURL+"\n")
 	}
 	_, err := io.WriteString(out, text.String())
 	return err
