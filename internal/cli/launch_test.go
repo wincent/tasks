@@ -80,7 +80,7 @@ func TestLaunchModelAliases(t *testing.T) {
 	const configYAML = `models:
   aliases:
     sol: openai-codex/gpt-6.2-sol
-    fast: datadog-anthropic/claude-haiku-4-5:low
+    fast: anthropic/claude-haiku-4-5:low
     local: ollama/llama3:8b
     chain: sol
 `
@@ -90,8 +90,8 @@ func TestLaunchModelAliases(t *testing.T) {
 	}{
 		{"sol", "openai-codex/gpt-6.2-sol"},
 		{"sol:high", "openai-codex/gpt-6.2-sol:high"},
-		{"fast", "datadog-anthropic/claude-haiku-4-5:low"},
-		{"fast:high", "datadog-anthropic/claude-haiku-4-5:high"},
+		{"fast", "anthropic/claude-haiku-4-5:low"},
+		{"fast:high", "anthropic/claude-haiku-4-5:high"},
 		{"local:high", "ollama/llama3:8b:high"},
 		{"chain", "sol"},
 		{"chain:high", "sol:high"},

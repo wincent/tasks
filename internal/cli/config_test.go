@@ -54,14 +54,14 @@ func TestParseUserConfigValid(t *testing.T) {
 				"models:",
 				"  aliases:",
 				"    sol: openai-codex/gpt-6.2-sol",
-				"    fast: datadog-anthropic/claude-haiku-4-5:low # inline comment",
+				"    fast: anthropic/claude-haiku-4-5:low # inline comment",
 				"    local: ollama/llama3:8b   ",
 				"    tagged: provider/model#v2 # hash without space is preserved",
 				"",
 			}, "\n"),
 			want: map[string]string{
 				"sol":    "openai-codex/gpt-6.2-sol",
-				"fast":   "datadog-anthropic/claude-haiku-4-5:low",
+				"fast":   "anthropic/claude-haiku-4-5:low",
 				"local":  "ollama/llama3:8b",
 				"tagged": "provider/model#v2",
 			},
@@ -87,18 +87,18 @@ func TestParseUserConfigValid(t *testing.T) {
 		},
 		{
 			name:  "CRLF line endings without trailing newline",
-			input: "models:\r\n  aliases:\r\n    sol: openai-codex/gpt-6.2-sol\r\n    fast: datadog-anthropic/claude-haiku-4-5:low",
+			input: "models:\r\n  aliases:\r\n    sol: openai-codex/gpt-6.2-sol\r\n    fast: anthropic/claude-haiku-4-5:low",
 			want: map[string]string{
 				"sol":  "openai-codex/gpt-6.2-sol",
-				"fast": "datadog-anthropic/claude-haiku-4-5:low",
+				"fast": "anthropic/claude-haiku-4-5:low",
 			},
 		},
 		{
 			name:  "non-2-space consistent indentation",
-			input: "models:\n   aliases:\n        sol: openai-codex/gpt-6.2-sol\n        fast: datadog-anthropic/claude-haiku-4-5:low\n",
+			input: "models:\n   aliases:\n        sol: openai-codex/gpt-6.2-sol\n        fast: anthropic/claude-haiku-4-5:low\n",
 			want: map[string]string{
 				"sol":  "openai-codex/gpt-6.2-sol",
-				"fast": "datadog-anthropic/claude-haiku-4-5:low",
+				"fast": "anthropic/claude-haiku-4-5:low",
 			},
 		},
 	}
@@ -471,7 +471,7 @@ func TestResolveModel(t *testing.T) {
 	cfg := userConfig{
 		modelAliases: map[string]string{
 			"sol":          "openai-codex/gpt-6.2-sol",
-			"fast":         "datadog-anthropic/claude-haiku-4-5:low",
+			"fast":         "anthropic/claude-haiku-4-5:low",
 			"local":        "ollama/llama3:8b",
 			"local-low":    "ollama/llama3:8b:low",
 			"chain":        "sol",
@@ -492,7 +492,7 @@ func TestResolveModel(t *testing.T) {
 	}{
 		// Exact matches
 		{"sol", "openai-codex/gpt-6.2-sol"},
-		{"fast", "datadog-anthropic/claude-haiku-4-5:low"},
+		{"fast", "anthropic/claude-haiku-4-5:low"},
 		{"local", "ollama/llama3:8b"},
 		// Single-step non-chaining
 		{"chain", "sol"},
@@ -502,7 +502,7 @@ func TestResolveModel(t *testing.T) {
 		{"local:high", "ollama/llama3:8b:high"},
 		{"custom-colon:high", "p/m:custom:high"},
 		// Override existing Pi thinking-level suffixes
-		{"fast:high", "datadog-anthropic/claude-haiku-4-5:high"},
+		{"fast:high", "anthropic/claude-haiku-4-5:high"},
 		{"local-low:high", "ollama/llama3:8b:high"},
 		{"level-off:high", "p/m:high"},
 		{"level-min:high", "p/m:high"},
@@ -704,7 +704,7 @@ func TestFormatUserConfig(t *testing.T) {
 		cfg := userConfig{
 			modelAliases: map[string]string{
 				"sol":    "openai-codex/gpt-6.2-sol",
-				"fast":   "datadog-anthropic/claude-haiku-4-5:low",
+				"fast":   "anthropic/claude-haiku-4-5:low",
 				"local":  "ollama/llama3:8b",
 				"tagged": "provider/model#v2",
 			},
@@ -712,7 +712,7 @@ func TestFormatUserConfig(t *testing.T) {
 		want := strings.Join([]string{
 			"models:",
 			"  aliases:",
-			"    fast: datadog-anthropic/claude-haiku-4-5:low",
+			"    fast: anthropic/claude-haiku-4-5:low",
 			"    local: ollama/llama3:8b",
 			"    sol: openai-codex/gpt-6.2-sol",
 			"    tagged: provider/model#v2",
@@ -832,7 +832,7 @@ func TestConfigCommand(t *testing.T) {
 			"\"models\":",
 			"   'aliases':",
 			"        sol: openai-codex/gpt-6.2-sol # comment",
-			"        fast: 'datadog-anthropic/claude-haiku-4-5:low'",
+			"        fast: 'anthropic/claude-haiku-4-5:low'",
 			"        hashed: 'provider/model # literal'",
 		}, "\r\n"))
 
@@ -840,7 +840,7 @@ func TestConfigCommand(t *testing.T) {
 		want := strings.Join([]string{
 			"models:",
 			"  aliases:",
-			"    fast: datadog-anthropic/claude-haiku-4-5:low",
+			"    fast: anthropic/claude-haiku-4-5:low",
 			`    hashed: "provider/model # literal"`,
 			"    sol: openai-codex/gpt-6.2-sol",
 			"",
