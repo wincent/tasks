@@ -1,5 +1,13 @@
 # Changes
 
+## v0.3.0 — 2026-11-25
+
+- feat!: move repository configuration (`.tasks.yml`) from `main` branch to `tasks` branch (users must perform this one-time manual move).
+- feat: add an optional `default_target_branch` setting (defaulting to `main`) to `.tasks.yml` so repositories can target a default branch other than `main`.
+- feat: teach `tasks run`, `tasks go`, and `tasks pi` to accept a `--model` option to override Pi's model (and thinking level) for that launch.
+- feat: support user-defined model aliases under `models.aliases` in `$XDG_CONFIG_HOME/tasks/config.yml` (defaulting to `~/.config/tasks/config.yml`) for use with `--model`, including `:thinking` suffix overrides.
+- feat: add `tasks config` command to display and validate the parsed user configuration.
+
 ## v0.2.0 — 2026-11-24
 
 - feat: teach `tasks create` and `tasks go` to accept a `--topic` option to make subsequent commands operating on the created task target a local topic branch instead of the default (`main`) branch.
