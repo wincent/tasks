@@ -33,7 +33,7 @@ func TestMissingLocalHistoryGuidanceDoesNotCreateTaskState(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer repo.Close()
-	commitMainConfig(t, repo, "prefix: EXAMPLE\n")
+	seedMain(t, repo)
 	for _, key := range []string{"user.name", "user.email"} {
 		if err := repo.SetLocalConfig(key, ""); err != nil {
 			t.Fatal(err)

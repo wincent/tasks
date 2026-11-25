@@ -36,7 +36,7 @@ func TestShowStagedRename(t *testing.T) {
 		})
 	}
 	const ambiguous = "ambiguous EXAMPLE-1: " + oldName + " is committed but missing"
-	if _, err := cleanupDestination(repo, "EXAMPLE", 1); err == nil || !strings.Contains(err.Error(), ambiguous) {
+	if _, err := cleanupDestination(repo, "EXAMPLE", "main", 1); err == nil || !strings.Contains(err.Error(), ambiguous) {
 		t.Fatalf("cleanup destination: expected %q, got %v", ambiguous, err)
 	}
 	fails(t, root, ambiguous, "comment", "1", "--body", "Must not edit an ambiguous ticket")

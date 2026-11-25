@@ -127,7 +127,7 @@ func editorBody(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	return body, nil
 }
 
-func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix store.Prefix, n int, streams IO) (err error) {
+func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix store.Prefix, defaultTarget destination, n int, streams IO) (err error) {
 	session, tasks, err := openForEditor(ctx, repo, prefix)
 	if err != nil {
 		return err
@@ -188,13 +188,13 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 	if _, err := store.Status(string(data)); err != nil {
 		return err
 	}
-	target, err := taskDestination(string(data))
+	target, err := taskDestination(string(data), defaultTarget)
 	if err != nil {
 		return err
 	}
 	previous, err := store.Topic(task.Content)
 	if previous == "" && err == nil {
-		previous = "main"
+		previous = string(defaultTarget)
 	}
 	if err != nil || destination(previous) != target {
 		// Do not hold the lock while the editor runs. Take it before the

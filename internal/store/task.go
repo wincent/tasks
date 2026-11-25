@@ -104,7 +104,7 @@ func ValidTopic(name string) bool {
 }
 
 // Topic reads the optional destination from the task preamble. An empty result
-// means the default, main.
+// means the repository's default target branch.
 func Topic(content string) (string, error) {
 	if hasMergeConflict(content) {
 		return "", errors.New("unresolved merge conflict markers; resolve the task record first")
@@ -121,9 +121,6 @@ func Topic(content string) (string, error) {
 			return "", errors.New("expected at most one Topic: BRANCH line naming a local implementation branch")
 		}
 		topic = name
-	}
-	if topic == "main" {
-		return "", nil
 	}
 	return topic, nil
 }
@@ -185,7 +182,7 @@ func (store *Store) read(number int, includeArchived, forDisplay bool) (Task, er
 	missing := ""
 	if !store.prospective && (!forDisplay || len(selected) == 0) {
 		// A committed record missing locally is not a legacy task with no
-		// record. In particular, cleanup must not fall back to main.
+		// record. In particular, cleanup must not fall back to the default target branch.
 		for _, dir := range dirs {
 			entries, err := store.entries(dir, head.ID)
 			if err != nil {

@@ -13,8 +13,8 @@ func init() {
 		usage:   "NUMBER [--model MODEL] [--prompt TEXT] [--worktree PATH]",
 		summary: "Open a task in interactive Pi without merging.",
 		details: "Requires a terminal and Pi on PATH. Resumes the saved session if available.\n" +
-			"Fresh checkouts start from the recorded topic (local main by default).\n" +
-			"When ready, use `tasks merge NUMBER` to merge committed work.\n\n" +
+			"Fresh checkouts start from the recorded topic (default_target_branch, or main\n" +
+			"by default). When ready, use `tasks merge NUMBER` to merge committed work.\n\n" +
 			"Options:\n" + modelHelp + promptHelp + worktreeHelp,
 		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 			return launchTask(ctx, cwd, repo, a, streams)

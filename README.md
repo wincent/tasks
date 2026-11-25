@@ -69,7 +69,15 @@ For the GitHub install, put your Go binary directory (`go env GOBIN`, or `$(go e
 
 ## Set up a consuming repository
 
-On the consuming repo's local `main` branch, commit a root `.tasks.yml` containing, for example, `prefix: DEMO`. Use uppercase ASCII letters and digits, starting with a letter, and omit the dash. If the project already has tasks, keep its existing prefix.
+Repository-level settings live in a root `.tasks.yml` committed on `refs/heads/tasks`:
+
+```yaml
+prefix: DEMO
+default_target_branch: main # optional; defaults to main
+```
+
+- `prefix` (required): uppercase ASCII letters and digits, starting with a letter, without the dash. If the project already has tasks, keep its existing prefix.
+- `default_target_branch` (optional, defaults to `main`): the local implementation branch used when a task has no `Topic:` header (for example, `master`).
 
 **If shared task history already exists**, fetch it into a local `tasks` branch. Replace `origin` with the appropriate remote, and skip the fetch if the local branch is already present:
 
@@ -78,20 +86,23 @@ git fetch origin refs/heads/tasks:refs/heads/tasks
 tasks init
 ```
 
-**Only if starting new, independent task history**, create an empty root commit without changing your checkout or index. The empty expected old value in `git update-ref` prevents overwriting an existing branch:
+**Only if starting new, independent task history**, create an empty root commit without changing your checkout or index, run `tasks init` to create the `tasks/` checkout, and commit `tasks/.tasks.yml`. The empty expected old value in `git update-ref` prevents overwriting an existing branch:
 
 ```sh
 tree=$(git hash-object -w -t tree --stdin </dev/null) &&
 commit=$(git commit-tree "$tree" -m "chore: initialize task store") &&
 git update-ref refs/heads/tasks "$commit" "" &&
-tasks init
+tasks init &&
+printf 'prefix: DEMO\n' > tasks/.tasks.yml &&
+git -C tasks add .tasks.yml &&
+git -C tasks commit -m "chore: configure tasks"
 ```
 
-`tasks init` sets up or validates the local task checkout. It does not fetch, push, or reset the branch. Try `tasks create "First task" --body "Describe the work"` and `tasks --help`.
+`tasks init` sets up or validates the local task checkout (and may be run before `.tasks.yml` is committed). It does not fetch, push, or reset the branch. Try `tasks create "First task" --body "Describe the work"` and `tasks --help`.
 
 ### Push both branches by default
 
-To make a plain `git push` update both `main` and `tasks` on `origin`, run these commands once in the consuming repository after both branches exist locally. If Git uses a different remote for pushes, replace `origin` with that remote's name.
+To make a plain `git push` update both your default target branch (for example, `main`) and `tasks` on `origin`, run these commands once in the consuming repository after both branches exist locally. If Git uses a different remote or `default_target_branch`, replace `origin` or `main` accordingly.
 
 ```sh
 git config --local --add remote.origin.push refs/heads/main:refs/heads/main

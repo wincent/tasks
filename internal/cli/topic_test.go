@@ -426,7 +426,7 @@ func TestMergeRechecksTopicAfterPreMergeHook(t *testing.T) {
 	if got := fixtureRevision(t, repo, "after"); got != fixtureRevision(t, repo, mainRef) {
 		t.Fatalf("new destination moved: %s", got)
 	}
-	if err := setResultForTopic(context.Background(), repo, "EXAMPLE", 1, "merged", "", "before"); err == nil || !strings.Contains(err.Error(), "topic changed") {
+	if err := setResultForTopic(context.Background(), repo, "EXAMPLE", "main", 1, "merged", "", "before"); err == nil || !strings.Contains(err.Error(), "topic changed") {
 		t.Fatalf("could record merged on a different topic: %v", err)
 	}
 	assertStatus(t, root, "open")
@@ -438,7 +438,7 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 	repo, root := fixture(t)
 	ticket := strings.TrimSpace(run(t, root, "create", "Merge me", "--topic", "before", "--body", "Original"))
 	setRef(t, repo, "refs/heads/before", fixtureRevision(t, repo, mainRef), git.ID{})
-	base, err := destination("before").tip(repo)
+	base, err := destination("before").tip(repo, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := confirmMergeDestination(ctx, repo, "EXAMPLE", 1, "before")
+	metadata, err := confirmMergeDestination(ctx, repo, "EXAMPLE", "main", 1, "before")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestMergePublicationRejectsRawCommitAfterConfirmation(t *testing.T) {
 	if !errors.As(err, &changed) || changed.Name != store.Branch || changed.Expected != metadata {
 		t.Fatalf("expected rejection of stale metadata, got %v", err)
 	}
-	if tip, err := destination("before").tip(repo); err != nil || tip != base {
+	if tip, err := destination("before").tip(repo, "main"); err != nil || tip != base {
 		t.Fatalf("old destination moved: %s, %v", tip, err)
 	}
 }
@@ -497,7 +497,7 @@ func TestRecordingMergeResultRejectsRawCommitAfterRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := requireTaskDestination(task, "before"); err != nil {
+	if err := requireTaskDestination(task, "main", "before"); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.WithStatus(task.Content, "merged")

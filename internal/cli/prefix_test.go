@@ -9,6 +9,7 @@ import (
 
 	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/process"
+	"github.com/wincent/tasks/internal/store"
 )
 
 func TestRepositoryTaskPrefix(t *testing.T) {
@@ -23,9 +24,9 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitMainConfig(t, repo, "# Ticket key\nprefix: 'RUN' # shared by all worktrees\n")
+	commitTasksConfig(t, repo, "# Ticket key\nprefix: 'RUN' # shared by all worktrees\n")
 
-	// The linked checkout still has prefix: EXAMPLE, but uses the config on main.
+	// All worktrees see the committed config on refs/heads/tasks.
 	path := strings.TrimSpace(run(t, stale.Paths.WorkDir, "create", "Configured prefix", "--body", "Example task"))
 	if filepath.Base(path) != "RUN-1 Configured prefix.md" {
 		t.Fatalf("create: %s", path)
@@ -80,51 +81,73 @@ func TestRepositoryTaskPrefix(t *testing.T) {
 	}
 }
 
-func TestTaskConfigRequiresExactLocalMain(t *testing.T) {
+func TestTaskConfigRequiresExactLocalTasksBranch(t *testing.T) {
 	t.Parallel()
 	repo, root := fixture(t)
-	main, err := repo.Reference(mainRef)
+	tasksRef, err := repo.Reference(store.Branch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFixtureLooseRef(t, repo, "refs/tags/refs/heads/main", main.ID)
-	setRef(t, repo, mainRef, git.ID{}, main.ID)
-	if _, _, err := invoke(root, "", "init"); err == nil || !strings.Contains(err.Error(), "read local main for task configuration") {
-		t.Fatalf("missing main with lookalike tag: %v", err)
+	writeFixtureLooseRef(t, repo, "refs/tags/"+store.Branch, tasksRef.ID)
+	setRef(t, repo, store.Branch, git.ID{}, tasksRef.ID)
+	for _, args := range [][]string{{"init"}, {"show", "1"}, {"cleanup"}} {
+		if _, _, err := invoke(root, "", args...); err == nil || !strings.Contains(err.Error(), "local refs/heads/tasks is missing") {
+			t.Fatalf("%v missing tasks with lookalike tag: %v", args, err)
+		}
 	}
-	setRef(t, repo, "refs/heads/other", main.ID, git.ID{})
-	systemGit(t, root, "symbolic-ref", mainRef, "refs/heads/other")
-	if _, _, err := invoke(root, "", "init"); err == nil || !strings.Contains(err.Error(), "local main must be a direct branch") {
-		t.Fatalf("symbolic main: %v", err)
+	setRef(t, repo, "refs/heads/other", tasksRef.ID, git.ID{})
+	systemGit(t, root, "symbolic-ref", store.Branch, "refs/heads/other")
+	for _, args := range [][]string{{"init"}, {"show", "1"}, {"cleanup"}} {
+		if _, _, err := invoke(root, "", args...); err == nil || !strings.Contains(err.Error(), "refs/heads/tasks must be a direct branch") {
+			t.Fatalf("%v symbolic tasks: %v", args, err)
+		}
 	}
 }
 
-func TestTaskConfigIsRequiredOnMain(t *testing.T) {
+func TestTaskConfigIsRequiredOnTasksBranch(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name, config, want string
+		initSucceeds       bool
 	}{
-		{"missing", "", "missing from local main"},
-		{"empty", "# comment only\n", "missing prefix"},
-		{"duplicates", "prefix: EXAMPLE\nprefix: WEB\n", "invalid .tasks.yml"},
-		{"list", "prefix: [EXAMPLE, WEB]\n", "invalid .tasks.yml"},
-		{"invalid characters", "prefix: EXAMPLE-\n", "invalid .tasks.yml"},
-		{"unknown key", "prefix: EXAMPLE\nextra: ignored\n", "invalid .tasks.yml"},
+		{"missing", "", "missing from refs/heads/tasks", true},
+		{"empty", "# comment only\n", "missing prefix", false},
+		{"duplicates", "prefix: EXAMPLE\nprefix: WEB\n", "invalid .tasks.yml", false},
+		{"duplicate target", "prefix: EXAMPLE\ndefault_target_branch: main\ndefault_target_branch: master\n", "invalid .tasks.yml", false},
+		{"list", "prefix: [EXAMPLE, WEB]\n", "invalid .tasks.yml", false},
+		{"invalid characters", "prefix: EXAMPLE-\n", "invalid .tasks.yml", false},
+		{"unknown key", "prefix: EXAMPLE\nextra: ignored\n", "invalid .tasks.yml", false},
+		{"invalid target branch", "prefix: EXAMPLE\ndefault_target_branch: task/foo\n", "invalid .tasks.yml", false},
+		{"tasks target branch", "prefix: EXAMPLE\ndefault_target_branch: tasks\n", "invalid .tasks.yml", false},
+		{"refs target branch", "prefix: EXAMPLE\ndefault_target_branch: refs/heads/main\n", "invalid .tasks.yml", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			repo, root := fixture(t)
-			commitMainConfig(t, repo, tt.config)
-			// A valid but uncommitted file does not rescue the setting on main.
+			commitTasksConfig(t, repo, tt.config)
+			// A valid but uncommitted file in the implementation worktree does
+			// not rescue the committed setting on refs/heads/tasks.
 			writeSafetyFile(t, filepath.Join(root, ".tasks.yml"), "prefix: EXAMPLE\n")
-			for _, args := range [][]string{{"init"}, {"create", "No config", "--body", "fixture"}, {"show", "1"}, {"cleanup"}} {
-				out, _, err := invoke(root, "", args...)
-				if out != "" || err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "commit a root .tasks.yml to local main") {
-					t.Fatalf("%v: out=%q error=%v", args, out, err)
+			if tt.initSucceeds {
+				if out := strings.TrimSpace(run(t, root, "init")); out != filepath.Join(root, "tasks") {
+					t.Fatalf("init without .tasks.yml: %q", out)
+				}
+				// An uncommitted tasks/.tasks.yml also does not rescue the committed setting.
+				writeSafetyFile(t, filepath.Join(root, "tasks", ".tasks.yml"), "prefix: EXAMPLE\n")
+			} else {
+				out, _, err := invoke(root, "", "init")
+				if out != "" || err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "commit a root .tasks.yml to refs/heads/tasks") {
+					t.Fatalf("init: out=%q error=%v", out, err)
+				}
+				if _, err := os.Stat(filepath.Join(root, "tasks")); !os.IsNotExist(err) {
+					t.Fatalf("created task checkout: %v", err)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(root, "tasks")); !os.IsNotExist(err) {
-				t.Fatalf("created task checkout: %v", err)
+			for _, args := range [][]string{{"create", "No config", "--body", "fixture"}, {"show", "1"}, {"cleanup"}} {
+				out, _, err := invoke(root, "", args...)
+				if out != "" || err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "commit a root .tasks.yml to refs/heads/tasks") {
+					t.Fatalf("%v: out=%q error=%v", args, out, err)
+				}
 			}
 			if out := run(t, t.TempDir(), "show", "--help"); !strings.Contains(out, "Usage: tasks show") {
 				t.Fatalf("help: %s", out)

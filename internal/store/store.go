@@ -78,7 +78,7 @@ func openWith(_ *git.Repository, path, originalCommon string, worktrees []git.Wo
 	if !registered {
 		return nil, fmt.Errorf("expected a registered tasks worktree at %s; restore its tasks branch without resetting it", path)
 	}
-	tasks, summary, err := git.OpenCheckout(path, "refs/heads/main")
+	tasks, summary, err := git.OpenCheckout(path, "")
 	if err != nil {
 		return nil, err
 	}
@@ -102,23 +102,36 @@ func openWith(_ *git.Repository, path, originalCommon string, worktrees []git.Wo
 	if head.Branch != Branch || head.ID == (git.ID{}) {
 		return nil, fmt.Errorf("%s must have the committed tasks branch checked out; preserve its edits before switching branches", path)
 	}
-	if summary.RefErr != nil && !git.HasCode(summary.RefErr, git.NotFound) {
-		return nil, summary.RefErr
+	targetBranch, err := targetBranchAt(tasks, head.ID)
+	if err != nil {
+		return nil, err
 	}
-	if summary.RefErr == nil {
-		if summary.Reference.Symbolic != "" {
-			return nil, errors.New("main must be a direct branch to verify task history independence")
-		}
-		bases, err := tasks.MergeBases(head.ID, summary.Reference.ID)
-		if err != nil {
-			return nil, fmt.Errorf("cannot verify task history independence: %w", err)
-		}
-		if len(bases) != 0 {
-			return nil, errors.New("tasks shares implementation history with main; reconcile onto independent orphan history without discarding existing task history")
-		}
+	if err := checkHistoryIndependence(tasks, head.ID, targetBranch); err != nil {
+		return nil, err
 	}
 	ok = true
 	return &Store{Path: path, Repository: tasks, Paths: summary.Paths}, nil
+}
+
+func checkHistoryIndependence(repo *git.Repository, tasksID git.ID, targetBranch string) error {
+	ref, err := repo.Reference("refs/heads/" + targetBranch)
+	if git.HasCode(err, git.NotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if ref.Symbolic != "" {
+		return fmt.Errorf("%s must be a direct branch to verify task history independence", targetBranch)
+	}
+	bases, err := repo.MergeBases(tasksID, ref.ID)
+	if err != nil {
+		return fmt.Errorf("cannot verify task history independence: %w", err)
+	}
+	if len(bases) != 0 {
+		return fmt.Errorf("tasks shares implementation history with %s; reconcile onto independent orphan history without discarding existing task history", targetBranch)
+	}
+	return nil
 }
 
 func (store *Store) Close() {

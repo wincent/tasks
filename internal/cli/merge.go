@@ -22,8 +22,9 @@ func init() {
 		usage:   "[NUMBER] [--worktree PATH]",
 		summary: "Merge into the recorded topic without pushing.",
 		details: `Omit NUMBER when running from the task branch. The task checkout must
-be clean. The destination defaults to local main. After merging, the command
-removes the checkout if it is safe.
+be clean. The destination defaults to the configured default_target_branch
+(local main by default). After merging, the command removes the checkout if
+it is safe.
 
 If there is a conflict, merge the destination into the task branch, resolve
 and commit there, then retry this command.
@@ -64,12 +65,12 @@ func mergeTask(ctx context.Context, cwd string, repo *git.Repository, a argument
 		return err
 	}
 	defer lock.Close()
-	return mergeWork(ctx, repo, directory, cwd, prefix, n, a.value("--worktree"), "", streams)
+	return mergeWork(ctx, repo, directory, cwd, prefix, a.defaultTarget, n, a.value("--worktree"), "", streams)
 }
 
 // The caller holds the task lock. Only the local merge (not the agent or
 // development checks) needs serialization against other branch updates.
-func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string, prefix store.Prefix, n int, selected string, launchedTarget destination, streams IO) error {
+func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string, prefix store.Prefix, defaultTarget destination, n int, selected string, launchedTarget destination, streams IO) error {
 	task, err := readTask(ctx, repo, prefix, n)
 	if err != nil {
 		return err
@@ -77,7 +78,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	if _, err := store.Status(task.Content); err != nil {
 		return err
 	}
-	target, err := taskDestination(task.Content)
+	target, err := taskDestination(task.Content, defaultTarget)
 	if err != nil {
 		return fmt.Errorf("%s: %w", task.ID(), err)
 	}
@@ -101,7 +102,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			return fmt.Errorf("no implementation branch for %s; use `tasks run %d`", task.ID(), n)
 		}
 	}
-	if _, err := confirmMergeDestination(ctx, repo, prefix, n, target); err != nil {
+	if _, err := confirmMergeDestination(ctx, repo, prefix, defaultTarget, n, target); err != nil {
 		return err
 	}
 
@@ -110,7 +111,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 		return err
 	}
 	defer lock.Close()
-	base, err := target.tip(repo)
+	base, err := target.tip(repo, defaultTarget)
 	if err != nil {
 		return err
 	}
@@ -121,7 +122,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	if !already {
 		p := streams.presentation(streams.Err)
 		p.printTaskHeadline(task, "🔄", p.paint("Merging", "1;36")+" ", fmt.Sprintf(" into local %s...", target))
-		if err := publishMerge(ctx, repo, source, task, prefix, target, base, streams); err != nil {
+		if err := publishMerge(ctx, repo, source, task, prefix, defaultTarget, target, base, streams); err != nil {
 			if saved == nil || (source.Paths.WorkDir != "" && source.Paths.WorkDir != saved.Worktree) {
 				saved = &taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}
 			}
@@ -132,7 +133,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 				resume = errors.Join(resume, writeTaskSession(directory, n, *saved))
 			}
 			if ctx.Err() == nil {
-				resume = errors.Join(resume, setResultForTopic(ctx, repo, prefix, n, "blocked", "", target))
+				resume = errors.Join(resume, setResultForTopic(ctx, repo, prefix, defaultTarget, n, "blocked", "", target))
 			}
 			return resume
 		}
@@ -141,7 +142,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 
 	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := setResultForTopic(finish, repo, prefix, n, "merged", "", target); err != nil {
+	if err := setResultForTopic(finish, repo, prefix, defaultTarget, n, "merged", "", target); err != nil {
 		return fmt.Errorf("%s is in local %s, but recording the result failed; rerun `tasks merge %d`: %w", task.ID(), target, n, err)
 	}
 	if saved != nil && (saved.Branch == "" || saved.Branch == source.Head.Branch) {
@@ -156,12 +157,12 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 		fmt.Fprintf(streams.Out, "Session: %s\n", saved.SessionFile)
 	}
 	if source.Paths.WorkDir != "" {
-		cleanup, err := cleanupDestination(repo, prefix, n)
+		cleanup, err := cleanupDestination(repo, prefix, defaultTarget, n)
 		if err == nil {
 			if cleanup.destination != target {
 				err = fmt.Errorf("topic changed from %q to %q; review and retry", target, cleanup.destination)
 			} else {
-				err = cleanMerged(repo, source, cwd, prefix, cleanup, true)
+				err = cleanMerged(repo, source, cwd, prefix, defaultTarget, cleanup, true)
 			}
 		}
 		if err != nil {
@@ -171,7 +172,7 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	return nil
 }
 
-func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, target destination) (git.ID, error) {
+func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix store.Prefix, defaultTarget destination, n int, target destination) (git.ID, error) {
 	var confirmed git.ID
 	err := withMetadata(ctx, repo, func(session *store.Session) error {
 		tasks, err := session.Preview(prefix)
@@ -187,7 +188,7 @@ func confirmMergeDestination(ctx context.Context, repo *git.Repository, prefix s
 		if err != nil {
 			return err
 		}
-		if err := requireTaskDestination(task, target); err != nil {
+		if err := requireTaskDestination(task, defaultTarget, target); err != nil {
 			return err
 		}
 		if err := tasks.RequireClean(tasks.RelativePath(task)); err != nil {
@@ -212,7 +213,7 @@ func prepareMergePublication(repo *git.Repository, target destination, merged, b
 	}, actor, "task merge")
 }
 
-func publishMerge(ctx context.Context, repo *git.Repository, source checkout, task store.Task, prefix store.Prefix, target destination, base git.ID, streams IO) error {
+func publishMerge(ctx context.Context, repo *git.Repository, source checkout, task store.Task, prefix store.Prefix, defaultTarget, target destination, base git.ID, streams IO) error {
 	if err := unchangedSource(source); err != nil {
 		return err
 	}
@@ -306,7 +307,7 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 	}
 	// Hooks and validators can take time or use Git directly. Check the
 	// record again before publishing, even though tasks edit takes our lock.
-	metadata, err := confirmMergeDestination(ctx, repo, prefix, task.Number, target)
+	metadata, err := confirmMergeDestination(ctx, repo, prefix, defaultTarget, task.Number, target)
 	if err != nil {
 		return err
 	}

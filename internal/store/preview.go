@@ -71,23 +71,14 @@ func inspectWith(repo *git.Repository, path, originalCommon string, trees []git.
 	if git.HasCode(err, git.NotFound) {
 		return nil, ErrMissingLocalHistory
 	} else if ref.Symbolic != "" {
-		return nil, errors.New("tasks must be a direct branch")
+		return nil, fmt.Errorf("%s must be a direct branch", Branch)
 	}
-	main, err := repo.Reference("refs/heads/main")
-	if err != nil && !git.HasCode(err, git.NotFound) {
+	targetBranch, err := targetBranchAt(repo, ref.ID)
+	if err != nil {
 		return nil, err
 	}
-	if err == nil {
-		if main.Symbolic != "" {
-			return nil, errors.New("main must be a direct branch to verify task history independence")
-		}
-		bases, err := repo.MergeBases(ref.ID, main.ID)
-		if err != nil {
-			return nil, fmt.Errorf("cannot verify task history independence: %w", err)
-		}
-		if len(bases) != 0 {
-			return nil, errors.New("tasks shares implementation history with main; reconcile onto independent orphan history without discarding existing task history")
-		}
+	if err := checkHistoryIndependence(repo, ref.ID, targetBranch); err != nil {
+		return nil, err
 	}
 
 	return &Store{Path: path, Repository: repo, prospective: true, revision: ref.ID}, nil

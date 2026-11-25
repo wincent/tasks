@@ -85,7 +85,7 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer lock.Close()
-			target, err := cleanupDestination(repo, "EXAMPLE", 1)
+			target, err := cleanupDestination(repo, "EXAMPLE", "main", 1)
 			if err != nil || target.destination != "before" {
 				t.Fatalf("expected old topic, got %q: %v", target.destination, err)
 			}
@@ -94,9 +94,9 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 			writeSafetyFile(t, ticket, strings.Replace(string(uiBytes(t, ticket)), "Topic: before\n", "Topic: after\n", 1))
 			systemGit(t, filepath.Dir(ticket), "commit", "-am", "retarget task")
 			if removal == "worktree" {
-				err = cleanMerged(repo, entry, root, "EXAMPLE", target, true)
+				err = cleanMerged(repo, entry, root, "EXAMPLE", "main", target, true)
 			} else {
-				err = cleanMergedBranch(repo, refName, ref, nil, "EXAMPLE", target, true)
+				err = cleanMergedBranch(repo, refName, ref, nil, "EXAMPLE", "main", target, true)
 			}
 			var changed *git.ChangedError
 			if !errors.As(err, &changed) || changed.Name != store.Branch || changed.Expected != target.metadata {

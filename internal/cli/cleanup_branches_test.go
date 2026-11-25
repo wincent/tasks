@@ -8,13 +8,12 @@ import (
 	"testing"
 
 	"github.com/wincent/tasks/internal/git"
-	"github.com/wincent/tasks/internal/store"
 )
 
 func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	t.Parallel()
 	repo, root := fixture(t)
-	commitMainConfig(t, repo, "prefix: DEV\n")
+	commitTasksConfig(t, repo, "prefix: DEV\n")
 	base := fixtureRevision(t, repo, mainRef)
 	for _, name := range []string{"task/dev-7-first", "task/dev-7-second", "task/dev-70", "task/example-7", "other"} {
 		setRef(t, repo, "refs/heads/"+name, base, git.ID{})
@@ -56,60 +55,6 @@ func TestCleanupBranchesDefaultsToLocalMainWithoutTaskRecords(t *testing.T) {
 	}
 	if out := run(t, root, "cleanup"); !strings.Contains(out, "Would remove branch task/dev-70\n") || strings.Contains(out, "task/example-7") {
 		t.Fatal(out)
-	}
-}
-
-func TestCleanupLegacyRepositoryWithoutTaskStore(t *testing.T) {
-	t.Parallel()
-	for _, mode := range []string{"absent", "configured remote", "tracking ref", "previous store", "obstructed checkout"} {
-		t.Run(mode, func(t *testing.T) {
-			t.Parallel()
-			repo, root := fixture(t)
-			const branch = "task/example-7"
-			storePath := filepath.Join(root, "tasks")
-			switch mode {
-			case "configured remote":
-				// A remote restricted to main may still have task history.
-				setFixtureConfig(t, repo, "remote.origin.url", "https://example.invalid/repo.git")
-				setFixtureConfig(t, repo, "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
-			case "tracking ref":
-				writeFixtureLooseRef(t, repo, "refs/remotes/old/tasks", fixtureRevision(t, repo, store.Branch))
-			case "previous store":
-				run(t, root, "init")
-				systemGit(t, root, "worktree", "remove", storePath)
-			case "obstructed checkout":
-				writeSafetyFile(t, storePath, "not a tasks checkout\n")
-			}
-			// Git branch deletion also removes the reflog, which cleanup treats
-			// as evidence of prior task history when the branch is absent.
-			systemGit(t, root, "branch", "-D", "tasks")
-			setRef(t, repo, "refs/heads/"+branch, fixtureRevision(t, repo, mainRef), git.ID{})
-
-			for _, apply := range []bool{false, true} {
-				args := []string{"cleanup", "7"}
-				want := "Keep branch " + branch
-				if !apply && mode == "absent" {
-					want = "Would remove branch " + branch
-				}
-				if apply {
-					args = append(args, "--apply")
-					if mode == "absent" {
-						want = "Removed branch " + branch
-					}
-				}
-				if out := run(t, root, args...); !strings.Contains(out, want) {
-					t.Fatalf("%v: want %q, got %s", args, want, out)
-				}
-				_, err := repo.Reference("refs/heads/" + branch)
-				if apply && mode == "absent" {
-					if !git.HasCode(err, git.NotFound) {
-						t.Fatalf("expected branch removal: %v", err)
-					}
-				} else if err != nil {
-					t.Fatalf("lost branch: %v", err)
-				}
-			}
-		})
 	}
 }
 
@@ -313,12 +258,12 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 	}
 	tip := commitImplementation(t, root, "main.txt", "another merged commit\n")
 	setRef(t, repo, name, tip, ref.ID)
-	target, err := cleanupDestination(repo, "EXAMPLE", 7)
+	target, err := cleanupDestination(repo, "EXAMPLE", "main", 7)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var changed *git.ChangedError
-	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", target, true); !errors.As(err, &changed) {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", target, true); !errors.As(err, &changed) {
 		t.Fatalf("expected changed ref error, got %v", err)
 	}
 	ref, err = repo.Reference(name)
@@ -326,7 +271,7 @@ func TestCleanupBranchRechecksRefAndCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemGit(t, root, "worktree", "add", filepath.Join(t.TempDir(), "new"), "task/example-7")
-	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", target, true); err == nil || !strings.Contains(err.Error(), "still checked out") {
+	if err := cleanMergedBranch(repo, name, ref, nil, "EXAMPLE", "main", target, true); err == nil || !strings.Contains(err.Error(), "still checked out") {
 		t.Fatalf("expected refusal with new checkout, got %v", err)
 	}
 	if actual, err := repo.Reference(name); err != nil || actual != ref {

@@ -32,6 +32,8 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
+const mainRef = "refs/heads/main"
+
 func fixture(t *testing.T) (*git.Repository, string) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -49,53 +51,87 @@ func fixture(t *testing.T) (*git.Repository, string) {
 			t.Fatal(err)
 		}
 	}
-	commitMainConfig(t, repo, "prefix: EXAMPLE\n")
+	seedMain(t, repo)
 	seedLocalTasks(t, repo)
 	return repo, root
 }
 
-// An empty config string means no file (or removal from an existing tree).
-func commitMainConfig(t *testing.T, repo *git.Repository, config string) git.ID {
+func seedMain(t *testing.T, repo *git.Repository) git.ID {
 	t.Helper()
-	base, err := repo.ResolveCommit(mainRef)
+	if err := repo.SetHead(mainRef); err != nil {
+		t.Fatal(err)
+	}
+	who := git.Signature{Name: "Task Test", Email: "task@example.invalid", When: time.Unix(1700000000, 0)}
+	empty, err := repo.WriteTree(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := repo.WriteCommit(empty, nil, who, who, "initial\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Checkout(base, base); err != nil {
+		t.Fatal(err)
+	}
+	setRef(t, repo, mainRef, base, git.ID{})
+	return base
+}
+
+// An empty config string means no file (or removal from an existing tree).
+func commitTasksConfig(t *testing.T, repo *git.Repository, config string) git.ID {
+	t.Helper()
+	base, err := repo.ResolveCommit(store.Branch)
 	if err != nil && !git.HasCode(err, git.NotFound) {
 		t.Fatal(err)
 	}
 	who := git.Signature{Name: "Task Test", Email: "task@example.invalid", When: time.Unix(1700000000, 0)}
+	var tree git.ID
+	var parents []git.ID
 	if base == (git.ID{}) {
-		if err := repo.SetHead(mainRef); err != nil {
-			t.Fatal(err)
+		var entries []git.TreeEntry
+		if config != "" {
+			blob, err := repo.WriteBlob([]byte(config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries = []git.TreeEntry{{Name: ".tasks.yml", ID: blob, Mode: 0100644}}
 		}
-		empty, err := repo.WriteTree(nil)
+		tree, err = repo.WriteTree(entries)
 		if err != nil {
 			t.Fatal(err)
 		}
-		base, err = repo.WriteCommit(empty, nil, who, who, "initial\n")
+	} else {
+		edit := git.TreeEdit{Path: ".tasks.yml"}
+		if config != "" {
+			edit.ID, err = repo.WriteBlob([]byte(config))
+			if err != nil {
+				t.Fatal(err)
+			}
+			edit.Mode = 0100644
+		}
+		tree, err = repo.EditTree(base, []git.TreeEdit{edit})
 		if err != nil {
 			t.Fatal(err)
 		}
-		setRef(t, repo, mainRef, base, git.ID{})
+		parents = []git.ID{base}
 	}
-	edit := git.TreeEdit{Path: ".tasks.yml"}
-	if config != "" {
-		edit.ID, err = repo.WriteBlob([]byte(config))
-		if err != nil {
-			t.Fatal(err)
-		}
-		edit.Mode = 0100644
-	}
-	tree, err := repo.EditTree(base, []git.TreeEdit{edit})
+	id, err := repo.WriteCommit(tree, parents, who, who, "tasks config\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := repo.WriteCommit(tree, []git.ID{base}, who, who, "main\n")
-	if err != nil {
-		t.Fatal(err)
+	if location, locErr := store.Location(repo); locErr == nil {
+		if _, statErr := os.Stat(location); statErr == nil && base != (git.ID{}) {
+			tasksRepo, openErr := git.Open(location)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			defer tasksRepo.Close()
+			if err := tasksRepo.Checkout(base, id); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
-	if err := repo.Checkout(base, id); err != nil {
-		t.Fatal(err)
-	}
-	setRef(t, repo, mainRef, id, base)
+	setRef(t, repo, store.Branch, id, base)
 	return id
 }
 

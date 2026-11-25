@@ -19,7 +19,8 @@ Leave the draft empty to cancel.`
 const topicUsage = "[--topic BRANCH]"
 
 const topicHelp = "  --topic BRANCH    Record a local branch to start from and merge into.\n" +
-	"                    If missing, create it from local main on first launch."
+	"                    If missing, create it from the default target branch on\n" +
+	"                    first launch."
 
 const modelHelp = "  --model MODEL    Override Pi's model for this launch, including on resume.\n" +
 	"                   Uses Pi syntax (e.g. openai-codex/gpt-6.2-sol:high) or an\n" +
@@ -59,13 +60,14 @@ func help(subject string, out io.Writer) error {
 		for _, spec := range commands.visible() {
 			fmt.Fprintf(&text, "  %-10s %s\n", spec.name, spec.summary)
 		}
-		fmt.Fprint(&text, "\nWithout a command, show recent tasks. Use 123 or PREFIX-123. The prefix\n"+
-			"comes from .tasks.yml on local main.\n\n"+
+		fmt.Fprint(&text, "\nWithout a command, show recent tasks. Use 123 or PREFIX-123. Repository\n"+
+			"settings (prefix and optional default_target_branch, defaulting to main)\n"+
+			"come from .tasks.yml on refs/heads/tasks.\n\n"+
 			"For a quick task, use `tasks go \"Task title\"` to create and run it.\n"+
 			"To write a description first, use `tasks create \"Task title\"`, then\n"+
 			"`tasks run NUMBER`. To review before merging, use `tasks run NUMBER --no-merge`,\n"+
 			"then use `tasks merge NUMBER` when ready.\n"+
-			"Use `--topic BRANCH` with create or go to target a branch other than main.\n\n"+
+			"Use `--topic BRANCH` with create or go to target another branch.\n\n"+
 			"Options:\n"+
 			"  -h, --help  Show this help.\n"+
 			"  --version   Print the version and exit.\n\n"+

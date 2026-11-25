@@ -55,13 +55,13 @@ func readTask(ctx context.Context, repo *git.Repository, prefix store.Prefix, n 
 	return task, err
 }
 
-func setResult(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, status, note string) error {
-	return setResultForTopic(ctx, repo, prefix, n, status, note, "")
+func setResult(ctx context.Context, repo *git.Repository, prefix store.Prefix, defaultTarget destination, n int, status, note string) error {
+	return setResultForTopic(ctx, repo, prefix, defaultTarget, n, status, note, "")
 }
 
-func setResultForTopic(ctx context.Context, repo *git.Repository, prefix store.Prefix, n int, status, note string, topic destination) error {
+func setResultForTopic(ctx context.Context, repo *git.Repository, prefix store.Prefix, defaultTarget destination, n int, status, note string, topic destination) error {
 	return withMetadata(ctx, repo, func(session *store.Session) error {
-		_, err := updateTask(session, prefix, n, status, "Run result", note, "record "+status+" for", topic)
+		_, err := updateTask(session, prefix, defaultTarget, n, status, "Run result", note, "record "+status+" for", topic)
 		return err
 	})
 }
@@ -82,7 +82,7 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 }
 
 func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, a arguments, model string, hasModel bool, streams IO) error {
-	prefix, n := a.prefix, a.number()
+	prefix, defaultTarget, n := a.prefix, a.defaultTarget, a.number()
 	interactive := a.action == "pi"
 	if err := store.RequireLocalHistory(repo); err != nil {
 		return err
@@ -107,7 +107,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 	if err != nil {
 		return err
 	}
-	target, err := taskDestination(task.Content)
+	target, err := taskDestination(task.Content, defaultTarget)
 	if err != nil {
 		return fmt.Errorf("%s: %w", task.ID(), err)
 	}
@@ -135,7 +135,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 		}
 	}
 	fresh := source.Paths.WorkDir == "" && previous.Branch == "" && saved == nil
-	base, err := launchDestination(ctx, repo, directory, target, fresh)
+	base, err := launchDestination(ctx, repo, directory, target, defaultTarget, fresh)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 			return err
 		}
 		if err := checkoutHook(ctx, source, base, streams); err != nil {
-			return launchBlocked(repo, directory, prefix, n, taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}, err)
+			return launchBlocked(repo, directory, prefix, defaultTarget, n, taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}, err)
 		}
 	}
 	root := source.Paths.WorkDir
@@ -195,11 +195,11 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 		return err
 	}
 	defer live.Close()
-	if err := setResult(ctx, repo, prefix, n, "active", ""); err != nil {
+	if err := setResult(ctx, repo, prefix, defaultTarget, n, "active", ""); err != nil {
 		return err
 	}
 	if err := writeTaskSession(directory, n, record); err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 
 	diagnostics := streams.presentation(streams.Err)
@@ -230,52 +230,52 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 	runLock.Release()
 	switch {
 	case ctx.Err() != nil:
-		return launchBlocked(repo, directory, prefix, n, record, fmt.Errorf("Pi interrupted: %w", ctx.Err()))
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, fmt.Errorf("Pi interrupted: %w", ctx.Err()))
 	case result.Code != 0 || result.Err != nil:
-		return launchBlocked(repo, directory, prefix, n, record, &exitError{Code: result.Code, Err: result.Err})
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, &exitError{Code: result.Code, Err: result.Err})
 	case progress.failure != "":
-		return launchBlocked(repo, directory, prefix, n, record, errors.New(progress.failure))
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, errors.New(progress.failure))
 	case needsAttention(progress.summary):
-		return launchBlocked(repo, directory, prefix, n, record, errors.New(progress.summary))
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, errors.New(progress.summary))
 	}
 
 	opened, err := openCheckout(source)
 	if err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 	defer opened.Close()
 	head, err := opened.Head()
 	if err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 	if head.Branch != source.Head.Branch {
-		return launchBlocked(repo, directory, prefix, n, record, errors.New("Pi changed the task branch; switch back to the task branch and inspect the checkout"))
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, errors.New("Pi changed the task branch; switch back to the task branch and inspect the checkout"))
 	}
 	record.Revision, record.Summary = head.ID.String(), shortResult(progress.summary)
 	if err := requireClean(opened); err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 	if err := writeTaskSession(directory, n, record); err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
-	base, err = target.tip(repo)
+	base, err = target.tip(repo, defaultTarget)
 	if err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 	included, err := repo.IsAncestor(head.ID, base)
 	if err != nil {
-		return launchBlocked(repo, directory, prefix, n, record, err)
+		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}
 	p := streams.presentation(streams.Out)
 	if included && head.ID == source.Head.ID {
 		if interactive && (task.Status == "open" || task.Status == "blocked" || task.Status == "active") {
-			return launchBlocked(repo, directory, prefix, n, record, errors.New("Pi exited without implementation commits; run again to continue, or close if no changes are needed"))
+			return launchBlocked(repo, directory, prefix, defaultTarget, n, record, errors.New("Pi exited without implementation commits; run again to continue, or close if no changes are needed"))
 		}
 		note := record.Summary
 		if note == "" {
 			note = "Pi exited successfully without new implementation changes."
 		}
-		if err := setResult(ctx, repo, prefix, n, "closed", note); err != nil {
+		if err := setResult(ctx, repo, prefix, defaultTarget, n, "closed", note); err != nil {
 			return err
 		}
 		p.printTaskHeadline(task, "✅", "", " "+p.paint("closed without changes", "1;32")+".")
@@ -283,22 +283,22 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 		return nil
 	}
 	if interactive || a.flags["--no-merge"] {
-		if err := setResult(ctx, repo, prefix, n, "done", ""); err != nil {
+		if err := setResult(ctx, repo, prefix, defaultTarget, n, "done", ""); err != nil {
 			return err
 		}
 		p.printTaskHeadline(task, "✅", "", " "+p.paint("ready for review", "1;32")+".")
 		fmt.Fprintf(streams.Out, "Checkout: %s; session: %s\n", root, record.SessionFile)
 		return nil
 	}
-	return mergeWork(ctx, repo, directory, cwd, prefix, n, root, target, streams)
+	return mergeWork(ctx, repo, directory, cwd, prefix, defaultTarget, n, root, target, streams)
 }
 
-func launchBlocked(repo *git.Repository, directory string, prefix store.Prefix, n int, record taskSession, cause error) error {
+func launchBlocked(repo *git.Repository, directory string, prefix store.Prefix, defaultTarget destination, n int, record taskSession, cause error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	record.Reason = shortResult(cause.Error())
 	return errors.Join(fmt.Errorf("%s needs attention: %w\nCheckout: %s; session: %s\nContinue with `tasks run %d`", prefix.ID(n), cause, record.Worktree, record.SessionFile, n),
-		writeTaskSession(directory, n, record), setResult(ctx, repo, prefix, n, "blocked", ""))
+		writeTaskSession(directory, n, record), setResult(ctx, repo, prefix, defaultTarget, n, "blocked", ""))
 }
 
 func checkoutHook(ctx context.Context, source checkout, base git.ID, streams IO) error {

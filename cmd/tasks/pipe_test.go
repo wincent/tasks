@@ -22,7 +22,7 @@ func TestExecutableTailClosedPipeExitsNormally(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer repo.Close()
-	seedMainConfig(t, repo)
+	seedMain(t, repo)
 	seedLocalTaskHistory(t, repo)
 	for key, value := range map[string]string{"user.name": "Fixture", "user.email": "fixture@example.invalid"} {
 		if err := repo.SetLocalConfig(key, value); err != nil {

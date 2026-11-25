@@ -15,8 +15,9 @@ func init() {
 		summary: "Run Pi non-interactively and merge into the recorded topic.",
 		details: "Uses a separate checkout and resumes the saved Pi session when available.\n" +
 			"If interrupted, run the same task again to continue. Pi must be on PATH.\n" +
-			"Fresh checkouts start from the recorded topic (local main by default).\n" +
-			"A successful run merges clean, committed work there without pushing.\n\n" +
+			"Fresh checkouts start from the recorded topic (default_target_branch, or main\n" +
+			"by default). A successful run merges clean, committed work there without\n" +
+			"pushing.\n\n" +
 			"Options:\n" + modelHelp +
 			"  --no-merge       Keep the work for review. Use `tasks merge NUMBER` later.\n" +
 			promptHelp +

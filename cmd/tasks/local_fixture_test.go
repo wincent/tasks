@@ -7,17 +7,9 @@ import (
 	"github.com/wincent/tasks/internal/git"
 )
 
-func seedMainConfig(t *testing.T, repo *git.Repository) {
+func seedMain(t *testing.T, repo *git.Repository) {
 	t.Helper()
 	if err := repo.SetHead("refs/heads/main"); err != nil {
-		t.Fatal(err)
-	}
-	blob, err := repo.WriteBlob([]byte("prefix: EXAMPLE\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, err := repo.WriteTree([]git.TreeEntry{{Name: ".tasks.yml", ID: blob, Mode: 0100644}})
-	if err != nil {
 		t.Fatal(err)
 	}
 	who := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(1, 0)}
@@ -29,14 +21,10 @@ func seedMainConfig(t *testing.T, repo *git.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commit, err := repo.WriteCommit(tree, []git.ID{base}, who, who, "fixture: task configuration\n")
-	if err != nil {
+	if err := repo.Checkout(base, base); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Checkout(base, commit); err != nil {
-		t.Fatal(err)
-	}
-	tx, err := repo.Prepare("refs/heads/main", commit, map[string]git.ID{"refs/heads/main": {}}, who, "fixture task configuration")
+	tx, err := repo.Prepare("refs/heads/main", base, map[string]git.ID{"refs/heads/main": {}}, who, "fixture main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +36,11 @@ func seedMainConfig(t *testing.T, repo *git.Repository) {
 
 func seedLocalTaskHistory(t *testing.T, repo *git.Repository) {
 	t.Helper()
-	tree, err := repo.WriteTree(nil)
+	blob, err := repo.WriteBlob([]byte("prefix: EXAMPLE\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := repo.WriteTree([]git.TreeEntry{{Name: ".tasks.yml", ID: blob, Mode: 0100644}})
 	if err != nil {
 		t.Fatal(err)
 	}

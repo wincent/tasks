@@ -31,14 +31,15 @@ type taskArgument struct {
 }
 
 type arguments struct {
-	action     string
-	correction commandCorrection
-	positional []string
-	values     map[string][]string
-	flags      map[string]bool
-	prefix     store.Prefix
-	tasks      []taskArgument
-	query      *query.Expression
+	action        string
+	correction    commandCorrection
+	positional    []string
+	values        map[string][]string
+	flags         map[string]bool
+	prefix        store.Prefix
+	defaultTarget destination
+	tasks         []taskArgument
+	query         *query.Expression
 }
 
 // Match the prior argument parser's negative-number positional handling;
@@ -224,10 +225,15 @@ func Run(ctx context.Context, cwd string, args []string, streams IO) (err error)
 		return err
 	}
 	defer repo.Close()
-	a.prefix, err = store.LoadPrefix(repo)
+	if a.action == "init" {
+		return run(ctx, cwd, repo, a, streams)
+	}
+	cfg, err := store.LoadConfig(repo)
 	if err != nil {
 		return err
 	}
+	a.prefix = cfg.Prefix
+	a.defaultTarget = destination(cfg.DefaultTargetBranch)
 	seen := make(map[int]bool, len(a.tasks))
 	for _, task := range a.tasks {
 		id := a.prefix.ID(task.number)
