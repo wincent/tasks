@@ -1,6 +1,6 @@
 # TASKS-65: Move .tasks.yml to tasks branch and add default_target_branch setting
 
-Status: open
+Status: active
 
 ## Description
 
