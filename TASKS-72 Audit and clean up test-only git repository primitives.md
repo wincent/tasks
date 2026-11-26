@@ -1,6 +1,6 @@
 # TASKS-72: Audit and clean up test-only git repository primitives
 
-Status: blocked
+Status: merged
 
 ## Description
 
