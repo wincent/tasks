@@ -67,13 +67,13 @@ For the GitHub install, put your Go binary directory (`go env GOBIN`, or `$(go e
 
 ## Documentation
 
-For users:
+For users of `tasks`:
 
 - [Getting started](docs/usage/getting-started.md): Set up a repository and create your first task.
 - [Configuration](docs/usage/configuration.md): Configure per-repository and global (user) settings.
 - [CHANGES.md](CHANGES.md): Project changelog.
 
-For developers and their agents:
+For developers and their agents working on `tasks` itself:
 
 - [Architecture decision records](docs/adrs/): Info on project design decisions.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Instructions for maintainers and contributors.
