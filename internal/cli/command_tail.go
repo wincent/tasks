@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/wincent/tasks/internal/store"
@@ -13,17 +14,53 @@ import (
 
 func init() {
 	commands.register(commandSpec{
-		name: "tail", autoCorrect: allowCorrection, min: 1, max: 1, numbered: true,
-		usage:   "NUMBER",
+		name: "tail", autoCorrect: allowCorrection, min: 0, max: 1, numbered: true,
+		usage:   "[NUMBER]",
 		summary: "Follow a task's saved Pi session.",
-		details: `Works after the task finishes. Press Ctrl-C to stop viewing without
-interrupting the task.`,
+		details: `Omit NUMBER to follow the only active task. Works after the task finishes.
+Press Ctrl-C to stop viewing without interrupting the task.`,
 		run: withTasks(tailTask),
 	})
 }
 
+func inferActiveTask(directory string, tasks *store.Store) (int, error) {
+	scanned, err := tasks.Scan(false)
+	if err != nil {
+		return 0, fmt.Errorf("cannot infer active task; use `tasks tail NUMBER`: %w", err)
+	}
+	var active []store.Task
+	for _, task := range scanned {
+		activity, _, err := describeActivity(directory, tasks.Prefix, task)
+		if err != nil {
+			return 0, fmt.Errorf("cannot infer active task; use `tasks tail NUMBER`: %w", err)
+		}
+		if activity.Status == "active" {
+			active = append(active, task)
+		}
+	}
+	switch len(active) {
+	case 0:
+		return 0, errors.New("no active tasks; use `tasks tail NUMBER`")
+	case 1:
+		return active[0].Number, nil
+	default:
+		ids := make([]string, len(active))
+		for i, task := range active {
+			ids[i] = task.ID()
+		}
+		return 0, fmt.Errorf("multiple active tasks (%s); use `tasks tail NUMBER`", strings.Join(ids, ", "))
+	}
+}
+
 func tailTask(ctx context.Context, cwd string, a arguments, streams IO, invocation storeInvocation, tasks *store.Store) error {
 	n, directory := a.number(), invocation.directory
+	if n == 0 {
+		var err error
+		n, err = inferActiveTask(directory, tasks)
+		if err != nil {
+			return err
+		}
+	}
 	task, err := tasks.Read(n)
 	if err != nil {
 		return err
