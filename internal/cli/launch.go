@@ -251,7 +251,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 	if head.Branch != source.Head.Branch {
 		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, errors.New("Pi changed the task branch; switch back to the task branch and inspect the checkout"))
 	}
-	record.Revision, record.Summary = head.ID.String(), shortResult(progress.summary)
+	record.Summary = shortResult(progress.summary)
 	if err := requireClean(opened); err != nil {
 		return launchBlocked(repo, directory, prefix, defaultTarget, n, record, err)
 	}

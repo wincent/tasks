@@ -12,11 +12,7 @@ import (
 )
 
 // The caller holds the task lock in apply mode.
-func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, defaultTarget destination, selected cleanupTarget, apply bool) error {
-	return cleanMergedBranchWithPreview(repo, name, ref, retained, prefix, defaultTarget, selected, apply, nil)
-}
-
-func cleanMergedBranchWithPreview(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, defaultTarget destination, selected cleanupTarget, apply bool, preview *cleanupPreview) error {
+func cleanMergedBranch(repo *git.Repository, name string, ref git.Reference, retained []checkout, prefix store.Prefix, defaultTarget destination, selected cleanupTarget, apply bool, preview *cleanupPreview) error {
 	dest := selected.destination
 	if ref.Symbolic != "" {
 		return errors.New("symbolic branch refs are protected")
