@@ -97,7 +97,7 @@ func TestHeadAndRevisionResolution(t *testing.T) {
 	}
 }
 
-func TestHeadWorkdirValidation(t *testing.T) {
+func TestHeadValidation(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"attached", "bare", "detached", "unborn", "nonbranch", "alias", "missing-object", "blob", "malformed", "missing", "configuration"} {
 		t.Run(mode, func(t *testing.T) {
@@ -109,15 +109,15 @@ func TestHeadWorkdirValidation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, err := r.HeadWorkdir(); err != nil || got != paths.WorkDir {
-				t.Fatalf("initial workdir: %q %v; want %q", got, err, paths.WorkDir)
-			}
 			head := filepath.Join(paths.GitDir, "HEAD")
+			want := Head{Branch: "refs/heads/main", ID: tip}
 			switch mode {
 			case "detached":
 				writeFile(t, head, []byte(tip.String()+"\n"))
+				want = Head{ID: tip}
 			case "unborn":
 				writeFile(t, head, []byte("ref: refs/heads/unborn\n"))
+				want = Head{Branch: "refs/heads/unborn"}
 			case "nonbranch":
 				writeFile(t, head, []byte("ref: refs/tags/not-a-branch\n"))
 			case "alias":
@@ -140,14 +140,10 @@ func TestHeadWorkdirValidation(t *testing.T) {
 			case "configuration":
 				writeFile(t, filepath.Join(paths.CommonDir, "config"), []byte("[invalid\n"))
 			}
-			_, wantErr := r.Head()
-			got, err := r.HeadWorkdir()
-			if fmt.Sprint(err) != fmt.Sprint(wantErr) {
-				t.Fatalf("workdir error: %v; Head error: %v", err, wantErr)
-			}
+			got, err := r.Head()
 			accepted := mode == "attached" || mode == "bare" || mode == "detached" || mode == "unborn"
-			if (err == nil) != accepted || accepted && got != paths.WorkDir || !accepted && got != "" {
-				t.Fatalf("workdir: %q %v; accepted=%v", got, err, accepted)
+			if (err == nil) != accepted || accepted && got != want {
+				t.Fatalf("head: %+v %v; accepted=%v want=%+v", got, err, accepted, want)
 			}
 		})
 	}

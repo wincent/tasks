@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +43,18 @@ func TestMetadataRemainsUnsignedWithSigningPolicy(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if enabled, err := tasks.Repository.ConfigBool("commit.gpgsign"); err != nil || !enabled {
+			configEntries, err := tasks.Repository.ConfigurationEntries()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var enabled bool
+			for _, entry := range slices.Backward(configEntries) {
+				if entry.Name == "commit.gpgsign" {
+					enabled, err = git.ConfigurationBool(entry)
+					break
+				}
+			}
+			if err != nil || !enabled {
 				t.Fatalf("fixture did not request signing: %v %v", enabled, err)
 			}
 			for _, key := range []string{"GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"} {

@@ -403,33 +403,6 @@ func TestConfigurationEffectiveOperationWork(t *testing.T) {
 	}
 }
 
-func TestHeadWorkdirConfigurationWork(t *testing.T) {
-	t.Parallel()
-	_, root := fixture(t, false)
-	opened, err := Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer opened.Close()
-	var separate, combined configurationWork
-	opened.configuration.work = &separate
-	paths, err := opened.Paths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := opened.Head(); err != nil {
-		t.Fatal(err)
-	}
-	opened.configuration.work = &combined
-	got, err := opened.HeadWorkdir()
-	if err != nil || got != paths.WorkDir {
-		t.Fatalf("workdir: %q %v; want %q", got, err, paths.WorkDir)
-	}
-	if separate.paths != 1 || combined.paths != 0 || separate.captures != 2*combined.captures || separate.reads != 2*combined.reads || combined.reads == 0 || separate.assemblies != 0 || combined.assemblies != 0 {
-		t.Fatalf("configuration work: separate=%+v combined=%+v", separate, combined)
-	}
-}
-
 func TestConfigurationEffectiveReuseFreshnessAndRecords(t *testing.T) {
 	injectConfiguration(t)
 	t.Setenv("GIT_CONFIG_PARAMETERS", "")

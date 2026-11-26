@@ -75,7 +75,7 @@ func TestCommandIncludeCrossTopologyCapture(t *testing.T) {
 						t.Fatalf("ordered capture: %#v %v; want %#v", got, err, want)
 					}
 					if mutation != "empty" && mutation != "missing" {
-						if enabled, err := view.ConfigBool("tasktool.enabled"); err != nil || !enabled {
+						if enabled, err := configBool(view, "tasktool.enabled"); err != nil || !enabled {
 							t.Fatalf("nil value lost: %v %v", enabled, err)
 						}
 						if empty, err := view.Config("tasktool.empty"); err != nil || empty != "" {

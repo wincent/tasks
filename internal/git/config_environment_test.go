@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,23 @@ func injectConfiguration(t *testing.T, entries ...[2]string) {
 		t.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", i), entry[0])
 		t.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", i), entry[1])
 	}
+}
+
+func configBool(r *Repository, key string) (bool, error) {
+	normalized, ok := configurationKey(key)
+	if !ok {
+		return false, fmt.Errorf("invalid configuration key: %q", key)
+	}
+	entries, err := r.ConfigurationEntries()
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range slices.Backward(entries) {
+		if entry.Name == normalized {
+			return ConfigurationBool(entry)
+		}
+	}
+	return false, &Error{Operation: "read boolean configuration value", Code: NotFound, Message: "config value not found"}
 }
 
 func TestInjectedConfigurationPrecedenceAndHandleIsolation(t *testing.T) {
@@ -275,7 +293,7 @@ func TestInjectedParametersBooleanAndEmptyCount(t *testing.T) {
 	defer repo.Close()
 	for key, want := range map[string]bool{"oldtrue": true, "newtrue": true, "oldfalse": false, "newfalse": false, "numeric": true, "case": true} {
 		for i := 0; i < 16; i++ {
-			if got, err := repo.ConfigBool("tasktool." + key); err != nil || got != want {
+			if got, err := configBool(repo, "tasktool."+key); err != nil || got != want {
 				t.Fatalf("%s: %v %v; want %v", key, got, err, want)
 			}
 		}
@@ -283,7 +301,7 @@ func TestInjectedParametersBooleanAndEmptyCount(t *testing.T) {
 	if _, err := repo.Config("tasktool.unused"); !HasCode(err, NotFound) {
 		t.Fatal("empty count applied unused configuration", err)
 	}
-	if _, err := repo.ConfigBool("tasktool.missing"); !HasCode(err, NotFound) {
+	if _, err := configBool(repo, "tasktool.missing"); !HasCode(err, NotFound) {
 		t.Fatal("missing boolean lost error identity", err)
 	}
 }
@@ -355,7 +373,7 @@ func TestInjectedConfigurationGitOracle(t *testing.T) {
 		t.Fatalf("Git configuration oracle: %q %v, native %q", output, err, want.String())
 	}
 	for _, key := range []string{"tasktool.enabled", "tasktool.disabled"} {
-		value, err := opened.ConfigBool(key)
+		value, err := configBool(opened, key)
 		if err != nil {
 			t.Fatal(err)
 		}

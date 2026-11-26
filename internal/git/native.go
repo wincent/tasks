@@ -93,15 +93,6 @@ import (
 // expectations, never an abbreviation or a revision expression.
 type ID [20]byte
 
-func ParseID(value string) (ID, error) {
-	var id ID
-	if len(value) != len(id)*2 {
-		return id, fmt.Errorf("expected a full SHA-1 object ID, got %q", value)
-	}
-	_, err := hex.Decode(id[:], []byte(value))
-	return id, err
-}
-
 func (id ID) String() string { return hex.EncodeToString(id[:]) }
 
 func nativeID(id ID) C.git_oid {
