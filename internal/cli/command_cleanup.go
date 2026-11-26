@@ -133,7 +133,7 @@ func cleanupTask(ctx context.Context, cwd string, repo *git.Repository, a argume
 			if err != nil {
 				return err
 			}
-			return cleanMergedBranchWithPreview(repo, name, refs[name], retained, a.prefix, a.defaultTarget, target, apply, preview)
+			return cleanMergedBranch(repo, name, refs[name], retained, a.prefix, a.defaultTarget, target, apply, preview)
 		})
 	}
 	if previewRemovals > 0 && terminal.IsTerminal(streams.Err) {

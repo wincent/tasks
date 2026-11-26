@@ -1,7 +1,0 @@
-{
-  "group": "tasks",
-  "environment": "outside",
-  "files": [
-    "tasktool/internal/cli/command_search_test.go"
-  ]
-}
