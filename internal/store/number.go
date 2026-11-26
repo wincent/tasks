@@ -61,7 +61,7 @@ func (s *Session) observedNumbers(prefix Prefix) ([]int, error) {
 		return nil, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		store, err := openWith(s.Repository, path, common, worktrees)
+		store, err := openWith(path, common, worktrees)
 		if err != nil {
 			return nil, err
 		}

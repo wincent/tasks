@@ -223,7 +223,7 @@ func TestOrphanHistoryCheckUsesDefaultTargetBranch(t *testing.T) {
 		t.Fatalf("Inspect shared with master: %v", err)
 	}
 	withSession(t, repo, func(session *Session) {
-		if opened, err := session.Ensure(signature); err == nil || !strings.Contains(err.Error(), "tasks shares implementation history with master") {
+		if opened, err := session.Ensure(); err == nil || !strings.Contains(err.Error(), "tasks shares implementation history with master") {
 			if opened != nil {
 				opened.Close()
 			}
@@ -239,7 +239,7 @@ func TestOrphanHistoryCheckUsesDefaultTargetBranch(t *testing.T) {
 	publish(t, repo, Branch, orphan, shared)
 
 	withSession(t, repo, func(session *Session) {
-		opened, err := session.Ensure(signature)
+		opened, err := session.Ensure()
 		if err != nil {
 			t.Fatalf("Ensure orphan with master: %v", err)
 		}

@@ -105,7 +105,7 @@ func TestSelectedFilterCommitCleansCRLFAndPreservesUnrelatedStaging(t *testing.T
 	repo, tasks, _ := fixture(t)
 	ctx := context.Background()
 	name := "EXAMPLE-1 Native.md"
-	if _, err := CommitFiles(ctx, repo, map[string][]byte{name: []byte("before\n"), "large.bin": []byte("pointer\n")}, options()); err != nil {
+	if _, err := commitTestFiles(ctx, repo, map[string][]byte{name: []byte("before\n"), "large.bin": []byte("pointer\n")}, options()); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(tasks.Path, ".gitattributes"), []byte("*.md text eol=crlf\nlarge.bin filter=lfs\n"))
@@ -129,7 +129,7 @@ func TestSelectedFilterCommitCleansCRLFAndPreservesUnrelatedStaging(t *testing.T
 	}
 	mustWrite(t, filepath.Join(tasks.Path, "large.bin"), []byte("unrelated manual content\n"))
 	content := []byte("native\r\nline endings\r\n")
-	revision, err := CommitFiles(ctx, repo, map[string][]byte{name: content}, options())
+	revision, err := commitTestFiles(ctx, repo, map[string][]byte{name: content}, options())
 	if err != nil {
 		t.Fatal(err)
 	}

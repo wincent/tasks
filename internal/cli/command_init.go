@@ -3,8 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-
-	"github.com/wincent/tasks/internal/git"
 )
 
 func init() {
@@ -18,7 +16,7 @@ instructions printed by init or see:
 
 This command does not fetch, push, or reset the branch.`,
 		run: withTaskStore(storeRequirements{}, func(ctx context.Context, cwd string, a arguments, streams IO, invocation storeInvocation) error {
-			tasks, err := invocation.session.Ensure(git.Signature{})
+			tasks, err := invocation.session.Ensure()
 			if err != nil {
 				return err
 			}

@@ -41,6 +41,28 @@ func publish(t *testing.T, repo *git.Repository, name string, next, previous git
 	}
 }
 
+func testLocation(t *testing.T, repo *git.Repository) string {
+	t.Helper()
+	paths, err := repo.Paths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _, err := locationFromPaths(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func commitTestFiles(ctx context.Context, repository *git.Repository, changes map[string][]byte, options CommitOptions) (git.ID, error) {
+	session, err := Begin(ctx, repository)
+	if err != nil {
+		return git.ID{}, err
+	}
+	defer session.Close()
+	return session.CommitFiles(changes, options)
+}
+
 func fixture(t *testing.T) (*git.Repository, *Store, git.ID) {
 	t.Helper()
 	repo, err := git.Init(filepath.Join(t.TempDir(), "repository"), "", false)
@@ -62,10 +84,7 @@ func fixture(t *testing.T) (*git.Repository, *Store, git.ID) {
 		t.Fatal(err)
 	}
 	publish(t, repo, Branch, initial, git.ID{})
-	path, err := Location(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := testLocation(t, repo)
 	if err := repo.AddWorktree("tasks", path, Branch); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +105,7 @@ func TestCommitSelectedFilesPreservesOtherContentAndStaging(t *testing.T) {
 	repo, store, initial := fixture(t)
 	ctx := context.Background()
 	name := "EXAMPLE-1 literal[abc]\nname.md"
-	first, err := CommitFiles(ctx, repo, map[string][]byte{name: []byte("first\n")}, options())
+	first, err := commitTestFiles(ctx, repo, map[string][]byte{name: []byte("first\n")}, options())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +129,7 @@ func TestCommitSelectedFilesPreservesOtherContentAndStaging(t *testing.T) {
 	mustWrite(t, filepath.Join(store.Path, "untracked"), []byte("untracked bytes"))
 	mustWrite(t, filepath.Join(store.Path, ".gitignore"), []byte("ignored\n"))
 	mustWrite(t, filepath.Join(store.Path, "ignored"), []byte("ignored bytes"))
-	revision, err := CommitFiles(ctx, repo, map[string][]byte{name: []byte("updated\n")}, options())
+	revision, err := commitTestFiles(ctx, repo, map[string][]byte{name: []byte("updated\n")}, options())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +171,7 @@ func TestMetadataRefVerificationAndRacePreservation(t *testing.T) {
 			t.Parallel()
 			repo, store, _ := fixture(t)
 			name := "EXAMPLE-1 task.md"
-			first, err := CommitFiles(context.Background(), repo, map[string][]byte{name: []byte("first")}, options())
+			first, err := commitTestFiles(context.Background(), repo, map[string][]byte{name: []byte("first")}, options())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -193,7 +212,7 @@ func TestMetadataRefVerificationAndRacePreservation(t *testing.T) {
 				}
 				return nil
 			}
-			_, err = CommitFiles(context.Background(), repo, map[string][]byte{name: []byte("attempted")}, opts)
+			_, err = commitTestFiles(context.Background(), repo, map[string][]byte{name: []byte("attempted")}, opts)
 			if err == nil {
 				t.Fatal("race accepted")
 			}
@@ -238,7 +257,7 @@ func TestMetadataRefusesManualChangesAndOperationMarkers(t *testing.T) {
 			path := filepath.Join(store.Path, name)
 			if obstruction == "modified" {
 				var err error
-				initial, err = CommitFiles(context.Background(), repo, map[string][]byte{name: []byte("committed")}, options())
+				initial, err = commitTestFiles(context.Background(), repo, map[string][]byte{name: []byte("committed")}, options())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -261,7 +280,7 @@ func TestMetadataRefusesManualChangesAndOperationMarkers(t *testing.T) {
 			case "traversal":
 				name = "../escape"
 			}
-			_, err := CommitFiles(context.Background(), repo, map[string][]byte{name: []byte("attempted")}, options())
+			_, err := commitTestFiles(context.Background(), repo, map[string][]byte{name: []byte("attempted")}, options())
 			if err == nil {
 				t.Fatal("accepted obstruction")
 			}
@@ -286,7 +305,7 @@ func TestPublicationFailureRetainsRecoveryEvidence(t *testing.T) {
 		// Fault injection affects only this disposable fixture's own ref lock.
 		return os.Remove(filepath.Join(store.Paths.CommonDir, "refs", "heads", "tasks.lock"))
 	}
-	revision, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("proposed")}, opts)
+	revision, err := commitTestFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("proposed")}, opts)
 	var recovery *RecoveryError
 	if !errors.As(err, &recovery) || recovery.Revision != revision {
 		t.Fatalf("missing uncertainty: %v", err)
@@ -314,7 +333,7 @@ func TestMetadataRejectsSymlinkStateDirectory(t *testing.T) {
 	if err := os.Symlink(foreign, filepath.Join(paths.CommonDir, "tasks")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("attempted")}, options()); err == nil {
+	if _, err := commitTestFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("attempted")}, options()); err == nil {
 		t.Fatal("followed state directory symlink")
 	}
 	entries, err := os.ReadDir(foreign)
@@ -334,7 +353,7 @@ func TestMetadataDoesNotRecreateMovedRepository(t *testing.T) {
 	if err := os.Rename(paths.WorkDir, paths.WorkDir+"-moved"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("attempted")}, options()); err == nil {
+	if _, err := commitTestFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 task.md": []byte("attempted")}, options()); err == nil {
 		t.Fatal("accepted stale repository paths")
 	}
 	if _, err := os.Lstat(paths.WorkDir); !os.IsNotExist(err) {
@@ -381,7 +400,7 @@ func TestBatchArchiveMoveChecksSharedIndexEntries(t *testing.T) {
 		"EXAMPLE-2 Second.md": []byte("# EXAMPLE-2: Second\n\nStatus: merged\n"),
 		"EXAMPLE-3 Third.md":  []byte("# EXAMPLE-3: Third\n\nStatus: merged\n"),
 	}
-	if _, err := CommitFiles(ctx, repo, files, options()); err != nil {
+	if _, err := commitTestFiles(ctx, repo, files, options()); err != nil {
 		t.Fatal(err)
 	}
 

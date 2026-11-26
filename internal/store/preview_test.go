@@ -75,7 +75,7 @@ func TestPreviewReadsNativeSmudgedTargetBytes(t *testing.T) {
 			if _, err := os.Lstat(preview.Path); !os.IsNotExist(err) {
 				t.Fatalf("preview created checkout: %v", err)
 			}
-			opened, err := session.Ensure(signature)
+			opened, err := session.Ensure()
 			if err != nil {
 				t.Fatal(err)
 			}

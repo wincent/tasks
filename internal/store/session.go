@@ -58,6 +58,12 @@ func (s *Session) check() error {
 	return s.ctx.Err()
 }
 
+// CommitFiles commits only selected task files under the session's metadata
+// lock. It reserves the real index, prepares distinct commit and user indexes,
+// and holds verification ref locks until task ref publication. The index
+// reservation remains held during installation, and it never runs hooks or
+// subprocesses. Callers must acquire any task-lifetime/integration locks before
+// opening the session.
 func (s *Session) CommitFiles(changes map[string][]byte, options CommitOptions) (git.ID, error) {
 	if err := s.check(); err != nil {
 		return git.ID{}, err

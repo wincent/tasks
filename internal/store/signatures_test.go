@@ -49,7 +49,7 @@ func TestMetadataRemainsUnsignedWithSigningPolicy(t *testing.T) {
 				t.Setenv(key, "1700000000 +0000")
 			}
 			t.Setenv("PATH", "/nonexistent")
-			revision, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 Unsigned.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "unsigned metadata"})
+			revision, err := commitTestFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 Unsigned.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "unsigned metadata"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func TestRuntimeCommitSignaturesAndReflog(t *testing.T) {
 	} {
 		t.Setenv(key, value)
 	}
-	revision, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 Actors.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "actors"})
+	revision, err := commitTestFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 Actors.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "actors"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,9 +115,8 @@ func TestRuntimeInvalidSignatureDoesNotCreateSessionOrObjects(t *testing.T) {
 			t.Setenv("GIT_COMMITTER_EMAIL", "committer@example.invalid")
 			t.Setenv(key, "invalid-date")
 			before := bootstrapSnapshot(t, filepath.Dir(tasks.Paths.CommonDir))
-			_, err := CommitFiles(context.Background(), repo, map[string][]byte{"EXAMPLE-1 Refused.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "refused"})
-			if err == nil {
-				t.Fatal("invalid date accepted")
+			if _, err := MetadataSignatures(repo); err == nil {
+				t.Fatal("invalid date accepted by MetadataSignatures")
 			}
 			if !reflect.DeepEqual(before, bootstrapSnapshot(t, filepath.Dir(tasks.Paths.CommonDir))) {
 				t.Fatal("identity refusal changed repository")
@@ -125,6 +124,15 @@ func TestRuntimeInvalidSignatureDoesNotCreateSessionOrObjects(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(tasks.Paths.CommonDir, "tasks")); !os.IsNotExist(err) {
 				t.Fatalf("session created: %v", err)
 			}
+			withSession(t, repo, func(session *Session) {
+				afterBegin := bootstrapSnapshot(t, filepath.Dir(tasks.Paths.CommonDir))
+				if _, err := session.CommitFiles(map[string][]byte{"EXAMPLE-1 Refused.md": []byte("body\n")}, CommitOptions{FromEnvironment: true, Message: "refused"}); err == nil {
+					t.Fatal("invalid date accepted by CommitFiles")
+				}
+				if !reflect.DeepEqual(afterBegin, bootstrapSnapshot(t, filepath.Dir(tasks.Paths.CommonDir))) {
+					t.Fatal("commit identity refusal changed repository")
+				}
+			})
 		})
 	}
 }

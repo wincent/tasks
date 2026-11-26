@@ -45,7 +45,7 @@ func withSession(t *testing.T, repo *git.Repository, fn func(*Session)) {
 
 func TestBootstrapExplicitLocalHistory(t *testing.T) {
 	remote, tasks, _ := fixture(t)
-	id, err := CommitFiles(context.Background(), remote, map[string][]byte{"EXAMPLE-42 Remote.md": []byte("Status: open\n")}, options())
+	id, err := commitTestFiles(context.Background(), remote, map[string][]byte{"EXAMPLE-42 Remote.md": []byte("Status: open\n")}, options())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestBootstrapExplicitLocalHistory(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent")
 	withSession(t, repo, func(session *Session) {
 		for range 2 {
-			opened, err := session.Ensure(signature)
+			opened, err := session.Ensure()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,7 +106,7 @@ func TestBootstrapMissingLocalBranchNeverContactsRemotes(t *testing.T) {
 				// create objects, refs, tracking config, a ledger or worktree metadata.
 				paths, _ := repo.Paths()
 				before := bootstrapSnapshot(t, paths.CommonDir)
-				opened, err := session.Ensure(signature)
+				opened, err := session.Ensure()
 				if opened != nil {
 					opened.Close()
 					t.Fatal("opened missing local branch")
@@ -125,10 +125,7 @@ func TestBootstrapMissingLocalBranchNeverContactsRemotes(t *testing.T) {
 				if _, err := repo.Reference(Branch); !git.HasCode(err, git.NotFound) {
 					t.Fatalf("created branch: %v", err)
 				}
-				location, err := Location(repo)
-				if err != nil {
-					t.Fatal(err)
-				}
+				location := testLocation(t, repo)
 				if _, err := os.Lstat(location); !os.IsNotExist(err) {
 					t.Fatalf("created checkout: %v", err)
 				}
@@ -148,7 +145,7 @@ func TestBootstrapDoesNotAdoptLocalTrackingRef(t *testing.T) {
 	withSession(t, repo, func(session *Session) {
 		paths, _ := repo.Paths()
 		before := bootstrapSnapshot(t, paths.CommonDir)
-		opened, err := session.Ensure(signature)
+		opened, err := session.Ensure()
 		if opened != nil {
 			opened.Close()
 			t.Fatal("adopted tracking history")
@@ -204,7 +201,7 @@ func TestBootstrapRejectsNonOrphanBeforeCreatingCheckout(t *testing.T) {
 	withSession(t, repo, func(session *Session) {
 		paths, _ := repo.Paths()
 		before := bootstrapSnapshot(t, paths.CommonDir)
-		opened, err := session.Ensure(signature)
+		opened, err := session.Ensure()
 		if opened != nil {
 			opened.Close()
 		}

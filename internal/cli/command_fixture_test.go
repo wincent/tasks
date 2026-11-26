@@ -119,15 +119,20 @@ func commitTasksConfig(t *testing.T, repo *git.Repository, config string) git.ID
 	if err != nil {
 		t.Fatal(err)
 	}
-	if location, locErr := store.Location(repo); locErr == nil {
-		if _, statErr := os.Stat(location); statErr == nil && base != (git.ID{}) {
-			tasksRepo, openErr := git.Open(location)
-			if openErr != nil {
-				t.Fatal(openErr)
-			}
-			defer tasksRepo.Close()
-			if err := tasksRepo.Checkout(base, id); err != nil {
-				t.Fatal(err)
+	if paths, pathErr := repo.Paths(); pathErr == nil {
+		if absCommon, absErr := filepath.Abs(paths.CommonDir); absErr == nil {
+			if common, evalErr := filepath.EvalSymlinks(absCommon); evalErr == nil {
+				location := filepath.Join(filepath.Dir(common), "tasks")
+				if _, statErr := os.Stat(location); statErr == nil && base != (git.ID{}) {
+					tasksRepo, openErr := git.Open(location)
+					if openErr != nil {
+						t.Fatal(openErr)
+					}
+					defer tasksRepo.Close()
+					if err := tasksRepo.Checkout(base, id); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 		}
 	}
@@ -154,7 +159,12 @@ func commitTaskText(t *testing.T, repo *git.Repository, path, content string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CommitFiles(context.Background(), repo, map[string][]byte{filepath.Base(path): []byte(content)}, store.CommitOptions{Signature: who, Message: "fixture task state"}); err != nil {
+	session, err := store.Begin(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if _, err := session.CommitFiles(map[string][]byte{filepath.Base(path): []byte(content)}, store.CommitOptions{Signature: who, Message: "fixture task state"}); err != nil {
 		t.Fatal(err)
 	}
 }

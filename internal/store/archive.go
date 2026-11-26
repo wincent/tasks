@@ -136,7 +136,7 @@ func (s *Session) moveTasks(tasks *Store, head git.ID, selected []Task, archive 
 		}); err != nil {
 			return nil, err
 		}
-		opened, err := s.Ensure(git.Signature{})
+		opened, err := s.Ensure()
 		if err != nil {
 			return nil, err
 		}

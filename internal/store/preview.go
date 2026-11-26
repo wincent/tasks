@@ -43,7 +43,7 @@ func inspect(repo *git.Repository) (*Store, error) {
 
 func inspectWith(repo *git.Repository, path, originalCommon string, trees []git.Worktree) (*Store, error) {
 	if _, err := os.Lstat(path); err == nil {
-		return openWith(repo, path, originalCommon, trees)
+		return openWith(path, originalCommon, trees)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
