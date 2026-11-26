@@ -1,6 +1,6 @@
 # TASKS-66: Print --apply hint to stderr after tasks cleanup preview
 
-Status: open
+Status: active
 
 ## Description
 
