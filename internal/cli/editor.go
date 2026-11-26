@@ -240,7 +240,7 @@ func editTask(ctx context.Context, cwd string, repo *git.Repository, prefix stor
 	if err := tasks.ValidateContents(changes); err != nil {
 		return err
 	}
-	opened, err := session.Ensure(git.Signature{})
+	opened, err := session.Ensure()
 	if err != nil {
 		return err
 	}

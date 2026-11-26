@@ -41,16 +41,6 @@ func locationFromPaths(paths git.Paths) (path, common string, err error) {
 	return filepath.Join(filepath.Dir(common), "tasks"), common, nil
 }
 
-// Location is shared by all linked checkouts, including bare-in-.git layouts.
-func Location(repository *git.Repository) (string, error) {
-	paths, err := repository.Paths()
-	if err != nil {
-		return "", err
-	}
-	path, _, err := locationFromPaths(paths)
-	return path, err
-}
-
 func Open(repository *git.Repository) (*Store, error) {
 	paths, worktrees, err := repository.PathsAndWorktrees()
 	if err != nil {
@@ -60,10 +50,10 @@ func Open(repository *git.Repository) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return openWith(repository, path, common, worktrees)
+	return openWith(path, common, worktrees)
 }
 
-func openWith(_ *git.Repository, path, originalCommon string, worktrees []git.Worktree) (*Store, error) {
+func openWith(path, originalCommon string, worktrees []git.Worktree) (*Store, error) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("task checkout must be a real directory at %s; preserve obstructions and run `tasks init`", path)

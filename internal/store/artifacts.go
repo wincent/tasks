@@ -95,7 +95,7 @@ func (s *Session) CommitArtifacts(preview *Store, task Task, files map[string][]
 		if err := preview.ValidateContents(changes); err != nil {
 			return err
 		}
-		opened, err := s.Ensure(git.Signature{})
+		opened, err := s.Ensure()
 		if err != nil {
 			return err
 		}

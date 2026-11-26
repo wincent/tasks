@@ -119,25 +119,6 @@ func (store *Store) cleanSelectedWithIndex(names []string, entries []git.IndexEn
 	return nil
 }
 
-// CommitFiles commits only selected root-level task files. It acquires the
-// shared metadata flock, reserves the real index, prepares distinct commit and
-// user indexes, and holds verification ref locks until task ref publication.
-// The index reservation remains held during installation. It never runs hooks or subprocesses. The caller must acquire
-// any task-lifetime/integration locks before this metadata lock.
-func CommitFiles(ctx context.Context, repository *git.Repository, changes map[string][]byte, options CommitOptions) (git.ID, error) {
-	if options.FromEnvironment {
-		if _, err := MetadataSignatures(repository); err != nil {
-			return git.ID{}, err
-		}
-	}
-	session, err := Begin(ctx, repository)
-	if err != nil {
-		return git.ID{}, err
-	}
-	defer session.Close()
-	return session.CommitFiles(changes, options)
-}
-
 func commitFiles(ctx context.Context, repository *git.Repository, changes map[string][]byte, options CommitOptions) (revision git.ID, err error) {
 	if len(changes) == 0 {
 		return revision, errors.New("task metadata commit requires at least one file")

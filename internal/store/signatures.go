@@ -20,7 +20,7 @@ func MetadataSignatures(repository *git.Repository) (git.Signatures, error) {
 		return git.Signatures{}, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		tasks, err := openWith(repository, path, common, worktrees)
+		tasks, err := openWith(path, common, worktrees)
 		if err != nil {
 			return git.Signatures{}, err
 		}

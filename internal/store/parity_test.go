@@ -33,7 +33,7 @@ func TestBootstrapUnbornAndLayoutMarkerIsolation(t *testing.T) {
 			defer repo.Close()
 			seedLocalTasks(t, repo)
 			withSession(t, repo, func(session *Session) {
-				opened, err := session.Ensure(signature)
+				opened, err := session.Ensure()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -110,7 +110,7 @@ func TestConcurrentMetadataCommitsDoNotLoseUpdates(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			name := "EXAMPLE-" + string(rune('1'+i)) + " concurrent.md"
-			_, err := CommitFiles(context.Background(), repo, map[string][]byte{name: []byte(name)}, options())
+			_, err := commitTestFiles(context.Background(), repo, map[string][]byte{name: []byte(name)}, options())
 			failures <- err
 		}(i)
 	}
@@ -147,7 +147,7 @@ func TestBootstrapPreservesRemoteConfigurationAndLocalHistory(t *testing.T) {
 	config := mustRead(t, configPath)
 	for i := range 2 {
 		withSession(t, repo, func(session *Session) {
-			opened, err := session.Ensure(signature)
+			opened, err := session.Ensure()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -161,7 +161,7 @@ func TestBootstrapPreservesRemoteConfigurationAndLocalHistory(t *testing.T) {
 			t.Fatal("changed existing remote fetch configuration")
 		}
 		if i == 0 {
-			if _, err := CommitFiles(context.Background(), remote, map[string][]byte{"EXAMPLE-40 Remote.md": []byte("new remote")}, options()); err != nil {
+			if _, err := commitTestFiles(context.Background(), remote, map[string][]byte{"EXAMPLE-40 Remote.md": []byte("new remote")}, options()); err != nil {
 				t.Fatal(err)
 			}
 		}

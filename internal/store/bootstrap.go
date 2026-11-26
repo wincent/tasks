@@ -6,13 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/state"
 )
 
 // Ensure never resets an existing branch or replaces a filesystem obstruction.
 // Initialization is local-only: users supply task history through their own Git workflow.
-func (s *Session) Ensure(who git.Signature) (*Store, error) {
+func (s *Session) Ensure() (*Store, error) {
 	if err := s.check(); err != nil {
 		return nil, err
 	}
@@ -25,7 +24,7 @@ func (s *Session) Ensure(who git.Signature) (*Store, error) {
 		return nil, err
 	}
 	if _, err := os.Lstat(path); err == nil {
-		store, err := openWith(s.Repository, path, common, worktrees)
+		store, err := openWith(path, common, worktrees)
 		if err != nil {
 			return nil, err
 		}

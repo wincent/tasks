@@ -80,7 +80,7 @@ func writeTask(session *store.Session, tasks *store.Store, expected git.ID, name
 	if err := tasks.ValidateContents(changes); err != nil {
 		return "", err
 	}
-	opened, err := session.Ensure(git.Signature{})
+	opened, err := session.Ensure()
 	if err != nil {
 		return "", err
 	}

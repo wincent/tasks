@@ -50,7 +50,7 @@ func TestNumberingReadsFetchedMergedAwayHistoryWithoutAdvancingLocal(t *testing.
 			if checkout {
 				publish(t, local, Branch, merged, git.ID{})
 				withSession(t, local, func(s *Session) {
-					store, err := s.Ensure(signature)
+					store, err := s.Ensure()
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -99,7 +99,7 @@ func TestEnsureObstructionAndFreshRevalidation(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			repo := emptyRepository(t)
-			location, _ := Location(repo)
+			location := testLocation(t, repo)
 			switch kind {
 			case "file":
 				mustWrite(t, location, []byte("precious"))
@@ -136,7 +136,7 @@ func TestEnsureObstructionAndFreshRevalidation(t *testing.T) {
 				}
 			}
 			withSession(t, repo, func(s *Session) {
-				opened, err := s.Ensure(signature)
+				opened, err := s.Ensure()
 				if opened != nil {
 					opened.Close()
 				}
@@ -160,7 +160,7 @@ func TestEnsureObstructionAndFreshRevalidation(t *testing.T) {
 	exclude := filepath.Join(paths.CommonDir, "info", "exclude")
 	mustWrite(t, exclude, []byte("user-rule"))
 	withSession(t, repo, func(s *Session) {
-		opened, err := s.Ensure(signature)
+		opened, err := s.Ensure()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,7 +177,7 @@ func TestEnsureObstructionAndFreshRevalidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		publish(t, repo, Branch, main, head.ID)
-		opened, err = s.Ensure(signature)
+		opened, err = s.Ensure()
 		if opened != nil {
 			opened.Close()
 		}
