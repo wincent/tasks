@@ -44,9 +44,7 @@ func masterWorkflowFixture(t *testing.T, config string) workflowFixture {
 		}
 	}
 	const masterRef = "refs/heads/master"
-	if err := repo.SetHead(masterRef); err != nil {
-		t.Fatal(err)
-	}
+	writeSafetyFile(t, filepath.Join(root, ".git", "HEAD"), "ref: "+masterRef+"\n")
 	who := git.Signature{Name: "Task Test", Email: "task@example.invalid", When: time.Unix(1700000000, 0)}
 	empty, err := repo.WriteTree(nil)
 	if err != nil {

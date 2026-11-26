@@ -149,7 +149,7 @@ func TestCommandIncludePolicySnapshotSurvivesSourceReplacement(t *testing.T) {
 			if replacement != "previously-missing" {
 				want = append(want, configurationEntry{"tasktool.value", "frozen"})
 				for key, want := range map[string]bool{"enabled": true, "disabled": false} {
-					if got, err := view.ConfigBool("tasktool." + key); err != nil || got != want {
+					if got, err := configBool(view, "tasktool."+key); err != nil || got != want {
 						t.Fatal("lost nil/empty include value", key, got, err)
 					}
 				}

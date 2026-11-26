@@ -9,9 +9,6 @@ import (
 
 func seedMain(t *testing.T, repo *git.Repository) {
 	t.Helper()
-	if err := repo.SetHead("refs/heads/main"); err != nil {
-		t.Fatal(err)
-	}
 	who := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Unix(1, 0)}
 	empty, err := repo.WriteTree(nil)
 	if err != nil {

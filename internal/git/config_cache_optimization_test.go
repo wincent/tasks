@@ -54,7 +54,7 @@ func TestConfigurationEffectiveCacheInvalidation(t *testing.T) {
 		if got, err := repo.Config("tasktool.value"); err != nil || got != "first" {
 			t.Fatalf("cached value: %q %v", got, err)
 		}
-		if got, err := repo.ConfigBool("tasktool.implicit"); err != nil || !got {
+		if got, err := configBool(repo, "tasktool.implicit"); err != nil || !got {
 			t.Fatalf("cached implicit bool: %v %v", got, err)
 		}
 		if got, err := repo.Config("tasktool.empty"); err != nil || got != "" {
@@ -195,7 +195,7 @@ func TestConfigurationBatchedNativeOverlaySnapshotsAndEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Exercise duplicate keys, valueless entries, empty values, and snapshots
-	// across repeated ConfigurationEntries / Config / ConfigBool calls.
+	// across repeated ConfigurationEntries / Config calls.
 	dir := t.TempDir()
 	inc := filepath.Join(dir, "inc")
 	writeCommandInclude(t, inc, "[tasktool]\ndup = second\nimplicit\nempty =\n")
@@ -224,10 +224,10 @@ func TestConfigurationBatchedNativeOverlaySnapshotsAndEntries(t *testing.T) {
 	if got, err := repo.Config("tasktool.dup"); err != nil || got != "second" {
 		t.Fatalf("last duplicate key did not win: %q %v", got, err)
 	}
-	if got, err := repo.ConfigBool("tasktool.implicit"); err != nil || !got {
+	if got, err := configBool(repo, "tasktool.implicit"); err != nil || !got {
 		t.Fatalf("implicit bool: %v %v", got, err)
 	}
-	if got, err := repo.ConfigBool("tasktool.empty"); err != nil || got {
+	if got, err := configBool(repo, "tasktool.empty"); err != nil || got {
 		t.Fatalf("empty bool: %v %v", got, err)
 	}
 	// Ensure empty native config can be freed via helper without leaking.

@@ -141,7 +141,7 @@ func TestCommandConditionalTargetsValidateOnlyWhenActive(t *testing.T) {
 					t.Fatal("conditional diagnostic leaked target or content", err)
 				}
 				if !active && (target == "nil-old" || target == "nil-new" || target == "empty") {
-					if got, err := opened.ConfigBool(key); err != nil || got != (target != "empty") {
+					if got, err := configBool(opened, key); err != nil || got != (target != "empty") {
 						t.Fatal("inactive directive lost nil/empty distinction", got, err)
 					}
 				}
@@ -198,7 +198,7 @@ func TestCommandConditionalOrderingOriginsAndIsolation(t *testing.T) {
 		t.Fatalf("conditional inline order: %#v, %v", entries, err)
 	}
 	for key, want := range map[string]bool{"tasktool.implicit": true, "tasktool.empty": false} {
-		if got, err := opened.ConfigBool(key); err != nil || got != want {
+		if got, err := configBool(opened, key); err != nil || got != want {
 			t.Fatal("included nil and empty lost distinction", key, got, err)
 		}
 	}

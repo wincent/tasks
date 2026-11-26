@@ -28,9 +28,11 @@ func TestNativeMergePreservesBothParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.DetachHead(base); err != nil {
+	paths, err := repo.Paths()
+	if err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(paths.GitDir, "HEAD"), []byte(base.String()+"\n"))
 	mergedTree, err := repo.MergeIntoIndex(tip)
 	if err != nil {
 		t.Fatal(err)

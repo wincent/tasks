@@ -59,7 +59,7 @@ func TestHasconfigForwardNestedCommandCaptureAndFreshFiles(t *testing.T) {
 		t.Fatalf("entries: %#v %v", entries, err)
 	}
 	for key, want := range map[string]bool{"tasktool.implicit": true, "tasktool.empty": false} {
-		if got, err := opened.ConfigBool(key); err != nil || got != want {
+		if got, err := configBool(opened, key); err != nil || got != want {
 			t.Fatalf("%s: %v %v", key, got, err)
 		}
 	}

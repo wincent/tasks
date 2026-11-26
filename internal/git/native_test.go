@@ -2,12 +2,12 @@ package git
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -71,18 +71,16 @@ func expectRef(t *testing.T, r *Repository, name string, want ID) {
 	}
 }
 
-func TestObjectIDs(t *testing.T) {
-	t.Parallel()
-	for _, value := range []string{"", "abc", strings.Repeat("g", 40), strings.Repeat("0", 64)} {
-		if _, err := ParseID(value); err == nil {
-			t.Fatalf("accepted %q", value)
-		}
+func parseTestID(t *testing.T, value string) ID {
+	t.Helper()
+	var id ID
+	if len(value) != len(id)*2 {
+		t.Fatalf("expected a full SHA-1 object ID, got %q", value)
 	}
-	value := strings.Repeat("aB", 20)
-	id, err := ParseID(value)
-	if err != nil || id.String() != strings.ToLower(value) {
-		t.Fatalf("roundtrip: %v, %v", id, err)
+	if _, err := hex.Decode(id[:], []byte(value)); err != nil {
+		t.Fatal(err)
 	}
+	return id
 }
 
 func TestRepositoryDiscovery(t *testing.T) {
@@ -576,10 +574,7 @@ func TestExternalProcessCannotPublishLockedReference(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer r.Close()
-		id, err := ParseID(os.Getenv("TASKTOOL_LOCK_ID"))
-		if err != nil {
-			t.Fatal(err)
-		}
+		id := parseTestID(t, os.Getenv("TASKTOOL_LOCK_ID"))
 		for _, name := range []string{"refs/heads/main", "refs/heads/verified", "refs/heads/absent"} {
 			old := id
 			if name == "refs/heads/absent" {

@@ -43,23 +43,6 @@ func (r *Repository) Head() (Head, error) {
 	return result, err
 }
 
-// HeadWorkdir returns the workdir under the same configuration snapshot and
-// repository lock as HEAD validation. It retains Head's unborn-branch handling
-// and refusals without a separate Paths operation. It does not cache discovery.
-func (r *Repository) HeadWorkdir() (string, error) {
-	var workdir string
-	err := r.call("read HEAD workdir", func(repo *C.git_repository) error {
-		if _, err := readHead(repo); err != nil {
-			return err
-		}
-		if work := C.git_repository_workdir(repo); work != nil {
-			workdir = filepath.Clean(C.GoString(work))
-		}
-		return nil
-	})
-	return workdir, err
-}
-
 func readHead(repo *C.git_repository) (Head, error) {
 	var result Head
 	head, err := lookup(repo, "HEAD")
@@ -502,31 +485,6 @@ func (r *Repository) Config(key string) (string, error) {
 			return err
 		}
 		result = C.GoString(value)
-		return nil
-	})
-	return result, err
-}
-
-// ConfigBool preserves Git's distinction between a valueless boolean (true)
-// and an explicitly empty value (false), including command configuration.
-func (r *Repository) ConfigBool(key string) (bool, error) {
-	var result bool
-	err := r.call("read boolean configuration", func(repo *C.git_repository) error {
-		var config *C.git_config
-		if err := nativeError("open configuration", C.git_repository_config_snapshot(&config, repo)); err != nil {
-			return err
-		}
-		defer C.git_config_free(config)
-		name, err := cstring(key)
-		if err != nil {
-			return err
-		}
-		defer free(name)
-		var value C.int
-		if err := nativeError("read boolean configuration value", C.git_config_get_bool(&value, config, name)); err != nil {
-			return err
-		}
-		result = value != 0
 		return nil
 	})
 	return result, err

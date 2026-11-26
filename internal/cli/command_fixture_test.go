@@ -58,9 +58,6 @@ func fixture(t *testing.T) (*git.Repository, string) {
 
 func seedMain(t *testing.T, repo *git.Repository) git.ID {
 	t.Helper()
-	if err := repo.SetHead(mainRef); err != nil {
-		t.Fatal(err)
-	}
 	who := git.Signature{Name: "Task Test", Email: "task@example.invalid", When: time.Unix(1700000000, 0)}
 	empty, err := repo.WriteTree(nil)
 	if err != nil {
