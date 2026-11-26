@@ -1,6 +1,6 @@
 # TASKS-67: Remove dead code in state, query, and signing packages
 
-Status: open
+Status: active
 
 ## Description
 
