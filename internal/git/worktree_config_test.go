@@ -117,7 +117,7 @@ func TestWorktreeConfigRejectsBeforeRegistration(t *testing.T) {
 			destination := filepath.Join(t.TempDir(), "child")
 			before := mergePreflightSnapshot(t, root)
 			if strings.HasPrefix(mode, "selected-") {
-				err = repo.ValidateProspectiveWorktreeContents("child", destination, "refs/heads/tasks", map[string][]byte{"new.txt": []byte("x")})
+				err = repo.ValidateProspectiveWorktreeContents("child", "refs/heads/tasks", map[string][]byte{"new.txt": []byte("x")})
 			} else {
 				err = repo.AddWorktree("child", destination, "refs/heads/tasks")
 			}
@@ -150,9 +150,8 @@ func TestWorktreeConfigProspectiveUnbornAndFrozenConditional(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer repo.Close()
-	destination := filepath.Join(t.TempDir(), "child")
 	for i := 0; i < 2; i++ {
-		err := repo.WithProspectiveWorktree("child", destination, "refs/heads/tasks", func(view *Repository) error {
+		err := repo.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 			got, err := view.Config("tasktool.context")
 			if err != nil || got != "first" {
 				t.Fatalf("prospective configuration: %q %v", got, err)
@@ -167,13 +166,10 @@ func TestWorktreeConfigProspectiveUnbornAndFrozenConditional(t *testing.T) {
 		}
 	}
 	before := mergePreflightSnapshot(t, root)
-	if err := repo.ValidateProspectiveWorktreeContents("child", destination, "refs/heads/tasks", map[string][]byte{"new.md": []byte("new\n")}); err != nil {
+	if err := repo.ValidateProspectiveWorktreeContents("child", "refs/heads/tasks", map[string][]byte{"new.md": []byte("new\n")}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(before, mergePreflightSnapshot(t, root)) {
 		t.Fatal("unborn preflight mutated source")
-	}
-	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
-		t.Fatal(err)
 	}
 }

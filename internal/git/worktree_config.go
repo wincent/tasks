@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"unsafe"
@@ -201,8 +200,8 @@ func materializeWorktree(path *C.char, config *C.git_config, tree *C.git_tree) e
 // read-only inspection (including signature resolution) before registration.
 // The callback must not retain/close the handle or invoke mutation methods.
 // It sees the target tree's index attributes and no source workdir attributes.
-func (r *Repository) WithProspectiveWorktree(name, path, branch string, inspect func(*Repository) error) error {
-	return r.withProspectiveWorktree(name, path, branch, func(repo *C.git_repository, config *C.git_config, tree *C.git_tree) error {
+func (r *Repository) WithProspectiveWorktree(name, branch string, inspect func(*Repository) error) error {
+	return r.withProspectiveWorktree(name, branch, func(repo *C.git_repository, config *C.git_config, tree *C.git_tree) error {
 		return withProspectiveWorktreeView(repo, config, tree, inspect)
 	})
 }
@@ -212,25 +211,21 @@ func (r *Repository) WithProspectiveWorktree(name, path, branch string, inspect 
 // branch may be unborn; it must be the exact fully-qualified future branch.
 // This is read-only admission, not a lease: AddWorktree repeats checkout
 // admission, and callers must retain/revalidate their selected contents.
-func (r *Repository) ValidateProspectiveWorktreeContents(name, path, branch string, contents map[string][]byte) error {
-	return r.withProspectiveWorktree(name, path, branch, func(repo *C.git_repository, config *C.git_config, tree *C.git_tree) error {
+func (r *Repository) ValidateProspectiveWorktreeContents(name, branch string, contents map[string][]byte) error {
+	return r.withProspectiveWorktree(name, branch, func(repo *C.git_repository, config *C.git_config, tree *C.git_tree) error {
 		return preflightWorktree(repo, config, tree, contents)
 	})
 }
 
-func (r *Repository) withProspectiveWorktree(name, path, branch string, inspect func(*C.git_repository, *C.git_config, *C.git_tree) error) error {
+func (r *Repository) withProspectiveWorktree(name, branch string, inspect func(*C.git_repository, *C.git_config, *C.git_tree) error) error {
 	if !strings.HasPrefix(branch, "refs/heads/") {
 		return errors.New("worktree requires a fully qualified branch reference")
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return err
 	}
 	return r.call("validate prospective worktree", func(repo *C.git_repository) error {
 		if err := validateRepositoryIndex(repo); err != nil {
 			return err
 		}
-		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, branch)
+		config, err := r.prospectiveWorktreeConfiguration(repo, name, branch)
 		if err != nil {
 			return err
 		}

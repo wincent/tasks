@@ -70,7 +70,7 @@ func TestHasconfigForwardNestedCommandCaptureAndFreshFiles(t *testing.T) {
 	found := false
 	for _, record := range records {
 		if record.name == "tasktool.value" && record.value != nil && *record.value == "nested" {
-			found = record.origin == nested && record.depth == 2 && record.conditionalURL
+			found = record.origin == nested && record.depth == 2
 		}
 	}
 	if !found {
@@ -190,7 +190,7 @@ func TestHasconfigGlobalLocalWorktreeAndProtectedScope(t *testing.T) {
 	if err != nil || affected {
 		t.Fatalf("ordinary conditional configuration affected ownership: %v %v", affected, err)
 	}
-	if err := opened.WithProspectiveWorktree("child", filepath.Join(t.TempDir(), "child"), "refs/heads/tasks", func(view *Repository) error {
+	if err := opened.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 		if _, err := view.Config("tasktool.parentonly"); !HasCode(err, NotFound) {
 			t.Fatal("future inherited config.worktree", err)
 		}

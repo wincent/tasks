@@ -16,7 +16,6 @@ type hasconfigRecord struct {
 	value                 *string
 	level                 int
 	depth                 uint
-	conditionalURL        bool
 }
 
 type hasconfigSource struct {
@@ -130,7 +129,7 @@ func (evaluation *hasconfigEvaluation) walk(source hasconfigSource, records []ha
 		if depth > 0 || level != 0 {
 			record.level = level
 		}
-		record.depth, record.conditionalURL = depth, forbidden
+		record.depth = depth
 		if hasconfigRemoteURL(record.name) {
 			if forbidden {
 				return errors.New("remote URLs cannot be configured directly or indirectly inside hasconfig includes")
