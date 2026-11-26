@@ -12,6 +12,7 @@ import (
 	"github.com/wincent/tasks/internal/git"
 	"github.com/wincent/tasks/internal/state"
 	"github.com/wincent/tasks/internal/store"
+	"github.com/wincent/tasks/internal/terminal"
 )
 
 func init() {
@@ -66,6 +67,7 @@ func cleanupTask(ctx context.Context, cwd string, repo *git.Repository, a argume
 		return err
 	}
 	matches := func(n int) bool { return n != 0 && (a.number() == 0 || a.number() == n) }
+	previewRemovals := 0
 	attempt := func(n int, label string, clean func() error) bool {
 		err := func() error {
 			if apply {
@@ -92,6 +94,7 @@ func cleanupTask(ctx context.Context, cwd string, repo *git.Repository, a argume
 			fmt.Fprintln(streams.Out, "Removed", label)
 		default:
 			fmt.Fprintln(streams.Out, "Would remove", label)
+			previewRemovals++
 		}
 		return err == nil
 	}
@@ -132,6 +135,13 @@ func cleanupTask(ctx context.Context, cwd string, repo *git.Repository, a argume
 			}
 			return cleanMergedBranchWithPreview(repo, name, refs[name], retained, a.prefix, a.defaultTarget, target, apply, preview)
 		})
+	}
+	if previewRemovals > 0 && terminal.IsTerminal(streams.Err) {
+		removal := "removal"
+		if previewRemovals > 1 {
+			removal = "removals"
+		}
+		fmt.Fprintf(streams.Err, "Run `tasks cleanup --apply` to perform %s.\n", removal)
 	}
 	return nil
 }
