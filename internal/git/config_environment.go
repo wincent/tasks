@@ -697,7 +697,7 @@ func configurationParseInclude(path string, data []byte) (*C.task_config_overlay
 }
 
 // Future children have no config.worktree, even when their parent does.
-func (r *Repository) prospectiveWorktreeConfiguration(repo *C.git_repository, name, path, branch string) (*C.git_config, error) {
+func (r *Repository) prospectiveWorktreeConfiguration(repo *C.git_repository, name, branch string) (*C.git_config, error) {
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
 		return nil, errors.New("worktree requires a single registration name")
 	}
@@ -796,8 +796,8 @@ func (configuration *environmentConfiguration) sourcesFromLocations(files *confi
 	return sources, nil
 }
 
-func (configuration *environmentConfiguration) sources(files *configurationFileCapture, repo *C.git_repository) ([]hasconfigSource, error) {
-	locations, err := findConfigurationLocations(repo, false)
+func (configuration *environmentConfiguration) sources(files *configurationFileCapture) ([]hasconfigSource, error) {
+	locations, err := findConfigurationLocations(nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -808,7 +808,7 @@ func (configuration *environmentConfiguration) sources(files *configurationFileC
 // policy native admission cannot evaluate. No ownership setting is changed here.
 func (configuration *environmentConfiguration) protectedRecords() ([]hasconfigRecord, bool, error) {
 	files := newConfigurationFileCapture(&configuration.parsedFiles)
-	sources, err := configuration.sources(files, nil)
+	sources, err := configuration.sources(files)
 	if err != nil {
 		return nil, false, err
 	}
@@ -823,7 +823,7 @@ func (configuration *environmentConfiguration) protectedRecords() ([]hasconfigRe
 // handle to obtain this context, or ownership admission would already be over.
 func (configuration *environmentConfiguration) validateConditionalOwnership(context configurationContext) error {
 	files := newConfigurationFileCapture(&configuration.parsedFiles)
-	sources, err := configuration.sources(files, nil)
+	sources, err := configuration.sources(files)
 	if err != nil {
 		return err
 	}

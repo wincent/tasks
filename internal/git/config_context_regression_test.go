@@ -27,7 +27,7 @@ func TestProspectiveConfigurationNormalGlobalContext(t *testing.T) {
 	if err := repo.SetLocalConfig("core.autocrlf", "false"); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.WithProspectiveWorktree("child", filepath.Join(t.TempDir(), "child"), "refs/heads/tasks", func(view *Repository) error {
+	if err := repo.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 		for key, want := range map[string]string{"tasktool.source": "global", "tasktool.future": "global-conditional", "core.autocrlf": "false"} {
 			got, err := view.Config(key)
 			if err != nil || got != want {
@@ -67,7 +67,7 @@ func TestProspectiveConfigurationFromLinkedWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer linked.Close()
-	if err := linked.WithProspectiveWorktree("child", filepath.Join(t.TempDir(), "child"), "refs/heads/tasks", func(view *Repository) error {
+	if err := linked.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 		if got, err := view.Config("tasktool.future"); err != nil || got != "child" {
 			t.Fatalf("common-dir future context: %q %v", got, err)
 		}

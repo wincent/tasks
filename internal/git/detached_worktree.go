@@ -36,7 +36,7 @@ func (r *Repository) AddDetachedWorktree(name, path string, revision ID, prepare
 		if err := validateRepositoryIndex(repo); err != nil {
 			return err
 		}
-		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, "")
+		config, err := r.prospectiveWorktreeConfiguration(repo, name, "")
 		if err != nil {
 			return err
 		}

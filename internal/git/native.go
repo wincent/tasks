@@ -729,7 +729,7 @@ func (r *Repository) AddWorktree(name, path, branch string) error {
 			return err
 		}
 		defer C.git_tree_free(tree)
-		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, branch)
+		config, err := r.prospectiveWorktreeConfiguration(repo, name, branch)
 		if err != nil {
 			return err
 		}

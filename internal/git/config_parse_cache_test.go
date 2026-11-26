@@ -14,7 +14,7 @@ import (
 
 func parseCacheLoad(t *testing.T, cache *configurationParseCache, path string) []hasconfigRecord {
 	t.Helper()
-	records, err := newConfigurationFileCapture(cache).loadRecords(path)
+	records, err := newConfigurationFileCapture(cache).borrowRecords(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,10 +41,15 @@ func TestConfigurationParseCacheReuseAndFreshBytes(t *testing.T) {
 	if got := parseCacheLoad(t, &cache, path); !reflect.DeepEqual(got, before) || parseCacheCount(&cache) != 1 {
 		t.Fatalf("unchanged file reparsed or changed: %#v, parses=%d", got, parseCacheCount(&cache))
 	}
-	before[0].level, before[0].depth, before[0].conditionalURL = 999, 10, true
-	*before[0].value = "corrupted"
+	capture := newConfigurationFileCapture(&cache)
+	owned, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: before, load: capture.borrowRecords}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned[0].level, owned[0].depth = 999, 10
+	*owned[0].value = "corrupted"
 	fresh := parseCacheLoad(t, &cache, path)
-	if *fresh[0].value != "first" || fresh[0].level == 999 || fresh[0].depth != 0 || fresh[0].conditionalURL {
+	if *fresh[0].value != "first" || fresh[0].level == 999 || fresh[0].depth != 0 {
 		t.Fatal("caller modified cached records")
 	}
 	info, err := os.Stat(path)
@@ -66,12 +71,12 @@ func TestConfigurationParseCacheReuseAndFreshBytes(t *testing.T) {
 			t.Fatal("cache hit attempted parsing")
 		}
 		writeCommandInclude(t, path, "[tasktool]\nvalue = third\n")
-		if _, err := newConfigurationFileCapture(&cache).loadRecords(path); err == nil || parseCacheCount(&cache) != 3 {
+		if _, err := newConfigurationFileCapture(&cache).borrowRecords(path); err == nil || parseCacheCount(&cache) != 3 {
 			t.Fatal("cache miss reused old success when parser input creation failed")
 		}
 	})
 	writeCommandInclude(t, path, "[malformed")
-	if _, err := newConfigurationFileCapture(&cache).loadRecords(path); err == nil {
+	if _, err := newConfigurationFileCapture(&cache).borrowRecords(path); err == nil {
 		t.Fatal("cache miss used old success for malformed input")
 	}
 	writeCommandInclude(t, path, "[tasktool]\nvalue = third\n")
@@ -101,11 +106,11 @@ func TestConfigurationParseCacheMissingIdentityAndFailures(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	capture := newConfigurationFileCapture(&cache)
-	if got, err := capture.loadRecords(path); err != nil || len(got) != 0 {
+	if got, err := capture.borrowRecords(path); err != nil || len(got) != 0 {
 		t.Fatalf("missing: %#v %v", got, err)
 	}
 	writeCommandInclude(t, path, "[tasktool]\nvalue = one\n")
-	if got, err := capture.loadRecords(path); err != nil || len(got) != 0 {
+	if got, err := capture.borrowRecords(path); err != nil || len(got) != 0 {
 		t.Fatalf("operation capture changed: %#v %v", got, err)
 	}
 	if got := parseCacheLoad(t, &cache, path); *got[0].value != "one" || parseCacheCount(&cache) != 1 {
@@ -119,7 +124,7 @@ func TestConfigurationParseCacheMissingIdentityAndFailures(t *testing.T) {
 	}
 	writeCommandInclude(t, path, "[malformed")
 	for range 2 {
-		if _, err := newConfigurationFileCapture(&cache).loadRecords(path); err == nil {
+		if _, err := newConfigurationFileCapture(&cache).borrowRecords(path); err == nil {
 			t.Fatal("invalid bytes accepted")
 		}
 	}
@@ -132,7 +137,7 @@ func TestConfigurationParseCacheMissingIdentityAndFailures(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newConfigurationFileCapture(&cache).loadRecords(path); err == nil {
+	if _, err := newConfigurationFileCapture(&cache).borrowRecords(path); err == nil {
 		t.Fatal("read failure accepted")
 	}
 	if err := os.Remove(path); err != nil {
@@ -184,12 +189,12 @@ func TestConfigurationParseCacheReevaluatesGraph(t *testing.T) {
 	evaluate := func(branch string, want bool) {
 		t.Helper()
 		capture := newConfigurationFileCapture(&cache)
-		records, err := capture.loadRecords(root)
+		records, err := capture.borrowRecords(root)
 		if err != nil {
 			t.Fatal(err)
 		}
 		context := configurationContext{gitdir: dir, branch: branch}
-		got, err := (&hasconfigEvaluation{matches: context.matches}).evaluate([]hasconfigSource{{records: records, load: capture.loadRecords}})
+		got, err := (&hasconfigEvaluation{matches: context.matches}).evaluate([]hasconfigSource{{records: records, load: capture.borrowRecords}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -197,8 +202,8 @@ func TestConfigurationParseCacheReevaluatesGraph(t *testing.T) {
 		for _, record := range got {
 			if record.name == "tasktool.value" {
 				found = true
-				if record.origin != leaf || record.depth != 1 || !record.conditionalURL {
-					t.Fatal("lost evaluated origin/depth/closure")
+				if record.origin != leaf || record.depth != 1 {
+					t.Fatal("lost evaluated origin/depth")
 				}
 			}
 		}
@@ -220,11 +225,11 @@ func TestConfigurationParseCacheReevaluatesGraph(t *testing.T) {
 	// False hasconfig closures must still be validated after a successful hit.
 	writeCommandInclude(t, leaf, "[remote \"forbidden\"]\nurl = https://host/repo\n")
 	capture := newConfigurationFileCapture(&cache)
-	records, err := capture.loadRecords(root)
+	records, err := capture.borrowRecords(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: records, load: capture.loadRecords}}); err == nil {
+	if _, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: records, load: capture.borrowRecords}}); err == nil {
 		t.Fatal("cached graph skipped false-closure validation")
 	}
 	if parseCacheCount(&cache) != 5 {
@@ -287,7 +292,7 @@ func TestConfigurationParseCacheOperationFreshness(t *testing.T) {
 	if parseCacheCount(cache) != count+1 {
 		t.Fatal("worktree edit not reparsed")
 	}
-	if err := opened.WithProspectiveWorktree("child", filepath.Join(t.TempDir(), "child"), "refs/heads/tasks", func(view *Repository) error {
+	if err := opened.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 		if _, err := view.Config("tasktool.worktree"); !HasCode(err, NotFound) {
 			t.Fatalf("prospective context inherited cached current worktree: %v", err)
 		}
@@ -454,7 +459,11 @@ func TestConfigurationEffectiveReuseFreshnessAndRecords(t *testing.T) {
 		defer runtime.UnlockOSThread()
 		configuration := repo.configuration
 		files := newConfigurationFileCapture(&configuration.parsedFiles)
-		sources, err := configuration.sources(files, repo.ptr)
+		locations, err := findConfigurationLocations(repo.ptr, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources, err := configuration.sourcesFromLocations(files, locations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -640,7 +649,13 @@ func TestConfigurationParseCacheConcurrentCaptures(t *testing.T) {
 			defer workers.Done()
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
-			records, err := newConfigurationFileCapture(&cache).loadRecords(path)
+			capture := newConfigurationFileCapture(&cache)
+			borrowed, err := capture.borrowRecords(path)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			records, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: borrowed, load: capture.borrowRecords}})
 			if err != nil {
 				t.Error(err)
 				return

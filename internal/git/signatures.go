@@ -74,9 +74,9 @@ func (r *Repository) CommitterSignature() (Signature, error) {
 // ProspectiveWorktreeSignatures admits identity before a checkout, exclude rule,
 // index, object, or reservation is written. Configuration is evaluated in the
 // future worktree context, not the implementation branch that requested it.
-func (r *Repository) ProspectiveWorktreeSignatures(name, path, branch string) (Signatures, error) {
+func (r *Repository) ProspectiveWorktreeSignatures(name, branch string) (Signatures, error) {
 	var result Signatures
-	err := r.WithProspectiveWorktree(name, path, branch, func(planning *Repository) error {
+	err := r.WithProspectiveWorktree(name, branch, func(planning *Repository) error {
 		var err error
 		result, err = planning.Signatures()
 		return err
