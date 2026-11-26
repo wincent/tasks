@@ -1,6 +1,6 @@
 # TASKS-68: Remove dead code and orphaned metadata in cli package
 
-Status: open
+Status: active
 
 ## Description
 
