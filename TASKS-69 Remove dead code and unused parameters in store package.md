@@ -1,6 +1,6 @@
 # TASKS-69: Remove dead code and unused parameters in store package
 
-Status: active
+Status: merged
 
 ## Description
 
