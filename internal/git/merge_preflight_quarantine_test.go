@@ -63,14 +63,12 @@ func TestNativeMergePreflightQuarantinesEarlierBlobs(t *testing.T) {
 				if rejection != "driver" {
 					attributes = "z.txt filter=custom\n"
 				}
-				base := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": attributes, "a.txt": "one\ntwo\nthree\nfour\nfive\n", "z.txt": "base\n"})
-				left := safetyTip(t, repo, base, map[string]string{"a.txt": "left\ntwo\nthree\nfour\nfive\n", "z.txt": "left\n"})
-				right := safetyTip(t, repo, base, map[string]string{"a.txt": "one\ntwo\nthree\nfour\nright\n", "z.txt": "right\n"})
+				base := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": attributes, "a.txt": "one\ntwo\nthree\nfour\nfive\n", "z.txt": "one\ntwo\nthree\nfour\nfive\n"})
+				left := safetyTip(t, repo, base, map[string]string{"a.txt": "left\ntwo\nthree\nfour\nfive\n", "z.txt": "left\ntwo\nthree\nfour\nfive\n"})
+				right := safetyTip(t, repo, base, map[string]string{"a.txt": "one\ntwo\nthree\nfour\nright\n", "z.txt": "one\ntwo\nthree\nfour\nright\n"})
 				publish(t, repo, "refs/heads/main", left, ID{})
 				publish(t, repo, "refs/heads/source", right, ID{})
-				if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-					t.Fatal(err)
-				}
+				checkoutInitial(t, repo, left)
 				key, want := "merge.custom.driver", "external merge driver"
 				if rejection != "driver" {
 					key, want = "filter.custom.smudge", "external filter"
@@ -122,7 +120,7 @@ func TestNativeMergePreflightQuarantinesEarlierBlobs(t *testing.T) {
 				}
 				before := mergePreflightSnapshot(t, roots...)
 				for attempt := 0; attempt < 2; attempt++ {
-					_, err := repo.MergeIntoIndex(right)
+					_, err := repo.MergeCleanIntoIndex(right)
 					if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "z.txt") {
 						t.Fatalf("%v", err)
 					}
@@ -142,8 +140,7 @@ func TestNativeMergePreflightQuarantinesEarlierBlobs(t *testing.T) {
 				if err := repo.SetLocalConfig(key, ""); err != nil {
 					t.Fatal(err)
 				}
-				_, err = repo.MergeIntoIndex(right)
-				if err == nil || !strings.Contains(err.Error(), "merge conflicts") {
+				if _, err = repo.MergeCleanIntoIndex(right); err != nil {
 					t.Fatalf("%v", err)
 				}
 				opened, err := Open(root)
@@ -181,9 +178,7 @@ func TestNativeMergePreflightDefaultAndBuiltinDrivers(t *testing.T) {
 				left := safetyTip(t, repo, base, leftFiles)
 				right := safetyTip(t, repo, base, map[string]string{"content": "one\ntwo\nthree\nfour\nright\n"})
 				publish(t, repo, "refs/heads/main", left, ID{})
-				if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-					t.Fatal(err)
-				}
+				checkoutInitial(t, repo, left)
 				if err := repo.SetLocalConfig("merge."+driver+".driver", "never-execute-this"); err != nil {
 					t.Fatal(err)
 				}
@@ -191,7 +186,7 @@ func TestNativeMergePreflightDefaultAndBuiltinDrivers(t *testing.T) {
 					t.Fatal(err)
 				}
 				before := mergePreflightSnapshot(t, root)
-				_, err := repo.MergeIntoIndex(right)
+				_, err := repo.MergeCleanIntoIndex(right)
 				if attribute == "boolean" || attribute == "one-sided" {
 					if err != nil {
 						t.Fatal(err)
@@ -228,14 +223,12 @@ func TestNativeMergePreflightUsesRenameDriverPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	publish(t, repo, "refs/heads/main", left, ID{})
-	if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, left)
 	if err := repo.SetLocalConfig("merge.custom.driver", "never-execute-this"); err != nil {
 		t.Fatal(err)
 	}
 	before := mergePreflightSnapshot(t, root)
-	_, err = repo.MergeIntoIndex(right)
+	_, err = repo.MergeCleanIntoIndex(right)
 	if err == nil || !strings.Contains(err.Error(), "external merge driver") {
 		t.Fatalf("%v", err)
 	}
@@ -276,14 +269,12 @@ func TestNativeMergePreflightTargetNestedAttributes(t *testing.T) {
 			}
 			left, right := safetyTip(t, repo, base, leftFiles), safetyTip(t, repo, base, rightFiles)
 			publish(t, repo, "refs/heads/main", left, ID{})
-			if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, left)
 			if err := repo.SetLocalConfig("filter.custom.smudge", "never-execute-this"); err != nil {
 				t.Fatal(err)
 			}
 			before := mergePreflightSnapshot(t, root)
-			_, err := repo.MergeIntoIndex(right)
+			_, err := repo.MergeCleanIntoIndex(right)
 			if scenario == "nested-override" {
 				if err != nil {
 					t.Fatal(err)
@@ -308,9 +299,7 @@ func TestCleanupMergeQuarantinesTreeAndBlob(t *testing.T) {
 	theirs := safetyTip(t, repo, base, map[string]string{"file": "one\ntwo\nthree\nfour\nright\n"})
 	publish(t, repo, "refs/heads/main", ours, ID{})
 	publish(t, repo, "refs/heads/source", theirs, ID{})
-	if err := repo.CheckoutMetadata(ID{}, ours); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, ours)
 	before := mergePreflightSnapshot(t, root)
 	if same, err := repo.MergeWouldKeepTree(theirs, ours, "refs/heads/main"); same || err != nil {
 		t.Fatalf("expected a clean but different result, got %v, %v", same, err)

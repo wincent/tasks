@@ -15,9 +15,7 @@ func TestEditTreeLeavesIndexAndWorktreeUntouched(t *testing.T) {
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	paths, _ := r.Paths()
 	indexPath := filepath.Join(paths.GitDir, "index")
 	before := readFile(t, indexPath)
@@ -72,9 +70,7 @@ func TestIsolatedIndexPreservesUnrelatedStaging(t *testing.T) {
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	paths, _ := r.Paths()
 	real := filepath.Join(paths.GitDir, "index")
 	before := readFile(t, real)
@@ -185,9 +181,7 @@ func TestIsolatedIndexRejectsFilesystemAliases(t *testing.T) {
 	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	paths, _ := r.Paths()
 	real := filepath.Join(paths.GitDir, "index")
 	before := readFile(t, real)
@@ -241,9 +235,7 @@ func TestSafeCheckoutPreservesDirtyAndIgnoredFiles(t *testing.T) {
 			r, root := fixture(t, false)
 			first := commit(t, r, "first")
 			publish(t, r, "refs/heads/main", first, ID{})
-			if err := r.CheckoutMetadata(ID{}, first); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, r, first)
 			path := "content.txt"
 			if obstruction != "dirty" {
 				path = "obstruction"
@@ -267,7 +259,7 @@ func TestSafeCheckoutPreservesDirtyAndIgnoredFiles(t *testing.T) {
 			paths, _ := r.Paths()
 			index := filepath.Join(paths.GitDir, "index")
 			before := readFile(t, index)
-			if err := r.CheckoutMetadata(first, second); err == nil {
+			if err := r.Checkout(first, second); err == nil {
 				t.Fatal("overwrote obstruction")
 			}
 			if string(readFile(t, filepath.Join(root, path))) != "precious" {

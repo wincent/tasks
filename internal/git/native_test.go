@@ -57,6 +57,21 @@ func publish(t *testing.T, r *Repository, name string, next, old ID) {
 	}
 }
 
+func checkoutInitial(t *testing.T, r *Repository, target ID) {
+	t.Helper()
+	emptyTree, err := r.WriteTree(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyCommit, err := r.WriteCommit(emptyTree, nil, testSignature, testSignature, "empty\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Checkout(emptyCommit, target); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func expectRef(t *testing.T, r *Repository, name string, want ID) {
 	t.Helper()
 	ref, err := r.Reference(name)

@@ -17,16 +17,11 @@ import (
 	"path/filepath"
 )
 
-// RemoveCleanWorktree refuses locked, dirty (including ignored), changed or
-// invalid resources. The caller holds workflow locks and must stop arbitrary
+// RemoveWorktree refuses locked, dirty, changed or invalid resources, except
+// that an explicit discardIgnored authorization permits deleting ignored local
+// content too. The caller holds workflow locks and must stop arbitrary
 // filesystem/Git writers: native worktree pruning is not an atomic filesystem
 // transaction. No locked-worktree override is ever passed to libgit2.
-func (r *Repository) RemoveCleanWorktree(name string, expected Paths, head Head) error {
-	return r.RemoveWorktree(name, expected, head, false)
-}
-
-// RemoveWorktree retains all clean-removal safeguards except that an explicit
-// discardIgnored authorization permits deleting ignored local content too.
 func (r *Repository) RemoveWorktree(name string, expected Paths, head Head, discardIgnored bool) error {
 	trees, err := r.Worktrees()
 	if err != nil {

@@ -528,9 +528,7 @@ func TestStatusIncludesUnreadableTrackedContent(t *testing.T) {
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	path := filepath.Join(root, "content.txt")
 	// Keep the size unchanged so status must inspect content instead of
 	// classifying a size change without trying to read the file.
@@ -565,9 +563,7 @@ func TestStatusRejectsUnreadableDirectory(t *testing.T) {
 	r, root := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	path := filepath.Join(root, "hidden")
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
@@ -601,9 +597,7 @@ func TestStatusAndIndexAreFreshAndReadOnly(t *testing.T) {
 	r, root := fixture(t, false)
 	first := commit(t, r, "original")
 	publish(t, r, "refs/heads/main", first, ID{})
-	if err := r.CheckoutMetadata(ID{}, first); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, first)
 	paths, _ := r.Paths()
 	indexPath := filepath.Join(paths.GitDir, "index")
 	before := readFile(t, indexPath)
