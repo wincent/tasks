@@ -1,6 +1,6 @@
 # TASKS-73: Clean up leftover conflict-materialization dead code in git sparse merge
 
-Status: active
+Status: merged
 
 ## Description
 
