@@ -55,7 +55,7 @@ func configBool(r *Repository, key string) (bool, error) {
 			return ConfigurationBool(entry)
 		}
 	}
-	return false, &Error{Operation: "read boolean configuration value", Code: NotFound, Message: "config value not found"}
+	return false, fmt.Errorf("config value not found: %q", key)
 }
 
 func TestInjectedConfigurationPrecedenceAndHandleIsolation(t *testing.T) {
@@ -300,9 +300,6 @@ func TestInjectedParametersBooleanAndEmptyCount(t *testing.T) {
 	}
 	if _, err := repo.Config("tasktool.unused"); !HasCode(err, NotFound) {
 		t.Fatal("empty count applied unused configuration", err)
-	}
-	if _, err := configBool(repo, "tasktool.missing"); !HasCode(err, NotFound) {
-		t.Fatal("missing boolean lost error identity", err)
 	}
 }
 

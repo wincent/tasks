@@ -2,7 +2,6 @@ package git
 
 /*
 #include <git2.h>
-#include <git2/sys/index.h>
 #include <stdlib.h>
 
 static int task_sparse_checkout(git_repository *repo, git_tree *base,
@@ -10,7 +9,7 @@ static int task_sparse_checkout(git_repository *repo, git_tree *base,
     git_checkout_options opts = GIT_CHECKOUT_OPTIONS_INIT;
     opts.checkout_strategy = GIT_CHECKOUT_SAFE |
         GIT_CHECKOUT_DONT_OVERWRITE_IGNORED | GIT_CHECKOUT_DONT_UPDATE_INDEX |
-        GIT_CHECKOUT_DISABLE_PATHSPEC_MATCH | GIT_CHECKOUT_RECREATE_MISSING | GIT_CHECKOUT_ALLOW_CONFLICTS;
+        GIT_CHECKOUT_DISABLE_PATHSPEC_MATCH | GIT_CHECKOUT_RECREATE_MISSING;
     opts.baseline = base;
     opts.paths.strings = paths;
     opts.paths.count = count;
@@ -288,7 +287,6 @@ type sparsePlan struct {
 	selected []string
 }
 
-// Conflicts are always materialized, including outside the sparse patterns.
 func planSparseIndex(repo *C.git_repository, before, after, current *C.git_index) (sparsePlan, error) {
 	var plan sparsePlan
 	policy, err := readSparsePolicy(repo)
@@ -301,18 +299,14 @@ func planSparseIndex(repo *C.git_repository, before, after, current *C.git_index
 	for _, name := range sparseIndexPaths(before, after, current) {
 		p, _ := cstring(name)
 		old, next, entry := C.git_index_get_bypath(before, p, 0), C.git_index_get_bypath(after, p, 0), C.git_index_get_bypath(current, p, 0)
-		conflict := false
-		for stage := 1; stage <= 3; stage++ {
-			conflict = conflict || C.git_index_get_bypath(after, p, C.int(stage)) != nil
-		}
-		omitted := !conflict && sparseOmitted(policy, current, p)
+		omitted := sparseOmitted(policy, current, p)
 		wasOmitted := entry != nil && entry.flags_extended&C.GIT_INDEX_ENTRY_SKIP_WORKTREE != 0
 		free(p)
 		transition := next != nil && omitted != wasOmitted
-		if !conflict && sparseEqual(old, next) && !transition {
+		if sparseEqual(old, next) && !transition {
 			continue
 		}
-		if !sparseEqual(entry, old) && (conflict || !sparseEqual(entry, next)) {
+		if !sparseEqual(entry, old) && !sparseEqual(entry, next) {
 			return plan, fmt.Errorf("checkout would overwrite staged changes at %q", name)
 		}
 		if err := sparseCheckClean(repo, entry, name, current); err != nil {
@@ -388,21 +382,7 @@ func copySparseIndex(source *C.git_index) (*C.git_index, error) {
 			return nil, err
 		}
 	}
-	if err := copySparseNames(result, source); err != nil {
-		C.git_index_free(result)
-		return nil, err
-	}
 	return result, nil
-}
-
-func copySparseNames(target, source *C.git_index) error {
-	for i := C.size_t(0); i < C.git_index_name_entrycount(source); i++ {
-		e := C.git_index_name_get_byindex(source, i)
-		if err := nativeError("copy conflict names", C.git_index_name_add(target, e.ancestor, e.ours, e.theirs)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func applySparseIndex(repo *C.git_repository, base *C.git_tree, after, current *C.git_index, plan sparsePlan) error {
@@ -453,20 +433,11 @@ func applySparseIndex(repo *C.git_repository, base *C.git_tree, after, current *
 			if code == C.GIT_ENOTFOUND {
 				code = 0
 			}
-			if code == 0 {
-				a, o, t := C.git_index_get_bypath(after, p, 1), C.git_index_get_bypath(after, p, 2), C.git_index_get_bypath(after, p, 3)
-				if a != nil || o != nil || t != nil {
-					code = C.git_index_conflict_add(current, a, o, t)
-				}
-			}
 		}
 		free(p)
 		if err := nativeError("update sparse index", code); err != nil {
 			return err
 		}
-	}
-	if err := copySparseNames(current, after); err != nil {
-		return err
 	}
 	return nativeError("write sparse index", C.git_index_write(current))
 }

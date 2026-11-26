@@ -61,7 +61,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"unsafe"
 )
 
 // A separate handle and read-only forwarding backend keep failed planning from
@@ -154,49 +153,17 @@ func withSparseMergePlan(source *C.git_repository, tip ID, driver *C.char, apply
 			return fmt.Errorf("merge would overwrite staged changes at %q", name)
 		}
 	}
+	if C.git_index_has_conflicts(current) != 0 {
+		return errors.New("checkout requires an index without conflicts")
+	}
+	if C.git_index_has_conflicts(after) != 0 {
+		return ErrMergeConflict
+	}
 	plan, err := planSparseIndex(repo, before, after, current)
 	if err != nil {
-		return err
-	}
-	// The merge may generate conflict marker bytes not represented by stage
-	// blobs. Checkout's dry-run does not encode them; validate actual native
-	// conflict output with the public merge-file API before mutation.
-	if err := validateSparseConflicts(repo, after, plan.selected); err != nil {
 		return err
 	}
 	// Leave the comparison context bound to the source during application.
 	restore()
 	return apply(after, plan)
-}
-
-func validateSparseConflicts(repo *C.git_repository, index *C.git_index, paths []string) error {
-	var original *C.git_index
-	if err := nativeError("read conflict attributes", C.git_repository_index(&original, repo)); err != nil {
-		return err
-	}
-	defer C.git_index_free(original)
-	return withAttributeIndex(repo, original, index, func() error {
-		if err := nativeError("refresh conflict attributes", C.git_attr_cache_flush(repo)); err != nil {
-			return err
-		}
-		for _, path := range paths {
-			p, _ := cstring(path)
-			a, o, t := C.git_index_get_bypath(index, p, 1), C.git_index_get_bypath(index, p, 2), C.git_index_get_bypath(index, p, 3)
-			free(p)
-			if o == nil || t == nil || (o.mode != 0100644 && o.mode != 0100755) || (t.mode != 0100644 && t.mode != 0100755) {
-				continue
-			}
-			var result C.git_merge_file_result
-			if err := nativeError("preflight conflict content", C.git_merge_file_from_index(&result, repo, a, o, t, nil)); err != nil {
-				return err
-			}
-			data := C.GoBytes(unsafe.Pointer(result.ptr), C.int(result.len))
-			err := validateEncodingContent(repo, path, data, false, true)
-			C.git_merge_file_result_free(&result)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }

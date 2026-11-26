@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -234,4 +235,47 @@ func TestNativeEncodingCheckoutFailurePreflight(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNativeEncodingMergeConflictAndPreflight(t *testing.T) {
+	t.Parallel()
+	t.Run("conflict", func(t *testing.T) {
+		t.Parallel()
+		repo, root := fixture(t, false)
+		base := safetyTip(t, repo, ID{}, map[string]string{
+			".gitattributes": "content.txt working-tree-encoding=ISO-8859-1 -text\n",
+			"content.txt":    "base\n",
+		})
+		left := safetyTip(t, repo, base, map[string]string{"content.txt": "left\n"})
+		right := safetyTip(t, repo, base, map[string]string{"content.txt": "right €\n"})
+		publish(t, repo, "refs/heads/main", left, ID{})
+		checkoutInitial(t, repo, left)
+		before := safetyFiles(t, root)
+		if _, err := repo.MergeCleanIntoIndex(right); !errors.Is(err, ErrMergeConflict) {
+			t.Fatalf("expected ErrMergeConflict, got %v", err)
+		}
+		if !reflect.DeepEqual(before, safetyFiles(t, root)) {
+			t.Fatal("conflicted merge with unrepresentable encoding mutated state")
+		}
+	})
+	t.Run("clean-preflight", func(t *testing.T) {
+		t.Parallel()
+		repo, root := fixture(t, false)
+		base := safetyTip(t, repo, ID{}, map[string]string{
+			".gitattributes": "content.txt working-tree-encoding=ISO-8859-1 -text\n",
+			"content.txt":    "base\n",
+			"other.txt":      "base\n",
+		})
+		left := safetyTip(t, repo, base, map[string]string{"other.txt": "left\n"})
+		right := safetyTip(t, repo, base, map[string]string{"content.txt": "right €\n"})
+		publish(t, repo, "refs/heads/main", left, ID{})
+		checkoutInitial(t, repo, left)
+		before := safetyFiles(t, root)
+		if _, err := repo.MergeCleanIntoIndex(right); err == nil || !strings.Contains(err.Error(), "working-tree-encoding") {
+			t.Fatalf("expected encoding failure on clean merge, got %v", err)
+		}
+		if !reflect.DeepEqual(before, safetyFiles(t, root)) {
+			t.Fatal("failed encoding merge preflight mutated state")
+		}
+	})
 }

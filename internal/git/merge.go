@@ -19,7 +19,7 @@ static int task_merge(git_repository *repo, const git_oid *tip, const char *driv
  git_merge_options merge = GIT_MERGE_OPTIONS_INIT;
  merge.default_driver = driver;
  git_checkout_options checkout = GIT_CHECKOUT_OPTIONS_INIT;
- checkout.checkout_strategy = GIT_CHECKOUT_NONE | GIT_CHECKOUT_DRY_RUN | GIT_CHECKOUT_ALLOW_CONFLICTS | GIT_CHECKOUT_DONT_WRITE_INDEX | GIT_CHECKOUT_NO_REFRESH;
+ checkout.checkout_strategy = GIT_CHECKOUT_NONE | GIT_CHECKOUT_DRY_RUN | GIT_CHECKOUT_DONT_WRITE_INDEX | GIT_CHECKOUT_NO_REFRESH;
  int result = git_annotated_commit_lookup(&commit, repo, tip);
  if (result < 0) return result;
  const git_annotated_commit *heads[] = { commit };
@@ -79,9 +79,6 @@ func (r *Repository) MergeCleanIntoIndex(tip ID) (ID, error) {
 				return err
 			}
 			if err := withSparseMergePlan(repo, tip, driver, func(planned *C.git_index, plan sparsePlan) error {
-				if C.git_index_has_conflicts(planned) != 0 {
-					return ErrMergeConflict
-				}
 				var baseline *C.git_tree
 				if err := nativeError("read merge checkout baseline", C.task_merge_head_tree(&baseline, repo)); err != nil {
 					return err
