@@ -2,7 +2,6 @@ package git
 
 /*
 #include <git2.h>
-#include <string.h>
 
 static int task_index_add(git_index *index, const char *path,
                           const git_oid *id, unsigned int mode) {
@@ -16,13 +15,6 @@ static int task_index_add(git_index *index, const char *path,
     entry.id = *id;
     entry.mode = mode;
     return git_index_add(index, &entry);
-}
-
-static int task_checkout(git_repository *repo, git_tree *target, git_tree *base) {
-    git_checkout_options options = GIT_CHECKOUT_OPTIONS_INIT;
-    options.checkout_strategy = GIT_CHECKOUT_SAFE | GIT_CHECKOUT_DONT_OVERWRITE_IGNORED;
-    options.baseline = base;
-    return git_checkout_tree(repo, (git_object *)target, &options);
 }
 */
 import "C"
@@ -251,38 +243,5 @@ func (r *Repository) EditIndexFile(path string, base ID, edits []TreeEdit) error
 			return err
 		}
 		return nativeError("write isolated index", C.git_index_write(index))
-	})
-}
-
-// CheckoutMetadata updates only the index/workdir, not HEAD or any reference. A safe
-// checkout is not an atomic publication protocol: workflow callers must hold
-// verified ref locks, protect ignored/untracked content, and record recovery
-// evidence before calling. Native filters apply; external filters are rejected.
-func (r *Repository) CheckoutMetadata(base, target ID) error {
-	return r.call("checkout tree", func(repo *C.git_repository) error {
-		if err := validateRepositoryIndex(repo); err != nil {
-			return err
-		}
-		restore := encodingComparison(repo)
-		defer restore()
-		next, err := commitTree(repo, target)
-		if err != nil {
-			return err
-		}
-		defer C.git_tree_free(next)
-		var previous *C.git_tree
-		if base != (ID{}) {
-			previous, err = commitTree(repo, base)
-			if err != nil {
-				return err
-			}
-			defer C.git_tree_free(previous)
-		}
-		if err := validateCheckoutOperation(repo, previous, next, true); err != nil {
-			return err
-		}
-		return checkoutPreservingSparse(repo, previous, next, func() error {
-			return nativeError("checkout tree", C.task_checkout(repo, next, previous))
-		})
 	})
 }

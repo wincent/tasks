@@ -44,7 +44,7 @@ func checkouts(repo *git.Repository) ([]checkout, error) {
 		return nil, err
 	}
 	if !primary.Bare {
-		opened, summary, err := git.OpenCheckout(primary.WorkDir, "")
+		opened, summary, err := git.OpenCheckout(primary.WorkDir)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func checkouts(repo *git.Repository) ([]checkout, error) {
 	for _, tree := range trees {
 		item := checkout{Name: tree.Name, Locked: tree.Locked, Invalid: tree.InvalidReason, Paths: git.Paths{WorkDir: tree.Path}}
 		if tree.InvalidReason == "" {
-			opened, summary, err := git.OpenCheckout(tree.Path, "")
+			opened, summary, err := git.OpenCheckout(tree.Path)
 			if err != nil {
 				return nil, err
 			}

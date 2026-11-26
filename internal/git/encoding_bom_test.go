@@ -24,9 +24,7 @@ func TestNativeEncodingGenericBOMSmudge(t *testing.T) {
 				"content.txt":    "A",
 			})
 			publish(t, repo, "refs/heads/main", tip, ID{})
-			if err := repo.CheckoutMetadata(ID{}, tip); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, tip)
 			// Git preserves the host iconv's endian choice, but requires a BOM.
 			got := readFile(t, filepath.Join(root, "content.txt"))
 			if !bytes.Equal(got, tt.le) && !bytes.Equal(got, tt.be) {
@@ -62,9 +60,7 @@ func TestNativeEncodingLargeAndStatefulContent(t *testing.T) {
 				"content.txt":    tt.utf8,
 			})
 			publish(t, repo, "refs/heads/main", tip, ID{})
-			if err := repo.CheckoutMetadata(ID{}, tip); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, tip)
 			got := readFile(t, filepath.Join(root, "content.txt"))
 			if string(got) != tt.encoded {
 				t.Fatalf("smudge mismatch: got %d bytes, want %d", len(got), len(tt.encoded))

@@ -98,9 +98,7 @@ func setupSparse(t *testing.T, patterns string) (*Repository, string, ID, string
 	r, root := fixture(t, false)
 	base := sparseCommit(t, r, ID{}, map[string]string{"keep/file": "base", "omit/file": "base", "assumed": "base", "unrelated": "base"})
 	publish(t, r, "refs/heads/main", base, ID{})
-	if err := r.CheckoutMetadata(ID{}, base); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, r, base)
 	entries, err := r.IndexEntries()
 	if err != nil {
 		t.Fatal(err)
@@ -281,63 +279,53 @@ func TestSparseStatusMissingAndStaged(t *testing.T) {
 
 func TestSparseCheckoutPreservesOmissionsFlagsAndUnrelatedState(t *testing.T) {
 	t.Parallel()
-	for _, metadata := range []bool{false, true} {
-		t.Run(map[bool]string{false: "implementation", true: "metadata"}[metadata], func(t *testing.T) {
-			t.Parallel()
-			r, root, base, _ := setupSparse(t, "/*\n!/*/\n/keep/\n")
-			entries, err := r.IndexEntries()
-			if err != nil {
-				t.Fatal(err)
-			}
-			staged, err := r.WriteBlob([]byte("staged"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			for i := range entries {
-				if entries[i].Path == "unrelated" {
-					entries[i].ID = staged
-				}
-			}
-			sparseIndexFixture(t, r, entries)
-			writeFile(t, filepath.Join(root, "unrelated"), []byte("unstaged"))
-			writeFile(t, filepath.Join(root, "untracked"), []byte("precious"))
-			writeFile(t, filepath.Join(root, ".gitignore"), []byte("ignored\n"))
-			writeFile(t, filepath.Join(root, "ignored"), []byte("ignored precious"))
-			next := sparseCommit(t, r, base, map[string]string{"keep/file": "next", "keep/new": "new", "omit/file": "next", "omit/new": "new", "newdir/file": "new"})
-			if metadata {
-				err = r.CheckoutMetadata(base, next)
-			} else {
-				err = r.Checkout(base, next)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, path := range []string{"omit/file", "omit/new", "newdir/file"} {
-				if _, err := os.Lstat(filepath.Join(root, path)); !os.IsNotExist(err) {
-					t.Fatalf("materialized %s: %v", path, err)
-				}
-			}
-			for path, want := range map[string]string{"keep/file": "next", "keep/new": "new", "unrelated": "unstaged", "untracked": "precious", "ignored": "ignored precious"} {
-				if got := string(readFile(t, filepath.Join(root, path))); got != want {
-					t.Fatalf("%s: %q", path, got)
-				}
-			}
-			after, err := r.IndexEntries()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, entry := range after {
-				if entry.Path == "assumed" && !entry.AssumeValid {
-					t.Fatal("lost assume-valid")
-				}
-				if (strings.HasPrefix(entry.Path, "omit/") || strings.HasPrefix(entry.Path, "newdir/")) && !entry.SkipWorktree {
-					t.Fatalf("lost omission: %+v", entry)
-				}
-				if entry.Path == "unrelated" && entry.ID != staged {
-					t.Fatal("lost staging")
-				}
-			}
-		})
+	r, root, base, _ := setupSparse(t, "/*\n!/*/\n/keep/\n")
+	entries, err := r.IndexEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, err := r.WriteBlob([]byte("staged"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range entries {
+		if entries[i].Path == "unrelated" {
+			entries[i].ID = staged
+		}
+	}
+	sparseIndexFixture(t, r, entries)
+	writeFile(t, filepath.Join(root, "unrelated"), []byte("unstaged"))
+	writeFile(t, filepath.Join(root, "untracked"), []byte("precious"))
+	writeFile(t, filepath.Join(root, ".gitignore"), []byte("ignored\n"))
+	writeFile(t, filepath.Join(root, "ignored"), []byte("ignored precious"))
+	next := sparseCommit(t, r, base, map[string]string{"keep/file": "next", "keep/new": "new", "omit/file": "next", "omit/new": "new", "newdir/file": "new"})
+	if err := r.Checkout(base, next); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"omit/file", "omit/new", "newdir/file"} {
+		if _, err := os.Lstat(filepath.Join(root, path)); !os.IsNotExist(err) {
+			t.Fatalf("materialized %s: %v", path, err)
+		}
+	}
+	for path, want := range map[string]string{"keep/file": "next", "keep/new": "new", "unrelated": "unstaged", "untracked": "precious", "ignored": "ignored precious"} {
+		if got := string(readFile(t, filepath.Join(root, path))); got != want {
+			t.Fatalf("%s: %q", path, got)
+		}
+	}
+	after, err := r.IndexEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range after {
+		if entry.Path == "assumed" && !entry.AssumeValid {
+			t.Fatal("lost assume-valid")
+		}
+		if (strings.HasPrefix(entry.Path, "omit/") || strings.HasPrefix(entry.Path, "newdir/")) && !entry.SkipWorktree {
+			t.Fatalf("lost omission: %+v", entry)
+		}
+		if entry.Path == "unrelated" && entry.ID != staged {
+			t.Fatal("lost staging")
+		}
 	}
 }
 
@@ -429,7 +417,7 @@ func TestSparseMergePreservesOmissions(t *testing.T) {
 	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	tip := sparseCommit(t, r, base, map[string]string{"omit/file": "theirs"})
-	merged, err := r.MergeIntoIndex(tip)
+	merged, err := r.MergeCleanIntoIndex(tip)
 	if err != nil || merged == (ID{}) {
 		t.Fatalf("sparse merge: %s %v", merged, err)
 	}

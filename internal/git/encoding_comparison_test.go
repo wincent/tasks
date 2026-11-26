@@ -17,9 +17,7 @@ func encodingComparisonFixture(t *testing.T) (*Repository, string, ID) {
 	if err := repo.SetLocalConfig("core.checkRoundtripEncoding", "UTF-16LE-BOM"); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CheckoutMetadata(ID{}, tip); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, tip)
 	path := filepath.Join(root, "content.txt")
 	writeFile(t, path, []byte("\xfe\xff\x00A"))
 	if err := os.Chtimes(path, time.Unix(1, 0), time.Unix(1, 0)); err != nil {

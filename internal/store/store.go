@@ -78,7 +78,7 @@ func openWith(_ *git.Repository, path, originalCommon string, worktrees []git.Wo
 	if !registered {
 		return nil, fmt.Errorf("expected a registered tasks worktree at %s; restore its tasks branch without resetting it", path)
 	}
-	tasks, summary, err := git.OpenCheckout(path, "")
+	tasks, summary, err := git.OpenCheckout(path)
 	if err != nil {
 		return nil, err
 	}

@@ -52,7 +52,7 @@ func inspectWith(repo *git.Repository, path, originalCommon string, trees []git.
 		if tree.InvalidReason != "" {
 			return nil, fmt.Errorf("inspect invalid worktree %s before bootstrapping tasks: %s", tree.Path, tree.InvalidReason)
 		}
-		other, summary, err := git.OpenCheckout(tree.Path, "")
+		other, summary, err := git.OpenCheckout(tree.Path)
 		if err != nil {
 			return nil, err
 		}
