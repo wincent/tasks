@@ -259,6 +259,14 @@ func TestSSHVerificationPrincipalsTimeRevocationAndTrust(t *testing.T) {
 	}
 }
 
+func loadPolicy(repo *git.Repository) (Policy, error) {
+	entries, err := repo.ConfigurationEntries()
+	if err != nil {
+		return Policy{}, err
+	}
+	return ParsePolicy(entries)
+}
+
 func TestSigningPolicyFileFreshnessAndFrozenCommandIncludes(t *testing.T) {
 	root := t.TempDir()
 	local := filepath.Join(root, "local.config")
@@ -283,7 +291,7 @@ func TestSigningPolicyFileFreshnessAndFrozenCommandIncludes(t *testing.T) {
 	if err := repo.SetLocalConfig("include.path", local); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Load(repo)
+	p, err := loadPolicy(repo)
 	if err != nil || p.Key != "frozen" || p.Programs["openpgp"] != "original" {
 		t.Fatalf("%+v %v", p, err)
 	}
@@ -293,7 +301,7 @@ func TestSigningPolicyFileFreshnessAndFrozenCommandIncludes(t *testing.T) {
 	if err := os.WriteFile(command, []byte("[user]\nsigningKey = changed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	p, err = Load(repo)
+	p, err = loadPolicy(repo)
 	if err != nil || p.Key != "frozen" || p.Programs["openpgp"] != "updated" {
 		t.Fatalf("%+v %v", p, err)
 	}
@@ -316,7 +324,7 @@ func TestSigningPolicySnapshotBooleanAssignments(t *testing.T) {
 			if err := repo.SetLocalConfig("include.path", include); err != nil {
 				t.Fatal(err)
 			}
-			p, err := Load(repo)
+			p, err := loadPolicy(repo)
 			want := value == "" || value == " = true" || value == " = -2"
 			if err != nil || p.Sign != want || p.Verify {
 				t.Fatalf("policy=%+v err=%v", p, err)
@@ -325,7 +333,7 @@ func TestSigningPolicySnapshotBooleanAssignments(t *testing.T) {
 			if err := os.WriteFile(include, []byte("[commit]\ngpgSign = invalid\ngpgSign = false\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(repo); err == nil {
+			if _, err := loadPolicy(repo); err == nil {
 				t.Fatal("accepted shadowed invalid boolean")
 			}
 		})
@@ -344,7 +352,7 @@ func TestSigningPolicyOrderedAliasesAndInvalidSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p, err := Load(repo)
+	p, err := loadPolicy(repo)
 	if err != nil || p.Programs["openpgp"] != "modern" || p.Format != "x509" || p.MinimumTrust != 4 || p.Key != "identity" {
 		t.Fatalf("%+v %v", p, err)
 	}
@@ -356,7 +364,7 @@ func TestSigningPolicyOrderedAliasesAndInvalidSettings(t *testing.T) {
 	if err := repo.SetLocalConfig("include.path", include); err != nil {
 		t.Fatal(err)
 	}
-	p, err = Load(repo)
+	p, err = loadPolicy(repo)
 	if err != nil || p.Programs["openpgp"] != "later" {
 		t.Fatalf("%+v %v", p, err)
 	}
@@ -370,7 +378,7 @@ func TestSigningPolicyOrderedAliasesAndInvalidSettings(t *testing.T) {
 		if err := repo.SetLocalConfig(entry[0], entry[1]); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Load(repo); err == nil {
+		if _, err := loadPolicy(repo); err == nil {
 			t.Fatalf("accepted %v", entry)
 		}
 		if err := repo.SetLocalConfig(entry[0], original); err != nil {

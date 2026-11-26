@@ -19,9 +19,22 @@ func parseTest(t *testing.T, expr string) *Expression {
 	return e
 }
 
+func matchTest(t *testing.T, e *Expression, r Record) bool {
+	t.Helper()
+	got, err := e.Evaluate(r, nil)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	return got
+}
+
 func TestLogic(t *testing.T) {
 	t.Parallel()
 	r := Record{Status: "merged", Title: "Export REPORT (literally status:merged)"}
+	noUpdated := func() (time.Time, error) {
+		t.Fatal("unexpected updated lookup")
+		return time.Time{}, nil
+	}
 	for _, tc := range []struct {
 		expr string
 		want bool
@@ -35,18 +48,28 @@ func TestLogic(t *testing.T) {
 		{`title:EXPORT AND NOT title:export`, false},
 	} {
 		e := parseTest(t, tc.expr)
-		if e.NeedsUpdated() || e.Matches(r) != tc.want {
-			t.Errorf("%q: wanted %t", tc.expr, tc.want)
+		got, err := e.Evaluate(r, noUpdated)
+		if err != nil || got != tc.want {
+			t.Errorf("%q: got (%t, %v), wanted %t", tc.expr, got, err, tc.want)
 		}
 	}
 	for _, expr := range []string{`title:can't`, `title:'ship'`, `title:"can't"`} {
 		e := parseTest(t, expr)
-		if !e.Matches(Record{Title: "Can't 'ship'"}) || e.Matches(Record{Title: "Can ship"}) {
+		if !matchTest(t, e, Record{Title: "Can't 'ship'"}) || matchTest(t, e, Record{Title: "Can ship"}) {
 			t.Errorf("%q: apostrophes must be matched literally", expr)
 		}
 	}
-	if !parseTest(t, `status:merged OR NOT updated:today`).NeedsUpdated() {
-		t.Fatal("updated must be detected anywhere in the tree")
+	shortCircuit := parseTest(t, `status:merged OR NOT updated:today`)
+	if got, err := shortCircuit.Evaluate(Record{Status: "merged"}, noUpdated); err != nil || !got {
+		t.Fatalf("short-circuited OR: got (%t, %v), want (true, nil)", got, err)
+	}
+	lookedUp := false
+	got, err := shortCircuit.Evaluate(Record{Status: "open"}, func() (time.Time, error) {
+		lookedUp = true
+		return fixedNow.UTC(), nil
+	})
+	if err != nil || !lookedUp || got {
+		t.Fatalf("evaluated NOT updated:today: got (%t, %v) lookedUp=%t, want (false, nil) lookedUp=true", got, err, lookedUp)
 	}
 }
 
@@ -85,7 +108,7 @@ func TestUpdatedPeriods(t *testing.T) {
 			for _, form := range forms {
 				e := parseTest(t, "updated:"+form)
 				for i, at := range []time.Time{start.Add(-1), start, end.Add(-1), end} {
-					if got := e.Matches(Record{Updated: at}); got != cmp.want[i] {
+					if got := matchTest(t, e, Record{Updated: at}); got != cmp.want[i] {
 						t.Errorf("updated:%s at %v: got %t", form, at, got)
 					}
 				}
@@ -136,14 +159,14 @@ func TestUpdatedRelative(t *testing.T) {
 					}
 					e := parseTest(t, "updated:"+value)
 					for i, at := range []time.Time{cutoff.Add(-1), cutoff, cutoff.Add(1)} {
-						if got := e.Matches(Record{Updated: at}); got != cmp.want[i] {
+						if got := matchTest(t, e, Record{Updated: at}); got != cmp.want[i] {
 							t.Errorf("updated:%s at %v: got %t", value, at, got)
 						}
 					}
 				}
 				e := parseTest(t, "updated:"+form)
-				if e.Matches(Record{Updated: start.Add(-1)}) || !e.Matches(Record{Updated: start}) ||
-					!e.Matches(Record{Updated: end.Add(-1)}) || e.Matches(Record{Updated: end}) {
+				if matchTest(t, e, Record{Updated: start.Add(-1)}) || !matchTest(t, e, Record{Updated: start}) ||
+					!matchTest(t, e, Record{Updated: end.Add(-1)}) || matchTest(t, e, Record{Updated: end}) {
 					t.Errorf("incorrect relative period for %q", form)
 				}
 			}
@@ -172,19 +195,19 @@ func TestUpdatedNaturalDateForms(t *testing.T) {
 	} {
 		e := parseTest(t, expr)
 		for _, delta := range []time.Duration{-1, 0, 1} {
-			if got := e.Matches(Record{Status: "merged", Updated: cutoff.Add(delta)}); got != (delta < 0) {
+			if got := matchTest(t, e, Record{Status: "merged", Updated: cutoff.Add(delta)}); got != (delta < 0) {
 				t.Errorf("%q: got %t at cutoff + %v", expr, got, delta)
 			}
 		}
 	}
-	if parseTest(t, `(updated: < 3 days ago AND status:merged)`).Matches(Record{Status: "open", Updated: cutoff.Add(-1)}) {
+	if matchTest(t, parseTest(t, `(updated: < 3 days ago AND status:merged)`), Record{Status: "open", Updated: cutoff.Add(-1)}) {
 		t.Error("compound query matched an open record")
 	}
 
 	// A four-digit count is a year only when it is not part of a phrase.
 	yearCutoff := fixedNow.Add(-2026 * 24 * time.Hour)
 	e := parseTest(t, `updated:>= 2026 days ago AND status:merged`)
-	if !e.Matches(Record{Status: "merged", Updated: yearCutoff}) || e.Matches(Record{Status: "merged", Updated: yearCutoff.Add(-1)}) {
+	if !matchTest(t, e, Record{Status: "merged", Updated: yearCutoff}) || matchTest(t, e, Record{Status: "merged", Updated: yearCutoff.Add(-1)}) {
 		t.Error("four-digit relative count was not evaluated as a relative date")
 	}
 }
@@ -192,9 +215,6 @@ func TestUpdatedNaturalDateForms(t *testing.T) {
 func TestUpdatedQuotedDateBooleanBoundaries(t *testing.T) {
 	t.Parallel()
 	e := parseTest(t, `(updated:<"3 days ago" AND status:merged) OR (NOT status:open AND updated:>= '3 days ago')`)
-	if !e.NeedsUpdated() {
-		t.Fatal("quoted dates must be detected in compound queries")
-	}
 	cutoff := fixedNow.Add(-3 * 24 * time.Hour)
 	for _, tc := range []struct {
 		status string
@@ -206,7 +226,7 @@ func TestUpdatedQuotedDateBooleanBoundaries(t *testing.T) {
 		{"open", 0, false},
 		{"closed", 0, true},
 	} {
-		if got := e.Matches(Record{Status: tc.status, Updated: cutoff.Add(tc.delta)}); got != tc.want {
+		if got := matchTest(t, e, Record{Status: tc.status, Updated: cutoff.Add(tc.delta)}); got != tc.want {
 			t.Errorf("%s at cutoff + %v: got %t, want %t", tc.status, tc.delta, got, tc.want)
 		}
 	}

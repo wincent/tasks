@@ -33,17 +33,6 @@ func AtomicWrite(path string, data []byte) error {
 	return atomicWrite(path, data, true, os.Rename)
 }
 
-// AtomicCreate publishes a complete file without replacing an existing path.
-// installed is true if publication occurred, even if directory sync fails.
-func AtomicCreate(path string, data []byte) (installed bool, err error) {
-	err = atomicWrite(path, data, true, func(source, target string) error {
-		err := os.Link(source, target)
-		installed = err == nil
-		return err
-	})
-	return installed, err
-}
-
 // Batch installs multiple atomic files and flushes each unique containing
 // directory once in SyncDirectories. Each file's contents are flushed before
 // installation; callers must call SyncDirectories before publishing references

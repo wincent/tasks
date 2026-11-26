@@ -16,15 +16,7 @@ type Record struct {
 }
 
 type Expression struct {
-	root         node
-	needsUpdated bool
-}
-
-func (e *Expression) NeedsUpdated() bool { return e != nil && e.needsUpdated }
-
-func (e *Expression) Matches(r Record) bool {
-	match, _ := e.Evaluate(r, nil)
-	return match
+	root node
 }
 
 // Evaluate resolves the update timestamp only if an updated predicate is
@@ -161,11 +153,10 @@ func (l *lexer) quoted(quote byte) token {
 }
 
 type parser struct {
-	lexer        lexer
-	current      token
-	now          time.Time
-	needsUpdated bool
-	validStatus  func(string) bool
+	lexer       lexer
+	current     token
+	now         time.Time
+	validStatus func(string) bool
 }
 
 // Parse binds all date values to the same clock. validStatus supplies the
@@ -180,7 +171,7 @@ func Parse(source string, now time.Time, validStatus func(string) bool) (*Expres
 	if p.current.kind != 0 {
 		return nil, p.error("expected AND, OR, or end of query")
 	}
-	return &Expression{root: root, needsUpdated: p.needsUpdated}, nil
+	return &Expression{root: root}, nil
 }
 
 func (p *parser) advance()                 { p.current = p.lexer.next(querySyntax) }
