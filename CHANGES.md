@@ -1,5 +1,9 @@
 # Changes
 
+## v0.4.0 — 2026-11-26
+
+- feat: teach `tasks tail` to infer the only active task (if there is one) when invoked without a task number.
+
 ## v0.3.0 — 2026-11-25
 
 - feat!: move repository configuration (`.tasks.yml`) from `main` branch to `tasks` branch (users must perform this one-time manual move).
