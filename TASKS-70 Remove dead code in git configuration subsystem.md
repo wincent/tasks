@@ -1,6 +1,6 @@
 # TASKS-70: Remove dead code in git configuration subsystem
 
-Status: open
+Status: active
 
 ## Description
 
