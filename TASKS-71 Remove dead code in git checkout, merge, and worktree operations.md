@@ -1,6 +1,6 @@
 # TASKS-71: Remove dead code in git checkout, merge, and worktree operations
 
-Status: active
+Status: merged
 
 ## Description
 
