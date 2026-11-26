@@ -2,9 +2,9 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -80,7 +80,7 @@ func TestSparsePatternTransitionProtectsDirtyAndStaged(t *testing.T) {
 	}
 }
 
-func TestSparseMergeConflictsOutsideSelection(t *testing.T) {
+func TestSparseMergeRefusesConflictsOutsideSelection(t *testing.T) {
 	t.Parallel()
 	r, root, base, index := setupSparse(t, "/*\n!/*/\n/keep/\n")
 	ours := sparseCommit(t, r, base, map[string]string{"omit/file": "ours\n"})
@@ -89,27 +89,18 @@ func TestSparseMergeConflictsOutsideSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	publish(t, r, "refs/heads/main", ours, base)
-	if _, err := r.MergeIntoIndex(theirs); err == nil || !strings.Contains(err.Error(), "merge conflicts") {
+	before := readFile(t, index)
+	if _, err := r.MergeCleanIntoIndex(theirs); !errors.Is(err, ErrMergeConflict) {
 		t.Fatalf("conflict: %v", err)
 	}
-	if !strings.Contains(string(readFile(t, filepath.Join(root, "omit/file"))), "<<<<<<<") {
-		t.Fatal("omitted conflict not materialized")
+	if _, err := os.Lstat(filepath.Join(root, "omit/file")); !os.IsNotExist(err) {
+		t.Fatalf("omitted conflict materialized: %v", err)
 	}
-	entries, err := r.IndexEntries()
-	if err != nil {
-		t.Fatal(err)
+	if !bytes.Equal(before, readFile(t, index)) {
+		t.Fatal("changed index on conflicted merge")
 	}
-	stages := 0
-	for _, e := range entries {
-		if e.Path == "omit/file" && e.Stage != 0 {
-			stages++
-		}
-	}
-	if stages != 3 {
-		t.Fatalf("conflict stages: %+v", entries)
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(index), "MERGE_HEAD")); err != nil {
-		t.Fatal(err)
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(index), "MERGE_HEAD")); !os.IsNotExist(err) {
+		t.Fatalf("created merge state: %v", err)
 	}
 }
 
@@ -119,7 +110,7 @@ func TestSparseMergeDirtyPreflightDoesNotMutate(t *testing.T) {
 	tip := sparseCommit(t, r, base, map[string]string{"omit/file": "theirs"})
 	writeFile(t, filepath.Join(root, "omit/file"), []byte("precious"))
 	before := readFile(t, index)
-	if _, err := r.MergeIntoIndex(tip); err == nil {
+	if _, err := r.MergeCleanIntoIndex(tip); err == nil {
 		t.Fatal("overwrote hidden dirty file")
 	}
 	if !bytes.Equal(before, readFile(t, index)) {

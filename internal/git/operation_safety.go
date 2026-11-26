@@ -177,13 +177,10 @@ func changedOperationPaths(repo *C.git_repository, base, target *C.git_tree) ([]
 	return paths, nil
 }
 
-func validateCheckoutOperation(repo *C.git_repository, base, target *C.git_tree, existing bool) error {
-	paths, err := changedOperationPaths(repo, base, target)
-	if existing {
-		paths, err = sparseCheckoutPaths(repo, base, target)
-		if err == nil {
-			paths, err = sparseOperationPaths(repo, paths)
-		}
+func validateCheckoutOperation(repo *C.git_repository, base, target *C.git_tree) error {
+	paths, err := sparseCheckoutPaths(repo, base, target)
+	if err == nil {
+		paths, err = sparseOperationPaths(repo, paths)
 	}
 	if err != nil {
 		return err
@@ -197,15 +194,13 @@ func validateCheckoutOperation(repo *C.git_repository, base, target *C.git_tree,
 		return err
 	}
 	defer C.git_index_free(current)
-	if existing {
-		if err := validateWorktreeContent(repo, paths); err != nil {
-			return err
-		}
+	if err := validateWorktreeContent(repo, paths); err != nil {
+		return err
 	}
 	var materialized []string
 	for _, path := range paths {
 		p, _ := cstring(path)
-		if existing && sparseOmitted(policy, current, p) {
+		if sparseOmitted(policy, current, p) {
 			free(p)
 			continue
 		}

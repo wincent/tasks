@@ -44,19 +44,10 @@ import (
 	"path/filepath"
 )
 
-// MergeIntoIndex leaves conflicts in the index and worktree for resolution.
-func (r *Repository) MergeIntoIndex(tip ID) (ID, error) {
-	return r.mergeIntoIndex(tip, false)
-}
-
 var ErrMergeConflict = errors.New("merge conflicts")
 
 // MergeCleanIntoIndex refuses conflicts before writing the index or worktree.
 func (r *Repository) MergeCleanIntoIndex(tip ID) (ID, error) {
-	return r.mergeIntoIndex(tip, true)
-}
-
-func (r *Repository) mergeIntoIndex(tip ID, cleanOnly bool) (ID, error) {
 	mergeDriverRegistry.Lock()
 	defer mergeDriverRegistry.Unlock()
 	var tree ID
@@ -88,7 +79,7 @@ func (r *Repository) mergeIntoIndex(tip ID, cleanOnly bool) (ID, error) {
 				return err
 			}
 			if err := withSparseMergePlan(repo, tip, driver, func(planned *C.git_index, plan sparsePlan) error {
-				if cleanOnly && C.git_index_has_conflicts(planned) != 0 {
+				if C.git_index_has_conflicts(planned) != 0 {
 					return ErrMergeConflict
 				}
 				var baseline *C.git_tree
@@ -124,9 +115,6 @@ func (r *Repository) mergeIntoIndex(tip ID, cleanOnly bool) (ID, error) {
 				return err
 			}
 			defer C.git_index_free(index)
-			if C.git_index_has_conflicts(index) != 0 {
-				return fmt.Errorf("%w: index and worktree retained for inspection", ErrMergeConflict)
-			}
 			var result C.git_oid
 			if err := nativeError("write merged tree", C.git_index_write_tree(&result, index)); err != nil {
 				return err
@@ -192,7 +180,7 @@ func (r *Repository) IndexMatches(revision ID) (bool, error) {
 }
 
 // Checkout safely advances a clean implementation checkout, applying native
-// attributes/filters rather than the raw metadata-only checkout policy.
+// attributes and filters.
 func (r *Repository) Checkout(base, target ID) error {
 	return r.call("checkout implementation", func(repo *C.git_repository) error {
 		if err := validateRepositoryIndex(repo); err != nil {
@@ -210,7 +198,7 @@ func (r *Repository) Checkout(base, target ID) error {
 			return err
 		}
 		defer C.git_tree_free(next)
-		if err := validateCheckoutOperation(repo, old, next, true); err != nil {
+		if err := validateCheckoutOperation(repo, old, next); err != nil {
 			return err
 		}
 		return checkoutPreservingSparse(repo, old, next, func() error {

@@ -12,8 +12,6 @@ import (
 	"strings"
 )
 
-type configurationEntry struct{ name, value string }
-
 // ConfigurationEntry preserves traversal order and valueless assignments.
 type ConfigurationEntry struct {
 	Name, Value string
@@ -108,35 +106,4 @@ func ConfigurationPath(value string) (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	return configurationExpandPath(value)
-}
-
-func (r *Repository) configEntries(prefix string) ([]configurationEntry, error) {
-	var entries []configurationEntry
-	err := r.call("read configuration entries", func(repo *C.git_repository) error {
-		var config *C.git_config
-		if err := nativeError("open configuration", C.git_repository_config_snapshot(&config, repo)); err != nil {
-			return err
-		}
-		defer C.git_config_free(config)
-		var iterator *C.git_config_iterator
-		if err := nativeError("iterate configuration", C.git_config_iterator_new(&iterator, config)); err != nil {
-			return err
-		}
-		defer C.git_config_iterator_free(iterator)
-		for {
-			var entry *C.git_config_entry
-			code := C.git_config_next(&entry, iterator)
-			if code == C.GIT_ITEROVER {
-				return nil
-			}
-			if err := nativeError("read configuration entry", code); err != nil {
-				return err
-			}
-			name := C.GoString(entry.name)
-			if strings.HasPrefix(name, prefix) {
-				entries = append(entries, configurationEntry{name, C.GoString(entry.value)})
-			}
-		}
-	})
-	return entries, err
 }

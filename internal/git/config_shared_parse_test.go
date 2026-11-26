@@ -27,7 +27,7 @@ func TestConfigurationSharedParseHandlesAndContexts(t *testing.T) {
 	}
 	future := func(r *Repository) {
 		t.Helper()
-		if err := r.WithProspectiveWorktree("child", filepath.Join(t.TempDir(), "child"), "refs/heads/tasks", func(view *Repository) error {
+		if err := r.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 			if got, err := view.Config("tasktool.future"); err != nil || got != "prospective" {
 				t.Fatalf("prospective: %q %v", got, err)
 			}
@@ -84,11 +84,11 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	missing := newConfigurationFileCapture(fresh())
-	if got, err := missing.loadRecords(path); err != nil || len(got) != 0 {
+	if got, err := missing.borrowRecords(path); err != nil || len(got) != 0 {
 		t.Fatal("missing file capture", got, err)
 	}
 	writeCommandInclude(t, path, "[tasktool]\nvalue = first\n")
-	if got, err := missing.loadRecords(path); err != nil || len(got) != 0 {
+	if got, err := missing.borrowRecords(path); err != nil || len(got) != 0 {
 		t.Fatal("missing operation capture changed", got, err)
 	}
 	original := parseCacheLoad(t, fresh(), path)
@@ -153,7 +153,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newConfigurationFileCapture(fresh()).loadRecords(path); err == nil || err.Error() != "cannot read ordinary Git configuration" {
+	if _, err := newConfigurationFileCapture(fresh()).borrowRecords(path); err == nil || err.Error() != "cannot read ordinary Git configuration" {
 		t.Fatal("read error reused pooled records", err)
 	}
 	if err := os.Remove(path); err != nil {
@@ -165,7 +165,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if os.Geteuid() != 0 {
-		if _, err := newConfigurationFileCapture(fresh()).loadRecords(path); err == nil {
+		if _, err := newConfigurationFileCapture(fresh()).borrowRecords(path); err == nil {
 			t.Fatal("unreadable file reused pooled records")
 		}
 	}
@@ -178,7 +178,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 	writeCommandInclude(t, path, "[secret-malformed")
 	for range 2 {
 		cache := fresh()
-		if _, err := newConfigurationFileCapture(cache).loadRecords(path); err == nil || strings.Contains(err.Error(), "secret") || parseCacheCount(cache) != 1 {
+		if _, err := newConfigurationFileCapture(cache).borrowRecords(path); err == nil || strings.Contains(err.Error(), "secret") || parseCacheCount(cache) != 1 {
 			t.Fatal("parse error cached, bypassed or unredacted", err)
 		}
 	}
@@ -187,7 +187,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 		t.Setenv("TMPDIR", filepath.Join(dir, "absent"))
 		for range 2 {
 			cache := fresh()
-			if _, err := newConfigurationFileCapture(cache).loadRecords(path); err == nil || parseCacheCount(cache) != 1 {
+			if _, err := newConfigurationFileCapture(cache).borrowRecords(path); err == nil || parseCacheCount(cache) != 1 {
 				t.Fatal("parser input failure was cached or bypassed", err)
 			}
 		}
@@ -201,7 +201,7 @@ func TestConfigurationSharedParseFreshIdentityBytesAndErrors(t *testing.T) {
 	if err := os.Symlink(alias, alias); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newConfigurationFileCapture(fresh()).loadRecords(alias); err == nil || err.Error() != "cannot resolve ordinary Git configuration" {
+	if _, err := newConfigurationFileCapture(fresh()).borrowRecords(alias); err == nil || err.Error() != "cannot resolve ordinary Git configuration" {
 		t.Fatal("identity resolution error bypassed", err)
 	}
 }
@@ -216,16 +216,20 @@ func TestConfigurationSharedParseMutationBoundsAndLifetime(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "first")
 	writeCommandInclude(t, path, "[tasktool]\nvalue = original\nimplicit\nempty =\nvalue = duplicate\n")
-	owned := parseCacheLoad(t, first, path)
-	borrowed, err := newConfigurationFileCapture(first).borrowRecords(path)
+	capture := newConfigurationFileCapture(first)
+	borrowed, err := capture.borrowRecords(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: borrowed, load: capture.borrowRecords}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	*owned[0].value, owned[0].origin, owned[0].level = "mutated", "wrong", 999
-	owned[0].conditionalURL, owned[0].depth = true, 100
+	owned[0].depth = 100
 	second := &configurationParseCache{shared: &pool}
 	got := parseCacheLoad(t, second, path)
-	if *got[0].value != "original" || got[0].origin != path || got[0].level == 999 || got[0].conditionalURL || got[0].depth != 0 || got[1].value != nil || *got[2].value != "" || *got[3].value != "duplicate" {
+	if *got[0].value != "original" || got[0].origin != path || got[0].level == 999 || got[0].depth != 0 || got[1].value != nil || *got[2].value != "" || *got[3].value != "duplicate" {
 		t.Fatal("owned output contaminated shared parse")
 	}
 	checkBounds := func() {
@@ -297,7 +301,7 @@ func TestConfigurationSharedParseMutationBoundsAndLifetime(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool.clear()
-	if _, err := pool.records(path, identity, configurationFileContents{data: data, info: info}); err != nil {
+	if _, _, err := pool.borrowFile(path, identity, configurationFileContents{data: data, info: info}); err != nil {
 		t.Fatal(err)
 	}
 	copy(data, bytes.Repeat([]byte{'x'}, len(data)))
@@ -325,7 +329,13 @@ func TestConfigurationSharedParseConcurrentHandles(t *testing.T) {
 			cache := &configurationParseCache{shared: &pool}
 			defer cache.clear()
 			for range 4 {
-				records, err := newConfigurationFileCapture(cache).loadRecords(path)
+				capture := newConfigurationFileCapture(cache)
+				borrowed, err := capture.borrowRecords(path)
+				if err != nil {
+					t.Error("concurrent handle changed records", err)
+					return
+				}
+				records, err := (&hasconfigEvaluation{}).evaluate([]hasconfigSource{{records: borrowed, load: capture.borrowRecords}})
 				if err != nil || len(records) != 1 || records[0].value == nil || *records[0].value != "original" {
 					t.Error("concurrent handle changed records", err)
 					return

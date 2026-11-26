@@ -1,8 +1,6 @@
 package git
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,15 +43,13 @@ func TestProspectiveContentsUseProposedAttributesWithoutMutation(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				destinationRoot := t.TempDir()
-				destination := filepath.Join(destinationRoot, "child")
-				before := mergePreflightSnapshot(t, root, destinationRoot)
-				err := repo.ValidateProspectiveWorktreeContents("child", destination, "refs/heads/tasks", contents)
+				before := mergePreflightSnapshot(t, root)
+				err := repo.ValidateProspectiveWorktreeContents("child", "refs/heads/tasks", contents)
 				if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(want)) {
 					t.Fatalf("expected %s: %v", want, err)
 				}
-				if after := mergePreflightSnapshot(t, root, destinationRoot); !reflect.DeepEqual(before, after) {
-					t.Fatal("rejection changed source/destination contents, modes, directories or mtimes")
+				if after := mergePreflightSnapshot(t, root); !reflect.DeepEqual(before, after) {
+					t.Fatal("rejection changed source contents, modes, directories or mtimes")
 				}
 			})
 		}
@@ -68,17 +64,13 @@ func TestProspectiveContentsDoNotSmudgeOldTreeUnderFutureAttributes(t *testing.T
 	if err := repo.SetLocalConfig("filter.future.smudge", "must-not-run"); err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	before := mergePreflightSnapshot(t, root, dir)
+	before := mergePreflightSnapshot(t, root)
 	contents := map[string][]byte{".gitattributes": []byte("old.txt filter=future\nnew.txt working-tree-encoding=UTF-16LE\n"), "new.txt": {'A', 0, '\n', 0}}
-	if err := repo.ValidateProspectiveWorktreeContents("child", filepath.Join(dir, "child"), "refs/heads/tasks", contents); err != nil {
+	if err := repo.ValidateProspectiveWorktreeContents("child", "refs/heads/tasks", contents); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(before, mergePreflightSnapshot(t, root, dir)) {
+	if !reflect.DeepEqual(before, mergePreflightSnapshot(t, root)) {
 		t.Fatal("successful admission mutated source")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "child")); !os.IsNotExist(err) {
-		t.Fatalf("created worktree: %v", err)
 	}
 }
 
@@ -90,13 +82,12 @@ func TestProspectiveContentsStillPreflightOriginalAttributes(t *testing.T) {
 	if err := repo.SetLocalConfig("filter.original.smudge", "must-not-run"); err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	before := mergePreflightSnapshot(t, root, dir)
-	err := repo.ValidateProspectiveWorktreeContents("child", filepath.Join(dir, "child"), "refs/heads/tasks", map[string][]byte{".gitattributes": []byte("* -filter\n"), "new.txt": []byte("new\n")})
+	before := mergePreflightSnapshot(t, root)
+	err := repo.ValidateProspectiveWorktreeContents("child", "refs/heads/tasks", map[string][]byte{".gitattributes": []byte("* -filter\n"), "new.txt": []byte("new\n")})
 	if err == nil || !strings.Contains(err.Error(), "external filter") {
 		t.Fatalf("bypassed original checkout: %v", err)
 	}
-	if !reflect.DeepEqual(before, mergePreflightSnapshot(t, root, dir)) {
+	if !reflect.DeepEqual(before, mergePreflightSnapshot(t, root)) {
 		t.Fatal("rejection mutated source")
 	}
 }

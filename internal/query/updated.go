@@ -78,7 +78,6 @@ func (p *parser) updatedPredicate() (node, error) {
 	if err != nil {
 		return nil, p.error(err.Error())
 	}
-	p.needsUpdated = true
 	p.advance()
 	return test, nil
 }

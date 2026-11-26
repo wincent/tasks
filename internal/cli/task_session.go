@@ -26,7 +26,6 @@ type taskSession struct {
 	SessionID   *string `json:"session_id,omitempty"`
 	SessionFile string  `json:"session_file,omitempty"`
 	Reason      string  `json:"reason,omitempty"`
-	Revision    string  `json:"revision,omitempty"`
 	Summary     string  `json:"summary,omitempty"`
 }
 

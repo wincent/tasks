@@ -52,7 +52,7 @@ func inspectWith(repo *git.Repository, path, originalCommon string, trees []git.
 		if tree.InvalidReason != "" {
 			return nil, fmt.Errorf("inspect invalid worktree %s before bootstrapping tasks: %s", tree.Path, tree.InvalidReason)
 		}
-		other, summary, err := git.OpenCheckout(tree.Path, "")
+		other, summary, err := git.OpenCheckout(tree.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -102,13 +102,13 @@ func (store *Store) ValidateContents(contents map[string][]byte) error {
 		if ref.ID != store.revision || ref.Symbolic != "" {
 			return errors.New("tasks changed during mutation planning; retry")
 		}
-		return store.Repository.ValidateProspectiveWorktreeContents("tasks", store.Path, Branch, contents)
+		return store.Repository.ValidateProspectiveWorktreeContents("tasks", Branch, contents)
 	}
 	return store.Repository.ValidateWorktreeContents(contents)
 }
 
 func (store *Store) withProspectiveView(inspect func(*git.Repository) error) error {
-	return store.Repository.WithProspectiveWorktree("tasks", store.Path, Branch, func(view *git.Repository) error {
+	return store.Repository.WithProspectiveWorktree("tasks", Branch, func(view *git.Repository) error {
 		ref, err := view.Reference(Branch)
 		if err != nil {
 			return err

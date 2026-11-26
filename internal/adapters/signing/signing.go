@@ -40,15 +40,6 @@ func trust(value string) (int, error) {
 	return 0, fmt.Errorf("invalid signature trust level %q", value)
 }
 
-// Load reads the signature policy of the repository's current checkout.
-func Load(repo *git.Repository) (Policy, error) {
-	entries, err := repo.ConfigurationEntries()
-	if err != nil {
-		return Policy{}, err
-	}
-	return ParsePolicy(entries)
-}
-
 // ParsePolicy retains traversal order: gpg.program and gpg.openpgp.program
 // are aliases, not a fixed-precedence pair.
 func ParsePolicy(entries []git.ConfigurationEntry) (Policy, error) {

@@ -145,10 +145,10 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	if err := setResultForTopic(finish, repo, prefix, defaultTarget, n, "merged", "", target); err != nil {
 		return fmt.Errorf("%s is in local %s, but recording the result failed; rerun `tasks merge %d`: %w", task.ID(), target, n, err)
 	}
-	if saved != nil && (saved.Branch == "" || saved.Branch == source.Head.Branch) {
-		saved.Reason, saved.Revision = "", source.Head.ID.String()
+	if saved != nil && saved.Reason != "" && (saved.Branch == "" || saved.Branch == source.Head.Branch) {
+		saved.Reason = ""
 		if err := writeTaskSession(directory, n, *saved); err != nil {
-			fmt.Fprintf(streams.Err, "Could not record the merged tip locally: %v\n", err)
+			fmt.Fprintf(streams.Err, "Could not clear the saved failure reason locally: %v\n", err)
 		}
 	}
 	p := streams.presentation(streams.Out)

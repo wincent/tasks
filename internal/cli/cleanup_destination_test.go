@@ -96,7 +96,7 @@ func TestCleanupRejectsRetargetAfterDestinationSelection(t *testing.T) {
 			if removal == "worktree" {
 				err = cleanMerged(repo, entry, root, "EXAMPLE", "main", target, true)
 			} else {
-				err = cleanMergedBranch(repo, refName, ref, nil, "EXAMPLE", "main", target, true)
+				err = cleanMergedBranch(repo, refName, ref, nil, "EXAMPLE", "main", target, true, nil)
 			}
 			var changed *git.ChangedError
 			if !errors.As(err, &changed) || changed.Name != store.Branch || changed.Expected != target.metadata {

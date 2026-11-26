@@ -38,7 +38,7 @@ func TestWorktreeInventoryIncludesLockedAndMissing(t *testing.T) {
 	paths, _ := linked.Paths()
 	writeFile(t, filepath.Join(paths.GitDir, "locked"), []byte("portable drive\n"))
 	entries, err = r.Worktrees()
-	if err != nil || len(entries) != 1 || !entries[0].Locked || entries[0].LockReason != "portable drive\n" {
+	if err != nil || len(entries) != 1 || !entries[0].Locked {
 		t.Fatalf("locked: %+v %v", entries, err)
 	}
 	if err := os.Rename(path, path+"-moved"); err != nil {
@@ -52,7 +52,7 @@ func TestWorktreeInventoryIncludesLockedAndMissing(t *testing.T) {
 
 func TestOpenCheckoutAndPathsAndWorktreesMatchSeparateCalls(t *testing.T) {
 	t.Parallel()
-	r, dir := fixture(t, false)
+	r, _ := fixture(t, false)
 	first := commit(t, r, "first")
 	publish(t, r, "refs/heads/main", first, ID{})
 	publish(t, r, "refs/heads/linked", first, ID{})
@@ -81,7 +81,7 @@ func TestOpenCheckoutAndPathsAndWorktreesMatchSeparateCalls(t *testing.T) {
 		t.Fatalf("PathsAndWorktrees = (%+v, %+v), want (%+v, %+v)", gotPaths, gotTrees, wantPaths, wantTrees)
 	}
 
-	opened, summary, err := OpenCheckout(linkedPath, "refs/heads/main")
+	opened, summary, err := OpenCheckout(linkedPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,26 +94,13 @@ func TestOpenCheckoutAndPathsAndWorktreesMatchSeparateCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainRef, err := opened.Reference("refs/heads/main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.Paths != linkedPaths || summary.HeadErr != nil || summary.Head != linkedHead || summary.RefErr != nil || summary.Reference != mainRef {
+	if summary.Paths != linkedPaths || summary.HeadErr != nil || summary.Head != linkedHead {
 		t.Fatalf("OpenCheckout summary mismatch: %+v", summary)
-	}
-
-	missing, missingSummary, err := OpenCheckout(dir, "refs/heads/missing")
-	if err != nil {
-		t.Fatal(err)
-	}
-	missing.Close()
-	if !HasCode(missingSummary.RefErr, NotFound) {
-		t.Fatalf("expected NotFound for missing ref, got %v", missingSummary.RefErr)
 	}
 
 	// HeadErr must not prevent Paths from being populated.
 	writeFile(t, filepath.Join(linkedPaths.GitDir, "HEAD"), []byte("ref: refs/tags/not-a-branch\n"))
-	badHead, badSummary, err := OpenCheckout(linkedPath, "refs/heads/main")
+	badHead, badSummary, err := OpenCheckout(linkedPath)
 	if err != nil {
 		t.Fatal(err)
 	}

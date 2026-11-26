@@ -19,9 +19,7 @@ func TestNativeExternalFilterPreflightPreservesAffectedState(t *testing.T) {
 			next := safetyTip(t, repo, base, map[string]string{".gitattributes": "content.txt filter=custom\n", "content.txt": "next\n"})
 			publish(t, repo, "refs/heads/main", base, ID{})
 			publish(t, repo, "refs/heads/next", next, ID{})
-			if err := repo.CheckoutMetadata(ID{}, base); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, base)
 			if err := repo.SetLocalConfig("filter.custom."+command, "never-execute-this"); err != nil {
 				t.Fatal(err)
 			}
@@ -60,9 +58,7 @@ func TestNativeUnrelatedFiltersAndNativeLineEndings(t *testing.T) {
 	// before the baseline checkout. The operation under test enables it below.
 	base := safetyTip(t, repo, ID{}, map[string]string{"content.txt": "base\n", "large.bin": "pointer\n", ".gitattributes": "large.bin filter=tasktool-fixture-lfs\ncontent.txt text eol=crlf\n"})
 	publish(t, repo, "refs/heads/main", base, ID{})
-	if err := repo.CheckoutMetadata(ID{}, base); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, base)
 	for _, key := range []string{"filter.tasktool-fixture-lfs.clean", "filter.tasktool-fixture-lfs.smudge", "filter.tasktool-fixture-lfs.process"} {
 		if err := repo.SetLocalConfig(key, "external-lfs"); err != nil {
 			t.Fatal(err)
@@ -114,16 +110,14 @@ func TestNativeExternalMergeDriverOnlyRejectsRequiredOperation(t *testing.T) {
 			}
 			left, right := safetyTip(t, repo, base, leftFiles), safetyTip(t, repo, base, rightFiles)
 			publish(t, repo, "refs/heads/main", left, ID{})
-			if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, left)
 			if err := repo.SetLocalConfig("merge.custom.driver", "external-merge %O %A %B"); err != nil {
 				t.Fatal(err)
 			}
 			paths, _ := repo.Paths()
 			index := readFile(t, filepath.Join(paths.GitDir, "index"))
 			content := readFile(t, filepath.Join(root, "content.txt"))
-			_, err := repo.MergeIntoIndex(right)
+			_, err := repo.MergeCleanIntoIndex(right)
 			reject := scenario == "conflict" || scenario == "clean-content-merge"
 			if reject {
 				if err == nil || !strings.Contains(err.Error(), "external merge driver") || !strings.Contains(err.Error(), "content.txt") {

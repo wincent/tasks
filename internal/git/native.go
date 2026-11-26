@@ -111,7 +111,6 @@ func objectID(id *C.git_oid) ID {
 type Error struct {
 	Operation string
 	Code      int
-	Class     int
 	Message   string
 }
 
@@ -137,7 +136,6 @@ func nativeError(op string, code C.int) error {
 	}
 	err := &Error{Operation: op, Code: int(code), Message: "native operation failed"}
 	if last := C.git_error_last(); last != nil {
-		err.Class = int(last.klass)
 		err.Message = C.GoString(last.message)
 	}
 	return err
@@ -227,34 +225,32 @@ func (r *Repository) callNative(operation string, configured bool, f func(*C.git
 	return f(r.ptr)
 }
 
-// CheckoutSummary captures paths, HEAD, and an optional named reference from a
-// freshly opened repository under the same configuration validation pass.
-// Head and reference errors are returned on the summary so callers can check
-// repository identity (Paths) before inspecting HEAD or refs.
+// CheckoutSummary captures paths and HEAD from a freshly opened repository
+// under the same configuration validation pass. Head errors are returned on
+// the summary so callers can check repository identity (Paths) before
+// inspecting HEAD.
 type CheckoutSummary struct {
-	Paths     Paths
-	Head      Head
-	HeadErr   error
-	Reference Reference
-	RefErr    error
+	Paths   Paths
+	Head    Head
+	HeadErr error
 }
 
 // Open discovers a repository from a checkout, subdirectory, or Git directory.
 // The explicit path determines identity; unsupported ambient overrides fail
 // explicitly rather than silently redirecting or changing private worktrees.
 func Open(path string) (*Repository, error) {
-	repo, _, err := openRepository(path, "", false)
+	repo, _, err := openRepository(path, false)
 	return repo, err
 }
 
-// OpenCheckout opens a repository like Open and immediately reads Paths, Head,
-// and (when refName is nonempty) Reference(refName) under the same initial
-// configuration application, avoiding redundant follow-up config refreshes.
-func OpenCheckout(path, refName string) (*Repository, CheckoutSummary, error) {
-	return openRepository(path, refName, true)
+// OpenCheckout opens a repository like Open and immediately reads Paths and
+// Head under the same initial configuration application, avoiding redundant
+// follow-up config refreshes.
+func OpenCheckout(path string) (*Repository, CheckoutSummary, error) {
+	return openRepository(path, true)
 }
 
-func openRepository(path, refName string, inspect bool) (*Repository, CheckoutSummary, error) {
+func openRepository(path string, inspect bool) (*Repository, CheckoutSummary, error) {
 	var summary CheckoutSummary
 	if err := validateEnvironment(); err != nil {
 		return nil, summary, err
@@ -333,9 +329,6 @@ func openRepository(path, refName string, inspect bool) (*Repository, CheckoutSu
 	if inspect {
 		summary.Paths = readPaths(repo)
 		summary.Head, summary.HeadErr = readHead(repo)
-		if refName != "" {
-			summary.Reference, summary.RefErr = lookup(repo, refName)
-		}
 	}
 	retained = true
 	return &Repository{ptr: repo, configuration: configuration}, summary, nil
@@ -720,7 +713,7 @@ func (r *Repository) AddWorktree(name, path, branch string) error {
 			return err
 		}
 		defer C.git_tree_free(tree)
-		config, err := r.prospectiveWorktreeConfiguration(repo, name, absolute, branch)
+		config, err := r.prospectiveWorktreeConfiguration(repo, name, branch)
 		if err != nil {
 			return err
 		}

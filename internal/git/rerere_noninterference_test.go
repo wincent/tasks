@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,9 +67,7 @@ func TestNativeMergeNeverInterferesWithRerere(t *testing.T) {
 			left := safetyTip(t, repo, base, map[string]string{"content.txt": "left\n"})
 			right := safetyTip(t, repo, base, map[string]string{"content.txt": "right\n"})
 			publish(t, repo, "refs/heads/main", left, ID{})
-			if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, left)
 			paths, err := repo.Paths()
 			if err != nil {
 				t.Fatal(err)
@@ -101,8 +100,9 @@ func TestNativeMergeNeverInterferesWithRerere(t *testing.T) {
 			writeFile(t, filepath.Join(entry, "thisimage"), []byte("do not update\n"))
 			writeFile(t, filepath.Join(paths.GitDir, "MERGE_RR"), []byte("existing manual rerere state\x00"))
 			before, config := safetyFiles(t, cache), readFile(t, filepath.Join(paths.CommonDir, "config"))
-			_, err = repo.MergeIntoIndex(right)
-			if err == nil || !strings.Contains(err.Error(), "merge conflicts") || strings.Contains(err.Error(), "preimage") {
+			beforeIndex := readFile(t, filepath.Join(paths.GitDir, "index"))
+			_, err = repo.MergeCleanIntoIndex(right)
+			if !errors.Is(err, ErrMergeConflict) || strings.Contains(err.Error(), "preimage") {
 				t.Fatalf("%v", err)
 			}
 			if !reflect.DeepEqual(before, safetyFiles(t, cache)) {
@@ -114,22 +114,11 @@ func TestNativeMergeNeverInterferesWithRerere(t *testing.T) {
 			if !bytes.Equal(config, readFile(t, filepath.Join(paths.CommonDir, "config"))) {
 				t.Fatal("modified user configuration")
 			}
-			content := string(readFile(t, filepath.Join(root, "content.txt")))
-			if strings.Contains(content, "tempting") || !strings.Contains(content, "left\n") || !strings.Contains(content, "right\n") {
-				t.Fatalf("replayed resolution: %q", content)
+			if content := string(readFile(t, filepath.Join(root, "content.txt"))); content != "left\n" {
+				t.Fatalf("modified worktree: %q", content)
 			}
-			entries, err := repo.IndexEntries()
-			if err != nil {
-				t.Fatal(err)
-			}
-			stages := 0
-			for _, entry := range entries {
-				if entry.Path == "content.txt" && entry.Stage != 0 {
-					stages++
-				}
-			}
-			if stages != 3 {
-				t.Fatalf("conflict stages were resolved: %+v", entries)
+			if !bytes.Equal(beforeIndex, readFile(t, filepath.Join(paths.GitDir, "index"))) {
+				t.Fatal("modified index")
 			}
 			expectRef(t, repo, "refs/heads/main", left)
 		})
@@ -142,14 +131,12 @@ func TestNativeConflictDoesNotCreateRerereCache(t *testing.T) {
 	base := commit(t, repo, "base\n")
 	left, right := commit(t, repo, "left\n", base), commit(t, repo, "right\n", base)
 	publish(t, repo, "refs/heads/main", left, ID{})
-	if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, left)
 	if err := repo.SetLocalConfig("rerere.enabled", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.MergeIntoIndex(right); err == nil {
-		t.Fatal("expected conflict")
+	if _, err := repo.MergeCleanIntoIndex(right); !errors.Is(err, ErrMergeConflict) {
+		t.Fatalf("expected conflict, got %v", err)
 	}
 	paths, _ := repo.Paths()
 	for _, path := range []string{filepath.Join(paths.CommonDir, "rr-cache"), filepath.Join(paths.GitDir, "MERGE_RR")} {

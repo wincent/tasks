@@ -34,9 +34,7 @@ func TestNativeEncodingKnownBytes(t *testing.T) {
 			attributes := "content.txt working-tree-encoding=" + tt.encoding + " -text\n"
 			tip := safetyTip(t, repo, ID{}, map[string]string{".gitattributes": attributes, "content.txt": tt.utf8})
 			publish(t, repo, "refs/heads/main", tip, ID{})
-			if err := repo.CheckoutMetadata(ID{}, tip); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, tip)
 			if got := readFile(t, filepath.Join(root, "content.txt")); string(got) != tt.worktree {
 				t.Fatalf("smudge: %x, want %x", got, tt.worktree)
 			}
@@ -184,9 +182,7 @@ func TestNativeEncodingCRLFIdentAndSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	publish(t, repo, "refs/heads/main", tip, ID{})
-	if err := repo.CheckoutMetadata(ID{}, tip); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, tip)
 	want := "$Id: " + blob.String() + " $\r\ncafé\r\n"
 	var encoded []byte
 	for _, r := range want {
@@ -216,13 +212,11 @@ func TestNativeEncodingCheckoutFailurePreflight(t *testing.T) {
 			repo, root := fixture(t, false)
 			base := safetyTip(t, repo, ID{}, map[string]string{"a.txt": "before\n", "z.txt": "before\n"})
 			publish(t, repo, "refs/heads/main", base, ID{})
-			if err := repo.CheckoutMetadata(ID{}, base); err != nil {
-				t.Fatal(err)
-			}
+			checkoutInitial(t, repo, base)
 			next := safetyTip(t, repo, base, map[string]string{"a.txt": "after\n", "z.txt": data, ".gitattributes": "z.txt working-tree-encoding=ISO-8859-1\n"})
 			publish(t, repo, "refs/heads/next", next, ID{})
 			before := safetyFiles(t, root)
-			if err := repo.CheckoutMetadata(base, next); err == nil || !strings.Contains(err.Error(), "working-tree-encoding") {
+			if err := repo.Checkout(base, next); err == nil || !strings.Contains(err.Error(), "working-tree-encoding") {
 				t.Fatalf("expected encoding failure, got %v", err)
 			}
 			if !reflect.DeepEqual(before, safetyFiles(t, root)) {

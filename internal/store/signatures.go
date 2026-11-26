@@ -29,5 +29,5 @@ func MetadataSignatures(repository *git.Repository) (git.Signatures, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return git.Signatures{}, err
 	}
-	return repository.ProspectiveWorktreeSignatures("tasks", path, Branch)
+	return repository.ProspectiveWorktreeSignatures("tasks", Branch)
 }

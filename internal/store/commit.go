@@ -72,7 +72,7 @@ func equalContents(a, b []byte) bool { return (a == nil) == (b == nil) && bytes.
 // Publication repeats these checks; this is not a transferable cleanliness receipt.
 func (store *Store) RequireClean(names ...string) error {
 	if store.prospective {
-		return store.Repository.WithProspectiveWorktree("tasks", store.Path, Branch, func(view *git.Repository) error {
+		return store.Repository.WithProspectiveWorktree("tasks", Branch, func(view *git.Repository) error {
 			return view.ValidateIndexPaths(names)
 		})
 	}

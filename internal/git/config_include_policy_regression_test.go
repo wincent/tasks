@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func cloneConfigurationRecords(records []hasconfigRecord) []hasconfigRecord {
+	result := append([]hasconfigRecord(nil), records...)
+	for i := range result {
+		if result[i].value != nil {
+			value := *result[i].value
+			result[i].value = &value
+		}
+	}
+	return result
+}
+
 func TestConfigurationNativeParserPreservesCapturedRecords(t *testing.T) {
 	t.Parallel()
 	if err := initialize(); err != nil {
@@ -30,7 +41,7 @@ func TestConfigurationNativeParserPreservesCapturedRecords(t *testing.T) {
 		t.Fatalf("records: %#v", records)
 	}
 	for i, record := range records {
-		if record.name != wantNames[i] || record.origin != path || record.backend != "file" || record.depth != 0 || record.level == 0 || record.level != records[0].level || record.conditionalURL {
+		if record.name != wantNames[i] || record.origin != path || record.backend != "file" || record.depth != 0 || record.level == 0 || record.level != records[0].level {
 			t.Fatalf("record %d metadata: %#v", i, record)
 		}
 		if i == 0 {
@@ -60,7 +71,7 @@ func TestConfigurationNativeParserPreservesCapturedRecords(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newConfigurationFileCapture(&cache).loadRecords(path); err == nil {
+	if _, err := newConfigurationFileCapture(&cache).borrowRecords(path); err == nil {
 		t.Fatal("ordinary read failure reused previous success")
 	}
 	command := &environmentConfiguration{}
@@ -117,27 +128,18 @@ func TestConfigurationBorrowedTraversalOwnership(t *testing.T) {
 		if included {
 			depth = 1
 		}
-		if record.level != level || record.depth != depth || record.conditionalURL != (position >= 5 && position <= 7) {
+		if record.level != level || record.depth != depth {
 			t.Fatalf("record %d inheritance: %#v", i, record)
 		}
 	}
 	want := cloneConfigurationRecords(got)
 	*got[1].value = "private"
-	got[1].level, got[1].depth, got[1].conditionalURL = 999, 99, true
+	got[1].level, got[1].depth = 999, 99
 	if *got[5].value != "original" || *got[10].value != "original" {
 		t.Fatal("duplicate include results share mutable values")
 	}
 	if !reflect.DeepEqual(evaluate(), want) || !reflect.DeepEqual(roots, beforeRoots) || !reflect.DeepEqual(leaves, beforeLeaves) {
 		t.Fatal("evaluation or returned records mutated borrowed inputs")
-	}
-	owned, err := capture.loadRecords(leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	*owned[0].value = "private"
-	owned[0].level, owned[0].depth = 999, 99
-	if !reflect.DeepEqual(leaves, beforeLeaves) {
-		t.Fatal("owned capture records alias borrowed input")
 	}
 	// Captures keep immutable references valid across cache eviction.
 	cache.clear()

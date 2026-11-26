@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+func quoteConfigurationFile(value string) string {
+	return "\"" + strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\t", "\\t", "\b", "\\b").Replace(value) + "\""
+}
+
 func TestCommandIncludeCrossTopologyCapture(t *testing.T) {
 	for _, mutation := range []string{"edit", "delete", "replace", "empty", "missing", "alias"} {
 		t.Run(mutation, func(t *testing.T) {
@@ -65,7 +69,7 @@ func TestCommandIncludeCrossTopologyCapture(t *testing.T) {
 			}
 			want = append(want, configurationEntry{"tasktool.value", "later-after"})
 			for attempt := 0; attempt < 2; attempt++ {
-				err = repo.WithProspectiveWorktree("child", filepath.Join(dir, "child"), "refs/heads/tasks", func(view *Repository) error {
+				err = repo.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 					got, err := view.configEntries("tasktool.value")
 					if err != nil || !reflect.DeepEqual(got, want) {
 						t.Fatalf("ordered capture: %#v %v; want %#v", got, err, want)
@@ -129,7 +133,7 @@ func TestCommandIncludeMissingSymlinkCapture(t *testing.T) {
 	}
 	defer repo.Close()
 	writeCommandInclude(t, target, "[malformed")
-	if err := repo.WithProspectiveWorktree("child", filepath.Join(dir, "child"), "refs/heads/tasks", func(view *Repository) error {
+	if err := repo.WithProspectiveWorktree("child", "refs/heads/tasks", func(view *Repository) error {
 		return nil
 	}); err != nil {
 		t.Fatal("reread captured missing alias target", err)

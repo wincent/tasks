@@ -52,29 +52,6 @@ func (cache *configurationParseCache) forget(path string) {
 	delete(cache.entries, path)
 }
 
-func cloneConfigurationRecords(records []hasconfigRecord) []hasconfigRecord {
-	result := append([]hasconfigRecord(nil), records...)
-	for i := range result {
-		if result[i].value != nil {
-			value := *result[i].value
-			result[i].value = &value
-		}
-	}
-	return result
-}
-
-func (cache *configurationParseCache) records(path, identity string, contents configurationFileContents) ([]hasconfigRecord, error) {
-	records, err := cache.borrowRecords(path, identity, contents)
-	return cloneConfigurationRecords(records), err
-}
-
-// Borrowed records and their value pointers are immutable, including after
-// eviction. Only nonmutating internal traversal may retain these references.
-func (cache *configurationParseCache) borrowRecords(path, identity string, contents configurationFileContents) ([]hasconfigRecord, error) {
-	file, _, err := cache.borrowFile(path, identity, contents)
-	return file.records, err
-}
-
 // Lock order is handle then pool; the pool never calls back into a handle.
 // Holding the pool lock through parsing coalesces concurrent identical misses.
 // Returned references remain live Go objects after eviction or handle close.
@@ -312,13 +289,8 @@ func (capture *configurationFileCapture) validateWitness(w configurationFileWitn
 	return true
 }
 
-func (capture *configurationFileCapture) loadRecords(path string) ([]hasconfigRecord, error) {
-	records, err := capture.borrowRecords(path)
-	return cloneConfigurationRecords(records), err
-}
-
-// The capture and parse cache share immutable records. Public-to-this-package
-// callers that need owned values use loadRecords; evaluation borrows read-only.
+// The capture and parse cache share immutable records; callers must treat
+// returned slices and value pointers as read-only.
 func (capture *configurationFileCapture) borrowRecords(path string) ([]hasconfigRecord, error) {
 	path, err := configurationAbsoluteIncludePath(path)
 	if err != nil {
@@ -452,21 +424,6 @@ func configurationWithoutIncludes(input string) (string, string) {
 		}
 	}
 	return out.String(), prefix
-}
-
-// Subsections escape only quotes and backslashes, unlike variable values.
-// Refuse unrepresentable line breaks rather than silently changing a pattern.
-func quoteConfigurationSection(value string) (string, error) {
-	if strings.ContainsAny(value, "\r\n\x00") {
-		return "", errors.New("Git include condition cannot be represented in a configuration subsection")
-	}
-	return "\"" + strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(value) + "\"", nil
-}
-
-// Quote a Git variable value, not a shell word. Real overlay values remain
-// in the native copy; this is used only for the synthetic marker path.
-func quoteConfigurationFile(value string) string {
-	return "\"" + strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\t", "\\t", "\b", "\\b").Replace(value) + "\""
 }
 
 // Command configuration has no originating file against which to resolve a

@@ -16,6 +16,22 @@ import (
 	"time"
 )
 
+type configurationEntry struct{ name, value string }
+
+func (r *Repository) configEntries(prefix string) ([]configurationEntry, error) {
+	all, err := r.ConfigurationEntries()
+	if err != nil {
+		return nil, err
+	}
+	var entries []configurationEntry
+	for _, entry := range all {
+		if strings.HasPrefix(entry.Name, prefix) {
+			entries = append(entries, configurationEntry{entry.Name, entry.Value})
+		}
+	}
+	return entries, nil
+}
+
 func injectConfiguration(t *testing.T, entries ...[2]string) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(len(entries)))

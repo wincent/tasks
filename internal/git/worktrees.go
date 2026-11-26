@@ -18,7 +18,6 @@ type Worktree struct {
 	Name          string
 	Path          string
 	Locked        bool
-	LockReason    string
 	InvalidReason string
 }
 
@@ -35,18 +34,12 @@ func readWorktrees(repo *C.git_repository) ([]Worktree, error) {
 			return nil, err
 		}
 		entry := Worktree{Name: C.GoString(C.git_worktree_name(worktree)), Path: filepath.Clean(C.GoString(C.git_worktree_path(worktree)))}
-		var reason C.git_buf
-		code := C.git_worktree_is_locked(&reason, worktree)
+		code := C.git_worktree_is_locked(nil, worktree)
 		if err := nativeError("read worktree lock", code); err != nil {
-			C.git_buf_dispose(&reason)
 			C.git_worktree_free(worktree)
 			return nil, err
 		}
 		entry.Locked = code > 0
-		if reason.ptr != nil {
-			entry.LockReason = C.GoString(reason.ptr)
-		}
-		C.git_buf_dispose(&reason)
 		if err := nativeError("validate worktree", C.git_worktree_validate(worktree)); err != nil {
 			entry.InvalidReason = err.Error()
 		}

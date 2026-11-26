@@ -1,7 +1,9 @@
 package git
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +15,7 @@ func TestNativeMergePreservesBothParents(t *testing.T) {
 	repo, root := fixture(t, false)
 	base := commit(t, repo, "base")
 	publish(t, repo, "refs/heads/main", base, ID{})
-	if err := repo.CheckoutMetadata(ID{}, base); err != nil {
-		t.Fatal(err)
-	}
+	checkoutInitial(t, repo, base)
 	blob, err := repo.WriteBlob([]byte("feature\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestNativeMergePreservesBothParents(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(paths.GitDir, "HEAD"), []byte(base.String()+"\n"))
-	mergedTree, err := repo.MergeIntoIndex(tip)
+	mergedTree, err := repo.MergeCleanIntoIndex(tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,9 +66,9 @@ func TestNativeMergePreservesBothParents(t *testing.T) {
 	}
 }
 
-func TestNativeMergeRetainsConflictedCandidate(t *testing.T) {
+func TestNativeMergeRefusesConflictedCandidate(t *testing.T) {
 	t.Parallel()
-	repo, _ := fixture(t, false)
+	repo, root := fixture(t, false)
 	base := commit(t, repo, "base")
 	makeTip := func(text string) ID {
 		blob, err := repo.WriteBlob([]byte(text))
@@ -87,31 +87,30 @@ func TestNativeMergeRetainsConflictedCandidate(t *testing.T) {
 	}
 	left, right := makeTip("left\n"), makeTip("right\n")
 	publish(t, repo, "refs/heads/main", left, ID{})
-	if err := repo.CheckoutMetadata(ID{}, left); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repo.MergeIntoIndex(right); err == nil || !strings.Contains(err.Error(), "conflicts") {
-		t.Fatal(err)
-	}
-	entries, err := repo.IndexEntries()
+	checkoutInitial(t, repo, left)
+	paths, err := repo.Paths()
 	if err != nil {
 		t.Fatal(err)
 	}
-	stages := 0
-	for _, entry := range entries {
-		if entry.Path == "conflict" && entry.Stage != 0 {
-			stages++
-		}
+	beforeIndex := readFile(t, filepath.Join(paths.GitDir, "index"))
+	if _, err := repo.MergeCleanIntoIndex(right); !errors.Is(err, ErrMergeConflict) {
+		t.Fatalf("expected ErrMergeConflict, got %v", err)
 	}
-	if stages != 2 {
-		t.Fatalf("lost conflict stages: %+v", entries)
+	if !bytes.Equal(beforeIndex, readFile(t, filepath.Join(paths.GitDir, "index"))) {
+		t.Fatal("conflicted merge mutated index")
+	}
+	if got := string(readFile(t, filepath.Join(root, "conflict"))); got != "left\n" {
+		t.Fatalf("conflicted merge mutated worktree: %q", got)
+	}
+	if _, err := os.Lstat(filepath.Join(paths.GitDir, "MERGE_HEAD")); !os.IsNotExist(err) {
+		t.Fatalf("conflicted merge created MERGE_HEAD: %v", err)
 	}
 	head, err := repo.Head()
 	if err != nil || head.ID != left {
 		t.Fatal(head, err)
 	}
-	if err := repo.RequireClean(); err == nil {
-		t.Fatal("accepted conflicted candidate")
+	if err := repo.RequireClean(); err != nil {
+		t.Fatalf("conflicted merge left dirty state: %v", err)
 	}
 }
 
@@ -145,7 +144,7 @@ func TestRemoveWorktreeProtectsIgnoredAndChangedResources(t *testing.T) {
 	if err := os.WriteFile(precious, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RemoveCleanWorktree("linked", paths, head); err == nil {
+	if err := repo.RemoveWorktree("linked", paths, head, false); err == nil {
 		t.Fatal("removed ignored file")
 	}
 	if data, err := os.ReadFile(precious); err != nil || string(data) != "keep" {
@@ -166,7 +165,7 @@ func TestRemoveWorktreeProtectsIgnoredAndChangedResources(t *testing.T) {
 	if err := os.WriteFile(indexPath, flagged, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RemoveCleanWorktree("linked", paths, head); err == nil || !strings.Contains(err.Error(), "index entries") {
+	if err := repo.RemoveWorktree("linked", paths, head, false); err == nil || !strings.Contains(err.Error(), "index entries") {
 		t.Fatalf("did not protect hidden index flags: %v", err)
 	}
 	if err := os.WriteFile(indexPath, index, 0600); err != nil {
@@ -175,13 +174,13 @@ func TestRemoveWorktreeProtectsIgnoredAndChangedResources(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(paths.GitDir, "locked"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RemoveCleanWorktree("linked", paths, head); err == nil {
+	if err := repo.RemoveWorktree("linked", paths, head, false); err == nil {
 		t.Fatal("removed locked worktree")
 	}
 	if err := os.Remove(filepath.Join(paths.GitDir, "locked")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RemoveCleanWorktree("linked", paths, head); err != nil {
+	if err := repo.RemoveWorktree("linked", paths, head, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
