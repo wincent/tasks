@@ -1,6 +1,6 @@
 # TASKS-74: Let tasks tail infer the task to follow
 
-Status: open
+Status: active
 
 ## Description
 
