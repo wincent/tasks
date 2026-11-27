@@ -1,6 +1,6 @@
 # TASKS-77: Improve output in the event of a merge conflict
 
-Status: open
+Status: active
 
 ## Description
 
