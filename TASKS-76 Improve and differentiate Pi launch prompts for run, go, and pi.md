@@ -1,6 +1,6 @@
 # TASKS-76: Improve and differentiate Pi launch prompts for run, go, and pi
 
-Status: active
+Status: merged
 
 ## Description
 
