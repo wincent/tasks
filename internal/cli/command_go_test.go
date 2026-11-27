@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,8 +38,9 @@ func TestGoCreatesAndRunsNewTask(t *testing.T) {
 		t.Fatalf("go ran Pi %d times: %v\n%s", launches, err, out)
 	}
 	path, _, _ := strings.Cut(out, "\n")
-	if filepath.Base(path) != "EXAMPLE-2 Quick win.md" || !strings.Contains(prompt, path) {
-		t.Fatalf("creation output %q and Pi prompt %q should name the new task", path, prompt)
+	wantPrompt := fmt.Sprintf("Read EXAMPLE-2 at %q. Work only in this checkout on the current task branch, and do not edit the task file directly. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with 'Needs attention:' and explain what remains. Do not merge; `tasks` handles task status and merging.", path)
+	if filepath.Base(path) != "EXAMPLE-2 Quick win.md" || prompt != wantPrompt {
+		t.Fatalf("creation output %q and Pi prompt %q, want %q", path, prompt, wantPrompt)
 	}
 	if got := run(t, root, "show", "1", "--raw"); got != before {
 		t.Fatalf("existing task changed: %q", got)

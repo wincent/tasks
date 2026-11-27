@@ -204,10 +204,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 
 	diagnostics := streams.presentation(streams.Err)
 	fmt.Fprintf(streams.Err, "%s\nTopic: %s\nCheckout: %s\nSession: %s\n", diagnostics.task(task.ID(), task.Title, ": "), target, root, record.SessionFile)
-	prompt := fmt.Sprintf("Read %s at %q. Work only in this checkout. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; the launcher handles task status and merging.", task.ID(), task.Path, attentionLabel)
-	if hint := a.value("--prompt"); hint != "" {
-		prompt += "\n\nAdditional instructions for this run:\n" + hint
-	}
+	prompt := launchPrompt(task, interactive, a.value("--prompt"))
 	argv := []string{executable, "--session", record.SessionFile}
 	progress := &piProgress{out: streams.Out, env: streams.Env}
 	child := process.Command{Directory: scope, Environment: streams.environ(), Out: streams.Out, Err: streams.Err, ExtraFiles: []*os.File{loan, live}}
@@ -291,6 +288,19 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 		return nil
 	}
 	return mergeWork(ctx, repo, directory, cwd, prefix, defaultTarget, n, root, target, streams)
+}
+
+func launchPrompt(task store.Task, interactive bool, hint string) string {
+	var prompt string
+	if interactive {
+		prompt = fmt.Sprintf("Read %s at %q. Work only in this checkout on the current task branch, and do not edit the task file directly. Ask if anything is unclear or needs a decision; otherwise implement the task, run proportionate checks, and commit your changes before exiting. Do not merge; `tasks` handles task status and merging.", task.ID(), task.Path)
+	} else {
+		prompt = fmt.Sprintf("Read %s at %q. Work only in this checkout on the current task branch, and do not edit the task file directly. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with '%s' and explain what remains. Do not merge; `tasks` handles task status and merging.", task.ID(), task.Path, attentionLabel)
+	}
+	if hint != "" {
+		prompt += "\n\nAdditional instructions for this run:\n" + hint
+	}
+	return prompt
 }
 
 func launchBlocked(repo *git.Repository, directory string, prefix store.Prefix, defaultTarget destination, n int, record taskSession, cause error) error {

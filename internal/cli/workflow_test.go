@@ -347,9 +347,9 @@ func TestRunPromptIsPerInvocation(t *testing.T) {
 			}
 			if i == 0 {
 				standard = prompt
-				if !strings.HasPrefix(standard, fmt.Sprintf("Read EXAMPLE-1 at %q.", path)) ||
-					!strings.Contains(standard, "Needs attention:") || !strings.Contains(standard, "Do not merge;") {
-					t.Fatalf("missing standard instructions: %q", standard)
+				want := fmt.Sprintf("Read EXAMPLE-1 at %q. Work only in this checkout on the current task branch, and do not edit the task file directly. Implement the task, run proportionate checks, commit your changes, and summarize what changed and which checks ran. If no changes are needed, explain why. If you cannot finish, start your final response with 'Needs attention:' and explain what remains. Do not merge; `tasks` handles task status and merging.", path)
+				if standard != want {
+					t.Fatalf("standard prompt = %q, want %q", standard, want)
 				}
 			} else if prompt != standard {
 				t.Fatalf("standard prompt changed: got %q, want %q", prompt, standard)
@@ -418,9 +418,12 @@ func TestPiPromptIsPerInvocation(t *testing.T) {
 			}
 			if i == 0 {
 				worktree, session, standard = checkout, child.Args[2], prompt
-				if !strings.HasPrefix(standard, fmt.Sprintf("Read EXAMPLE-1 at %q.", path)) ||
-					!strings.Contains(standard, "Needs attention:") || !strings.Contains(standard, "Do not merge;") {
-					t.Fatalf("missing standard instructions: %q", standard)
+				want := fmt.Sprintf("Read EXAMPLE-1 at %q. Work only in this checkout on the current task branch, and do not edit the task file directly. Ask if anything is unclear or needs a decision; otherwise implement the task, run proportionate checks, and commit your changes before exiting. Do not merge; `tasks` handles task status and merging.", path)
+				if standard != want {
+					t.Fatalf("interactive prompt = %q, want %q", standard, want)
+				}
+				if strings.Contains(standard, "Needs attention:") {
+					t.Fatalf("interactive prompt should not contain Needs attention:: %q", standard)
 				}
 				commitImplementation(t, checkout, "implementation", "keep\n")
 			} else if checkout != worktree || child.Args[2] != session || prompt != standard {
