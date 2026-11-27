@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -230,6 +231,125 @@ func TestExecutableForwardsAndPreservesSignalsAfterChildCleanup(t *testing.T) {
 				t.Fatal("child or lifetime lock survived cancellation", err)
 			}
 			lock.Close()
+		})
+	}
+}
+
+func TestExecutableMergeConflictOutput(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name     string
+		terminal bool
+	}{
+		{"terminal", true},
+		{"pipe", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "repo")
+			repo, err := git.Init(root, "", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer repo.Close()
+			seedMain(t, repo)
+			seedLocalTaskHistory(t, repo)
+			for key, value := range map[string]string{"user.name": "Fixture", "user.email": "fixture@example.com"} {
+				if err := repo.SetLocalConfig(key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			paths, err := repo.Paths()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root = paths.WorkDir
+			if err := os.WriteFile(filepath.Join(paths.CommonDir, "info", "exclude"), []byte("/tasks/\n/.agent-worktrees/\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			commitFile := func(dir, name, content string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+				for _, args := range [][]string{{"add", "--", name}, {"commit", "-m", "update " + name}} {
+					cmd := exec.Command("git", args...)
+					cmd.Dir = dir
+					if out, err := cmd.CombinedOutput(); err != nil {
+						t.Fatalf("git %v: %v\n%s", args, err, out)
+					}
+				}
+			}
+			commitFile(root, "conflict.txt", "base\n")
+			var setup bytes.Buffer
+			if err := cli.Run(context.Background(), root, []string{"create", "Conflict task", "--body", "fixture"}, cli.IO{In: strings.NewReader(""), Out: &setup, Err: &setup}); err != nil {
+				t.Fatal(err)
+			}
+			worktree := filepath.Join(root, ".agent-worktrees", "example-1-conflict")
+			cmd := exec.Command("git", "worktree", "add", "-b", "task/example-1-conflict", worktree, "main")
+			cmd.Dir = root
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git worktree add: %v\n%s", err, out)
+			}
+			commitFile(worktree, "conflict.txt", "task\n")
+			commitFile(root, "conflict.txt", "main\n")
+
+			merge := exec.Command(executable, "merge", "1")
+			merge.Dir = root
+			var env []string
+			for _, entry := range os.Environ() {
+				if strings.HasPrefix(entry, "TERM=") || strings.HasPrefix(entry, "NO_COLOR=") {
+					continue
+				}
+				env = append(env, entry)
+			}
+			merge.Env = append(env, "TASK_TEST_MAIN_HELPER=1", "TERM=xterm", "NO_COLOR=")
+			var stdout bytes.Buffer
+			merge.Stdout = &stdout
+			var stderr string
+			if tc.terminal {
+				master, slave, err := testutil.OpenPTYWithWidth(120)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer testutil.ClosePTY(master, slave)
+				if err := master.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				done := make(chan []byte, 1)
+				go func() { data, _ := io.ReadAll(master); done <- data }()
+				merge.Stderr = slave
+				err = merge.Run()
+				slave.Close()
+				stderr = strings.ReplaceAll(string(<-done), "\r\n", "\n")
+				if err == nil || merge.ProcessState.ExitCode() != 1 {
+					t.Fatalf("merge exit = %d, err = %v; stderr = %q", merge.ProcessState.ExitCode(), err, stderr)
+				}
+			} else {
+				var errBuf bytes.Buffer
+				merge.Stderr = &errBuf
+				err = merge.Run()
+				stderr = errBuf.String()
+				if err == nil || merge.ProcessState.ExitCode() != 1 {
+					t.Fatalf("merge exit = %d, err = %v; stderr = %q", merge.ProcessState.ExitCode(), err, stderr)
+				}
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q; want empty", stdout.String())
+			}
+			var want string
+			if tc.terminal {
+				want = "🔄 \x1b[1;36mMerging\x1b[0m \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3mConflict task\x1b[0m) into local main...\n" +
+					fmt.Sprintf("🚫 EXAMPLE-1 needs attention: \x1b[4mmerge conflict; main is unchanged\x1b[0m. In %s, merge main, resolve and commit, then retry with `tasks merge 1`.\n", worktree)
+			} else {
+				want = "Merging EXAMPLE-1 (Conflict task) into local main...\n" +
+					fmt.Sprintf("EXAMPLE-1 needs attention: merge conflict; main is unchanged. In %s, merge main, resolve and commit, then retry with `tasks merge 1`.\n", worktree)
+			}
+			if stderr != want {
+				t.Errorf("stderr =\n%q\nwant:\n%q", stderr, want)
+			}
 		})
 	}
 }

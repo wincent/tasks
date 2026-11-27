@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -54,7 +53,7 @@ func main() {
 		select {} // Default signal disposition terminates the process.
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "tasks: %v\n", err)
+		cli.WriteError(os.Stderr, err)
 		os.Exit(cli.ExitCode(err))
 	}
 }

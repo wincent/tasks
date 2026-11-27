@@ -196,6 +196,34 @@ func encode(out io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
+type reportedError struct{ err error }
+
+func (err *reportedError) Error() string { return err.err.Error() }
+func (err *reportedError) Unwrap() error { return err.err }
+
+// WriteError writes any unreported errors from Run to w with the "tasks: "
+// prefix. Errors already written directly to streams.Err are omitted.
+func WriteError(w io.Writer, err error) {
+	if err == nil {
+		return
+	}
+	var reported *reportedError
+	if !errors.As(err, &reported) {
+		fmt.Fprintf(w, "tasks: %v\n", err)
+		return
+	}
+	if _, ok := err.(*reportedError); ok {
+		return
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, item := range multi.Unwrap() {
+			WriteError(w, item)
+		}
+		return
+	}
+	fmt.Fprintf(w, "tasks: %v\n", err)
+}
+
 // Run operates in an explicit directory and never changes the process cwd.
 func Run(ctx context.Context, cwd string, args []string, streams IO) (err error) {
 	if streams.Out == nil {

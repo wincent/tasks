@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"bytes"
+	"errors"
+	"testing"
+)
 
 func TestValueOptionsDoNotConsumeHelp(t *testing.T) {
 	t.Parallel()
@@ -55,5 +59,31 @@ func TestPromptValuesDoNotConsumeNoMerge(t *testing.T) {
 		if err != nil || a.value("--prompt") != tc.want || !a.flags["--no-merge"] {
 			t.Errorf("parse(%q): prompt = %q, no-merge = %v, error = %v", args, a.value("--prompt"), a.flags["--no-merge"], err)
 		}
+	}
+}
+
+func TestWriteError(t *testing.T) {
+	t.Parallel()
+	reported := &reportedError{err: errors.New("already shown")}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"plain", errors.New("boom"), "tasks: boom\n"},
+		{"joined plain", errors.Join(errors.New("one"), errors.New("two")), "tasks: one\ntwo\n"},
+		{"reported", reported, ""},
+		{"reported joined with nil", errors.Join(errors.Join(reported, nil), nil), ""},
+		{"reported joined with extra", errors.Join(reported, errors.New("save failed")), "tasks: save failed\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			WriteError(&buf, tc.err)
+			if buf.String() != tc.want {
+				t.Errorf("WriteError(%v) = %q; want %q", tc.err, buf.String(), tc.want)
+			}
+		})
 	}
 }

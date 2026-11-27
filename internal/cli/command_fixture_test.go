@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,7 @@ func TestMain(m *testing.M) {
 		err = Run(context.Background(), cwd, os.Args[1:], IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		WriteError(os.Stderr, err)
 		os.Exit(ExitCode(err))
 	}
 	os.Exit(0)

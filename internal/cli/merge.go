@@ -126,9 +126,18 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 			if saved == nil || (source.Paths.WorkDir != "" && source.Paths.WorkDir != saved.Worktree) {
 				saved = &taskSession{Worktree: source.Paths.WorkDir, Branch: source.Head.Branch}
 			}
-			resume := fmt.Errorf("%s needs attention: %w\nRetry with `tasks merge %d`", task.ID(), err, n)
+			var conflict *mergeConflictError
+			var resume error
+			if errors.As(err, &conflict) {
+				p.printMergeConflict(task, conflict)
+				resume = &reportedError{err: fmt.Errorf("%s needs attention: %w", task.ID(), err)}
+			} else {
+				resume = fmt.Errorf("%s needs attention: %w\nRetry with `tasks merge %d`", task.ID(), err, n)
+				if saved.Worktree != "" {
+					resume = fmt.Errorf("%w\nCheckout: %s; session: %s", resume, saved.Worktree, saved.SessionFile)
+				}
+			}
 			if saved.Worktree != "" {
-				resume = fmt.Errorf("%w\nCheckout: %s; session: %s", resume, saved.Worktree, saved.SessionFile)
 				saved.Reason = shortResult(err.Error())
 				resume = errors.Join(resume, writeTaskSession(directory, n, *saved))
 			}
@@ -153,9 +162,6 @@ func mergeWork(ctx context.Context, repo *git.Repository, directory, cwd string,
 	}
 	p := streams.presentation(streams.Out)
 	p.printTaskHeadline(task, "✅", "", " "+p.paint(fmt.Sprintf("merged into local %s.", target), "1;32"))
-	if saved != nil && saved.SessionFile != "" {
-		fmt.Fprintf(streams.Out, "Session: %s\n", saved.SessionFile)
-	}
 	if source.Paths.WorkDir != "" {
 		cleanup, err := cleanupDestination(repo, prefix, defaultTarget, n)
 		if err == nil {
@@ -363,6 +369,24 @@ func publishMerge(ctx context.Context, repo *git.Repository, source checkout, ta
 	return nil
 }
 
+type mergeConflictError struct {
+	target destination
+	where  string
+	number int
+}
+
+func (e *mergeConflictError) summary() string {
+	return fmt.Sprintf("merge conflict; %s is unchanged", e.target)
+}
+
+func (e *mergeConflictError) instructions() string {
+	return fmt.Sprintf("In %s, merge %s, resolve and commit, then retry with `tasks merge %d`.", e.where, e.target, e.number)
+}
+
+func (e *mergeConflictError) Error() string {
+	return e.summary() + ". " + e.instructions()
+}
+
 func buildMerge(ctx context.Context, repo *git.Repository, source checkout, task store.Task, target destination, base git.ID, policy signing.Policy, crypto signing.Adapter, streams IO) (id git.ID, err error) {
 	scratch, err := createDetachedCheckout(repo, "task-merge-", base)
 	if err != nil {
@@ -384,7 +408,7 @@ func buildMerge(ctx context.Context, repo *git.Repository, source checkout, task
 			if source.Paths.WorkDir != "" {
 				where = source.Paths.WorkDir
 			}
-			return id, fmt.Errorf("merge conflict; %s is unchanged. In %s, merge %s, resolve and commit, then retry", target, where, target)
+			return id, &mergeConflictError{target: target, where: where, number: task.Number}
 		}
 		return id, err
 	}

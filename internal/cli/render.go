@@ -84,6 +84,19 @@ func (p presentation) printTaskHeadline(task store.Task, icon, prefix, suffix st
 	fmt.Fprintln(p.out, prefix+id+suffix)
 }
 
+func (p presentation) printMergeConflict(task store.Task, conflict *mergeConflictError) {
+	prefix := ""
+	if p.styled {
+		prefix = "🚫 "
+	}
+	fmt.Fprintf(p.out, "%s%s needs attention: %s. %s\n",
+		prefix,
+		task.ID(),
+		p.paint(conflict.summary(), "4"),
+		p.paint(conflict.instructions(), ""),
+	)
+}
+
 func withoutControls(text string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {

@@ -181,7 +181,7 @@ func TestTaskRunStartsAtMainAndMergesWithoutChecks(t *testing.T) {
 	assertTail(t, root, "Done.")
 	// Reconcile via the retained branch, without a checkout or a progress line.
 	if out, diagnostic, err := invoke(root, "", "merge", "1"); err != nil || diagnostic != "" ||
-		!strings.HasPrefix(out, "EXAMPLE-1 (Ship something) merged into local main.\n") {
+		out != "EXAMPLE-1 (Ship something) merged into local main.\n" {
 		t.Fatalf("merge retry = %q, %q, %v", out, diagnostic, err)
 	}
 }
@@ -547,14 +547,23 @@ func TestMergeConflictRetainsTaskAndRetryUsesCurrentTip(t *testing.T) {
 	root := wf.root
 	commitImplementation(t, root, "conflict", "base\n")
 	run(t, root, "create", "Conflict", "--body", "requirements")
+	var checkoutPath string
 	out, err := wf.invokePi(context.Background(), root, func(_ context.Context, child process.Command) process.Result {
-		commitImplementation(t, piWorktree(t, child), "conflict", "task\n")
+		checkoutPath = piWorktree(t, child)
+		commitImplementation(t, checkoutPath, "conflict", "task\n")
 		commitImplementation(t, root, "conflict", "main\n")
 		return process.Result{}
 	}, "run", "1")
-	if err == nil || !strings.Contains(err.Error(), "merge conflict; main is unchanged") ||
-		!strings.Contains(err.Error(), "\nRetry with `tasks merge 1`\n") {
+	wantConflict := fmt.Sprintf("EXAMPLE-1 needs attention: merge conflict; main is unchanged. In %s, merge main, resolve and commit, then retry with `tasks merge 1`.\n", checkoutPath)
+	if err == nil || ExitCode(err) != 1 || !strings.HasSuffix(out, wantConflict) ||
+		!strings.Contains(err.Error(), "merge conflict; main is unchanged") ||
+		!strings.Contains(err.Error(), "then retry with `tasks merge 1`.") {
 		t.Fatalf("%v\n%s", err, out)
+	}
+	var written bytes.Buffer
+	WriteError(&written, err)
+	if written.Len() != 0 {
+		t.Fatalf("merge conflict should already be reported, WriteError wrote %q", written.String())
 	}
 	assertStatus(t, root, "blocked")
 	path := filepath.Join(root, strings.TrimSpace(run(t, root, "worktree", "1")))

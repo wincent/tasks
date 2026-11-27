@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -33,9 +35,74 @@ func TestMergeHeadlinesUseDestinationWidth(t *testing.T) {
 	if got := readDiagnostic(); got != wantProgress {
 		t.Errorf("merge progress = %q; want %q", got, wantProgress)
 	}
-	wantResult := "✅ \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3m界界界 Rev…\x1b[0m) \x1b[1;32mmerged into local main.\x1b[0m"
-	if got, _, _ := strings.Cut(readOut(), "\n"); got != wantResult {
+	wantResult := "✅ \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3m界界界 Rev…\x1b[0m) \x1b[1;32mmerged into local main.\x1b[0m\n"
+	if got := readOut(); got != wantResult {
 		t.Errorf("merge result = %q; want %q", got, wantResult)
+	}
+}
+
+func TestMergeConflictPresentation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, term, noColor string
+		terminal, styled    bool
+	}{
+		{"styled terminal", "xterm", "", true, true},
+		{"no color", "xterm", "1", true, false},
+		{"dumb terminal", "dumb", "", true, false},
+		{"non-terminal", "xterm", "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			wf := taskWorkflowFixture(t)
+			commitImplementation(t, wf.root, "conflict", "base\n")
+			run(t, wf.root, "create", "Conflict", "--body", "requirements")
+			var worktree string
+			if out, err := wf.invokePi(context.Background(), wf.root, func(_ context.Context, child process.Command) process.Result {
+				worktree = piWorktree(t, child)
+				commitImplementation(t, worktree, "conflict", "task\n")
+				commitImplementation(t, wf.root, "conflict", "main\n")
+				return process.Result{}
+			}, "run", "1", "--no-merge"); err != nil {
+				t.Fatalf("prepare conflict: %v\n%s", err, out)
+			}
+
+			env := withEnv(wf.env, "TERM="+tc.term, "NO_COLOR="+tc.noColor)
+			var gotOut, gotErr string
+			var err error
+			if tc.terminal {
+				out, readOut := sizedTerminalOutput(t, 120)
+				diagnostic, readDiagnostic := sizedTerminalOutput(t, 120)
+				err = Run(context.Background(), wf.root, []string{"merge", "1"}, IO{Out: out, Err: diagnostic, Env: env})
+				gotOut, gotErr = readOut(), readDiagnostic()
+			} else {
+				var out, diagnostic bytes.Buffer
+				err = Run(context.Background(), wf.root, []string{"merge", "1"}, IO{Out: &out, Err: &diagnostic, Env: env})
+				gotOut, gotErr = out.String(), diagnostic.String()
+			}
+			if err == nil || ExitCode(err) != 1 {
+				t.Fatalf("merge error = %v (code %d), want exit 1", err, ExitCode(err))
+			}
+			if gotOut != "" {
+				t.Errorf("stdout = %q; want empty", gotOut)
+			}
+			var wantProgress, wantConflict string
+			if tc.styled {
+				wantProgress = "🔄 \x1b[1;36mMerging\x1b[0m \x1b[4mEXAMPLE-1\x1b[0m (\x1b[3mConflict\x1b[0m) into local main...\n"
+				wantConflict = fmt.Sprintf("🚫 EXAMPLE-1 needs attention: \x1b[4mmerge conflict; main is unchanged\x1b[0m. In %s, merge main, resolve and commit, then retry with `tasks merge 1`.\n", worktree)
+			} else {
+				wantProgress = "Merging EXAMPLE-1 (Conflict) into local main...\n"
+				wantConflict = fmt.Sprintf("EXAMPLE-1 needs attention: merge conflict; main is unchanged. In %s, merge main, resolve and commit, then retry with `tasks merge 1`.\n", worktree)
+			}
+			if want := wantProgress + wantConflict; gotErr != want {
+				t.Errorf("stderr =\n%q\nwant:\n%q", gotErr, want)
+			}
+			var extra bytes.Buffer
+			WriteError(&extra, err)
+			if extra.Len() != 0 {
+				t.Errorf("WriteError wrote %q; want empty", extra.String())
+			}
+		})
 	}
 }
 
