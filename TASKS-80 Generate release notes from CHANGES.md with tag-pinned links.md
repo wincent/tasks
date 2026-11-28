@@ -1,6 +1,6 @@
 # TASKS-80: Generate release notes from CHANGES.md with tag-pinned links
 
-Status: open
+Status: active
 
 ## Description
 
