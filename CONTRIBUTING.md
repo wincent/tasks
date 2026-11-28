@@ -46,5 +46,5 @@ The release process is triggered by pushing a signed tag pointing at a commit on
 3. Commit and push `main`.
 4. **Wait for CI to pass.**
 5. Tag the new version (with `git tag -s -m "v0.1.0 release" v0.1.0` or similar).
-6. Push the tag (with `git push --tags`)
+6. Push the tag (with `git push --tags --dry-run` → `git push --tags`)
 7. Wait for the Release workflow to publish.
