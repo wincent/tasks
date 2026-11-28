@@ -82,6 +82,17 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 }
 
 func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, a arguments, model string, hasModel bool, streams IO) error {
+	var status *programStatus
+	if a.action != "pi" {
+		status = newProgramStatus(streams)
+		defer status.clearIfActive()
+	}
+	err := runLaunchTask(ctx, cwd, repo, a, model, hasModel, streams, status)
+	status.finish(ctx, err)
+	return err
+}
+
+func runLaunchTask(ctx context.Context, cwd string, repo *git.Repository, a arguments, model string, hasModel bool, streams IO, status *programStatus) error {
 	prefix, defaultTarget, n := a.prefix, a.defaultTarget, a.number()
 	interactive := a.action == "pi"
 	if err := store.RequireLocalHistory(repo); err != nil {
@@ -154,6 +165,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 		if previous.Branch != "" {
 			base = previous.ID
 		}
+		status.working()
 		source, err = createCheckout(repo, branchStem(prefix, n)+"-", base, previous.Branch)
 		if err != nil {
 			return err
@@ -222,6 +234,7 @@ func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, 
 	if runner == nil {
 		runner = process.Native{}
 	}
+	status.working()
 	result := runner.Run(ctx, child)
 	live.Close()
 	runLock.Release()
