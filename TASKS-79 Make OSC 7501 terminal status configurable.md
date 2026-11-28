@@ -1,6 +1,6 @@
 # TASKS-79: Make OSC 7501 terminal status configurable
 
-Status: open
+Status: active
 
 ## Description
 
