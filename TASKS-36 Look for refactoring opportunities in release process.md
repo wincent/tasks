@@ -1,6 +1,6 @@
 # TASKS-36: Look for refactoring opportunities in release process
 
-Status: open
+Status: active
 
 ## Description
 
