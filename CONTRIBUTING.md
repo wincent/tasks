@@ -41,9 +41,10 @@ The repository settings are:
 
 The release process is triggered by pushing a signed tag pointing at a commit on `main` for which CI has previously passed:
 
-1. Update [CHANGES.md](CHANGES.md) with the version, release date, and user-visible changes.
-2. Commit and push `main`.
-3. **Wait for CI to pass.**
-4. Tag the new version (with `git tag -s -m "v0.1.0 release" v0.1.0` or similar).
-5. Push the tag (with `git push --tags`)
-6. Wait for the Release workflow to publish.
+1. Update [CHANGES.md](CHANGES.md) with the version, release date, and user-visible changes. Note that, because change text is extracted and included in release notes, **it must not include relative links** (instead, link to absolute GitHub URLs pointing at the specific tagged version of the link target).
+2. Run `bin/ci` as a final preflight check.
+3. Commit and push `main`.
+4. **Wait for CI to pass.**
+5. Tag the new version (with `git tag -s -m "v0.1.0 release" v0.1.0` or similar).
+6. Push the tag (with `git push --tags`)
+7. Wait for the Release workflow to publish.

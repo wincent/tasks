@@ -1,5 +1,11 @@
 # Changes
 
+## v0.5.0 — 2026-11-28
+
+- feat: emit [OSC 7501 terminal program status](https://mitchellh.com/writing/program-status-osc7501) (`working`, `done`, `error`, `clear`) via tmux passthrough during `tasks run` and `tasks go` invocations. [Program status reporting can be configured](https://github.com/wincent/tasks/blob/v0.5.0/docs/usage/configuration.md#terminal-status) via `terminal.status` in `$XDG_CONFIG_HOME/tasks/config.yml` and the `TASKS_TERMINAL_STATUS` environment variable.
+- feat: improve readability of `tasks merge` conflict and success output.
+- feat: tailor Pi launch prompts separately for interactive (`tasks pi`) and non-interactive (`tasks run`, `tasks go`) runs.
+
 ## v0.4.0 — 2026-11-26
 
 - feat: teach `tasks tail` to infer the only active task (if there is one) when invoked without a task number.
