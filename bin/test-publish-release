@@ -31,7 +31,14 @@ case "$*" in
   "api --paginate repos/test/tasks/releases")
     printf '%s\n' "$MOCK_RELEASES"
     ;;
-  "release create v1.0.0 "*" --repo test/tasks --draft --verify-tag --title v1.0.0 --notes "*)
+  "release create v1.0.0 "*" --repo test/tasks --draft --verify-tag --title v1.0.0 --notes-file "*)
+    notes_path="${!#}"
+    [[ -f "$notes_path" && -s "$notes_path" ]] || {
+      printf 'Missing or empty notes file: %s\n' "$notes_path" >&2
+      exit 1
+    }
+    cp "$notes_path" "$MOCK_NOTES_COPY"
+    printf '%s\n' "$notes_path" > "$MOCK_NOTES_PATH"
     ;;
   "release view v1.0.0 --repo test/tasks --json isDraft,databaseId --jq select(.isDraft) | .databaseId")
     printf '%s\n' "$MOCK_DRAFT_ID"
@@ -67,11 +74,18 @@ export RELEASE_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export TAG_OBJECT=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 export MOCK_LOG="$work/gh.log"
 export MOCK_TAG_COUNT="$work/tag-count"
+export MOCK_NOTES_COPY="$work/notes.md"
+export MOCK_NOTES_PATH="$work/notes-path"
+export RELEASE_CHANGES_FILE="$work/CHANGES.md"
 
 targets=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
 
+write_changes() {
+  cat > "$RELEASE_CHANGES_FILE"
+}
+
 setup_assets() {
-  rm -rf "$work/assets" "$work/real-dir"
+  rm -rf "$work/assets" "$work/real-dir" "$MOCK_NOTES_COPY" "$MOCK_NOTES_PATH"
   mkdir "$work/assets"
   local items=()
   for target in "${targets[@]}"; do
@@ -81,6 +95,18 @@ setup_assets() {
     printf 'payload-%s\n' "$target" > "$asset"
     items+=("$(jq -nc --arg name "tasks-$target.tar.gz" --arg digest "sha256:$(sha256_file "$asset")" '{name:$name, digest:$digest, state:"uploaded"}')")
   done
+  write_changes <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: add release notes generation from `CHANGES.md`.
+- fix: verify tag-pinned documentation links.
+
+## v0.9.0 — 2026-11-27
+
+- feat: earlier release entry that must not leak.
+EOF
   export MOCK_TAG_FIRST="$TAG_OBJECT"
   export MOCK_TAG_SECOND="$TAG_OBJECT"
   export MOCK_FAIL_ATTEST=''
@@ -116,6 +142,74 @@ url=$("$publish" "$work/assets")
 [[ "$url" == 'https://github.com/test/tasks/releases/tag/v1.0.0' ]]
 (( $(cat "$MOCK_TAG_COUNT") == 2 ))
 grep -Fq 'api --method PATCH repos/test/tasks/releases/42 -F draft=false' "$MOCK_LOG"
+[[ ! -e "$(cat "$MOCK_NOTES_PATH")" ]]
+diff -u - "$MOCK_NOTES_COPY" <<'EOF'
+## Changes
+
+- feat: add release notes generation from `CHANGES.md`.
+- fix: verify tag-pinned documentation links.
+
+See [CHANGES.md](https://github.com/test/tasks/blob/v1.0.0/CHANGES.md) for the full changelog.
+
+## Installation and verification
+
+These binaries require shared libgit2 1.9.x at runtime. Linux binaries are built on Ubuntu 26.04 (install `libgit2-1.9`); macOS binaries are built on macOS 15 with Homebrew `libgit2`. See `BUILD-INFO.txt` inside each archive for the actual build toolchain and dependency versions.
+
+Verify the archive before extracting it, as described in [ADR-0002](https://github.com/test/tasks/blob/v1.0.0/docs/adrs/0002-provenance-based-releases.md).
+EOF
+
+# Custom GITHUB_SERVER_URL (e.g. GitHub Enterprise / staging override).
+setup_assets
+url=$(GITHUB_SERVER_URL=https://git.example.test/ "$publish" "$work/assets")
+[[ "$url" == 'https://github.com/test/tasks/releases/tag/v1.0.0' ]]
+grep -Fq 'https://git.example.test/test/tasks/blob/v1.0.0/CHANGES.md' "$MOCK_NOTES_COPY"
+grep -Fq 'https://git.example.test/test/tasks/blob/v1.0.0/docs/adrs/0002-provenance-based-releases.md' "$MOCK_NOTES_COPY"
+
+# Missing, empty, duplicate changelog sections, or missing changelog file.
+setup_assets
+write_changes <<'EOF'
+# Changes
+
+## v0.9.0 — 2026-11-27
+
+- feat: only older version present.
+EOF
+reject 'No changelog section found for v1.0.0'
+assert_not_logged 'release create'
+
+setup_assets
+write_changes <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+
+## v0.9.0 — 2026-11-27
+
+- feat: older version.
+EOF
+reject 'Changelog section for v1.0.0 is empty'
+assert_not_logged 'release create'
+
+setup_assets
+write_changes <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: first entry.
+
+## v1.0.0 — 2026-11-27
+
+- feat: duplicate entry.
+EOF
+reject 'Duplicate changelog section found for v1.0.0'
+assert_not_logged 'release create'
+
+setup_assets
+rm -f "$RELEASE_CHANGES_FILE"
+reject 'Changelog file not found'
+assert_not_logged 'release create'
 
 # Tag moved before publication starts.
 setup_assets

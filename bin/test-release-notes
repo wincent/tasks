@@ -1,0 +1,409 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd "$(dirname "$0")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+render="$script_dir/render-release-notes"
+check_changelog="$script_dir/check-changelog"
+
+work=$(mktemp -d /tmp/tasks-release-notes-test.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+
+write_fixture() {
+  cat > "$work/CHANGES.md"
+}
+
+reject_cmd() {
+  local message=$1
+  shift
+  if "$@" > "$work/log" 2>&1 || [[ $(<"$work/log") != *"$message"* ]]; then
+    printf 'Expected rejection (%s) for: %s\n' "$message" "$*" >&2
+    head -50 "$work/log" >&2
+    exit 1
+  fi
+}
+
+# --- render-release-notes tests ---
+
+# 1. Normal section, trailing whitespace/blank trimming, and exact Markdown rendering.
+write_fixture <<'EOF'
+# Changes
+
+## v1.2.3 — 2026-11-28
+
+
+- feat: add first feature.
+- fix: repair edge case.
+
+
+## v1.2.2 — 2026-11-27
+
+- feat: previous version.
+EOF
+
+extracted=$("$render" --extract v1.2.3 "$work/CHANGES.md")
+diff -u - <(printf '%s\n' "$extracted") <<'EOF'
+- feat: add first feature.
+- fix: repair edge case.
+EOF
+
+GITHUB_REPOSITORY=wincent/tasks "$render" v1.2.3 "$work/CHANGES.md" > "$work/rendered.md"
+diff -u - "$work/rendered.md" <<'EOF'
+## Changes
+
+- feat: add first feature.
+- fix: repair edge case.
+
+See [CHANGES.md](https://github.com/wincent/tasks/blob/v1.2.3/CHANGES.md) for the full changelog.
+
+## Installation and verification
+
+These binaries require shared libgit2 1.9.x at runtime. Linux binaries are built on Ubuntu 26.04 (install `libgit2-1.9`); macOS binaries are built on macOS 15 with Homebrew `libgit2`. See `BUILD-INFO.txt` inside each archive for the actual build toolchain and dependency versions.
+
+Verify the archive before extracting it, as described in [ADR-0002](https://github.com/wincent/tasks/blob/v1.2.3/docs/adrs/0002-provenance-based-releases.md).
+EOF
+
+# 2. Custom GITHUB_SERVER_URL (including trailing slash stripping) and heading without date.
+write_fixture <<'EOF'
+# Changes
+
+## v2.0.0
+- feat: bare version heading.
+EOF
+
+GITHUB_SERVER_URL=https://enterprise.example.test/ GITHUB_REPOSITORY=staging/tasks \
+  "$render" v2.0.0 "$work/CHANGES.md" > "$work/rendered.md"
+grep -Fq 'See [CHANGES.md](https://enterprise.example.test/staging/tasks/blob/v2.0.0/CHANGES.md)' "$work/rendered.md"
+grep -Fq '[ADR-0002](https://enterprise.example.test/staging/tasks/blob/v2.0.0/docs/adrs/0002-provenance-based-releases.md)' "$work/rendered.md"
+
+# 3. Multi-paragraph section with ### subheadings and fenced code blocks containing # / ## headings.
+write_fixture <<'EOF'
+# Changes
+
+## v1.3.0 — 2026-11-28
+
+First paragraph explaining the release.
+
+Second paragraph with details.
+
+### Upgrade notes
+
+```markdown
+# Not a top-level boundary
+## v1.3.0 — Not a duplicate heading
+## v1.2.0 — Not the next section
+```
+
+~~~~sh
+## Still inside a tilde fence
+~~~
+# Still inside the 4-tilde fence
+~~~~
+
+Final paragraph after fenced code blocks.
+
+# Appendix
+
+Not part of v1.3.0.
+EOF
+
+extracted=$("$render" --extract v1.3.0 "$work/CHANGES.md")
+diff -u - <(printf '%s\n' "$extracted") <<'EOF'
+First paragraph explaining the release.
+
+Second paragraph with details.
+
+### Upgrade notes
+
+```markdown
+# Not a top-level boundary
+## v1.3.0 — Not a duplicate heading
+## v1.2.0 — Not the next section
+```
+
+~~~~sh
+## Still inside a tilde fence
+~~~
+# Still inside the 4-tilde fence
+~~~~
+
+Final paragraph after fenced code blocks.
+EOF
+
+# 4. Literal tag matching (dots must not act as regex wildcards; prefix tags must not match).
+write_fixture <<'EOF'
+# Changes
+
+## v1X0X0 — 2026-11-28
+
+- wrong match via regex dot.
+
+## v1.0.0-rc1 — 2026-11-28
+
+- prerelease heading must not match v1.0.0.
+
+## v1.0.00 — 2026-11-28
+
+- longer patch digits must not match v1.0.0.
+
+```markdown
+## v1.0.0 — 2026-11-28
+
+- heading inside fenced code block must be ignored.
+```
+EOF
+
+reject_cmd 'No changelog section found for v1.0.0' "$render" --extract v1.0.0 "$work/CHANGES.md"
+
+# 5. Empty section (blank/whitespace lines only, and at EOF).
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+   
+	
+
+## v0.9.0 — 2026-11-27
+
+- non-empty.
+EOF
+
+reject_cmd 'Changelog section for v1.0.0 is empty' "$render" --extract v1.0.0 "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+EOF
+
+reject_cmd 'Changelog section for v1.0.0 is empty' "$render" --extract v1.0.0 "$work/CHANGES.md"
+
+# 6. Duplicate sections.
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- first copy.
+
+## v1.0.0
+
+- second copy.
+EOF
+
+reject_cmd 'Duplicate changelog section found for v1.0.0' "$render" --extract v1.0.0 "$work/CHANGES.md"
+
+# 7. Invalid tag, missing file, and missing GITHUB_REPOSITORY.
+reject_cmd 'Expected a release tag' "$render" --extract 1.0.0 "$work/CHANGES.md"
+reject_cmd 'Changelog file not found' "$render" --extract v1.0.0 "$work/does-not-exist.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- ok.
+EOF
+reject_cmd 'Set GITHUB_REPOSITORY' env -u GITHUB_REPOSITORY "$render" v1.0.0 "$work/CHANGES.md"
+
+# --- check-changelog tests ---
+
+# 8. Valid changelog with absolute links (https, http, mailto, images, reference defs, titles, parens, fragments)
+#    and relative-looking links safely inside fenced code blocks and inline code spans.
+write_fixture <<'EOF'
+# Changes
+
+## v1.1.0 — 2026-11-28
+
+- feat: support [HTTPS links](https://example.com/docs/guide.md#section), [HTTP links](http://example.com "Example"), and [email](mailto:maintainers@example.com).
+- feat: handle [Wikipedia parens](https://en.wikipedia.org/wiki/Foo_(bar)) and [angle URLs](<https://example.com/a b> 'Title').
+- feat: render ![badge](https://example.com/badge.svg) and [![linked badge](https://example.com/b.svg)](https://example.com/releases).
+- feat: support [reference links][ref1], [ref2][ref2], [ref3][ref3], and [ref4][ref4].
+- feat: ignore inline code spans like `[inline](relative.md)`, `![img](local.png)`, `[anchor](#top)`, `` `[nested](docs/a.md)` ``, and `[ref]: relative.md`.
+- feat: ignore multi-line inline code span ``foo
+  [not-a-link](relative.md)`` inside a paragraph.
+- feat: ignore escaped brackets \[not a link](relative.md).
+
+```markdown
+[fenced inline](docs/relative.md)
+![fenced image](./img.png)
+[fenced anchor](#section)
+[fenced-ref]: ../relative.md
+```
+
+~~~markdown
+[tilde fenced](docs/relative.md)
+[tilde-ref]: #anchor
+~~~
+
+[ref1]: https://example.com/one "One"
+[ref2]: http://example.com/two
+[ref3]: mailto:security@example.com
+[ref4]:
+  <https://example.com/four>
+
+[^note]: Footnote text with [valid link](https://example.com/footnote).
+
+## v1.0.0 — 2026-11-27
+
+- Initial release.
+EOF
+
+"$check_changelog" "$work/CHANGES.md"
+
+# 9. Reject relative inline links (path, dot-relative, parent-relative, root-relative, protocol-relative, empty, code-span label).
+for target in 'docs/guide.md' './guide.md' '../guide.md' '/docs/guide.md' '//example.com/guide' '' '<docs/my guide.md>'; do
+  write_fixture <<EOF
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [guide]($target).
+EOF
+  reject_cmd 'disallowed relative link destination' "$check_changelog" "$work/CHANGES.md"
+done
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [`code label`](docs/guide.md).
+EOF
+reject_cmd 'disallowed relative link destination: docs/guide.md' "$check_changelog" "$work/CHANGES.md"
+
+# 10. Reject relative image links (standalone and nested inside valid links).
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: screenshot ![demo](images/demo.png).
+EOF
+reject_cmd 'disallowed relative link destination: images/demo.png' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: badge [![demo](images/badge.svg)](https://example.com).
+EOF
+reject_cmd 'disallowed relative link destination: images/badge.svg' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: badge [![demo](https://example.com/badge.svg)](docs/local.md).
+EOF
+reject_cmd 'disallowed relative link destination: docs/local.md' "$check_changelog" "$work/CHANGES.md"
+
+# 11. Reject #anchor inline and reference links.
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: jump to [previous release](#v090).
+EOF
+reject_cmd 'disallowed relative link destination: #v090' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: jump to [previous release][prev].
+
+[prev]: #v090
+EOF
+reject_cmd 'disallowed relative link destination in reference definition: #v090' "$check_changelog" "$work/CHANGES.md"
+
+# 12. Reject relative reference-style link definitions (plain, angle-bracketed, multi-line, code-span label).
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [ADR-0002][adr].
+
+[adr]: docs/adrs/0002-provenance-based-releases.md "ADR-0002"
+EOF
+reject_cmd 'disallowed relative link destination in reference definition: docs/adrs/0002-provenance-based-releases.md' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [guide][g].
+
+[g]: <docs/my guide.md>
+EOF
+reject_cmd 'disallowed relative link destination in reference definition: docs/my guide.md' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [guide][g].
+
+[g]:
+  ./docs/guide.md
+EOF
+reject_cmd 'disallowed relative link destination in reference definition: ./docs/guide.md' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: see [`guide`].
+
+[`guide`]: docs/guide.md
+EOF
+reject_cmd 'disallowed relative link destination in reference definition: docs/guide.md' "$check_changelog" "$work/CHANGES.md"
+
+# 13. Reject empty sections, duplicate sections, and changelogs with no versions.
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+## v0.9.0 — 2026-11-27
+
+- ok.
+EOF
+reject_cmd 'Changelog section for v1.0.0 is empty' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- first.
+
+## v1.0.0 — 2026-11-27
+
+- duplicate.
+EOF
+reject_cmd 'Duplicate changelog section found for v1.0.0' "$check_changelog" "$work/CHANGES.md"
+
+write_fixture <<'EOF'
+# Changes
+
+No version headings here.
+EOF
+reject_cmd 'No version headings found' "$check_changelog" "$work/CHANGES.md"
+
+# 14. Validate the repository's real CHANGES.md.
+"$check_changelog" "$repo_root/CHANGES.md"
+GITHUB_REPOSITORY=wincent/tasks "$render" v0.4.0 "$repo_root/CHANGES.md" > "$work/real-v0.4.0.md"
+grep -Fq 'tasks tail' "$work/real-v0.4.0.md"
+grep -Fq 'https://github.com/wincent/tasks/blob/v0.4.0/CHANGES.md' "$work/real-v0.4.0.md"
+grep -Fq 'https://github.com/wincent/tasks/blob/v0.4.0/docs/adrs/0002-provenance-based-releases.md' "$work/real-v0.4.0.md"
+
+printf '%s\n' 'Release notes and changelog checks passed'

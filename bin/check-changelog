@@ -1,0 +1,449 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+(( $# <= 1 )) || fail "Usage: $0 [<changes-file>]"
+script_dir=$(cd "$(dirname "$0")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+changes_file=${1:-"$repo_root/CHANGES.md"}
+
+[[ -f "$changes_file" && -r "$changes_file" ]] || fail "Changelog file not found: $changes_file"
+
+versions=()
+while IFS= read -r version; do
+  [[ -n "$version" ]] && versions+=("$version")
+done < <(
+  awk '
+    function strip_indent3(s,    i) {
+      for (i = 0; i < 3 && substr(s, 1, 1) == " "; i++) {
+        s = substr(s, 2)
+      }
+      return s
+    }
+
+    function is_fence_open(line,    s, ch, n, rest) {
+      s = strip_indent3(line)
+      if (substr(s, 1, 3) == "```") {
+        ch = "`"
+      } else if (substr(s, 1, 3) == "~~~") {
+        ch = "~"
+      } else {
+        return 0
+      }
+      n = 0
+      while (substr(s, n + 1, 1) == ch) n++
+      rest = substr(s, n + 1)
+      if (ch == "`" && index(rest, "`") > 0) return 0
+      fence_char = ch
+      fence_len = n
+      return 1
+    }
+
+    function is_fence_close(line,    s, n, rest) {
+      s = strip_indent3(line)
+      n = 0
+      while (substr(s, n + 1, 1) == fence_char) n++
+      if (n < fence_len) return 0
+      rest = substr(s, n + 1)
+      return (rest ~ /^[ \t]*$/)
+    }
+
+    BEGIN {
+      in_fence = 0
+      fence_char = ""
+      fence_len = 0
+    }
+
+    {
+      sub(/\r$/, "")
+      if (in_fence) {
+        if (is_fence_close($0)) {
+          in_fence = 0
+          fence_char = ""
+          fence_len = 0
+        }
+        next
+      }
+      if (is_fence_open($0)) {
+        in_fence = 1
+        next
+      }
+      if (substr($0, 1, 3) == "## ") {
+        rest = substr($0, 4)
+        token = rest
+        sub(/[ \t].*$/, "", token)
+        if (token ~ /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/) {
+          print token
+        }
+      }
+    }
+  ' "$changes_file"
+)
+
+(( ${#versions[@]} > 0 )) || fail "No version headings found in $changes_file"
+
+for version in "${versions[@]}"; do
+  "$script_dir/render-release-notes" --extract "$version" "$changes_file" >/dev/null
+done
+
+awk -v file="$changes_file" '
+  function strip_indent3(s,    i) {
+    for (i = 0; i < 3 && substr(s, 1, 1) == " "; i++) {
+      s = substr(s, 2)
+    }
+    return s
+  }
+
+  function is_fence_open(line,    s, ch, n, rest) {
+    s = strip_indent3(line)
+    if (substr(s, 1, 3) == "```") {
+      ch = "`"
+    } else if (substr(s, 1, 3) == "~~~") {
+      ch = "~"
+    } else {
+      return 0
+    }
+    n = 0
+    while (substr(s, n + 1, 1) == ch) n++
+    rest = substr(s, n + 1)
+    if (ch == "`" && index(rest, "`") > 0) return 0
+    fence_char = ch
+    fence_len = n
+    return 1
+  }
+
+  function is_fence_close(line,    s, n, rest) {
+    s = strip_indent3(line)
+    n = 0
+    while (substr(s, n + 1, 1) == fence_char) n++
+    if (n < fence_len) return 0
+    rest = substr(s, n + 1)
+    return (rest ~ /^[ \t]*$/)
+  }
+
+  function is_ascii_punct(ch) {
+    return (index(ascii_punct, ch) > 0)
+  }
+
+  function is_allowed_url(dest) {
+    return (substr(dest, 1, 8) == "https://" || substr(dest, 1, 7) == "http://" || substr(dest, 1, 7) == "mailto:")
+  }
+
+  function count_newlines(s,    tmp) {
+    tmp = s
+    return gsub(/\n/, "", tmp)
+  }
+
+  function strip_code_spans(block,    len, i, ch, next_ch, k, j, m, close_pos, idx, c, out) {
+    len = length(block)
+    out = ""
+    i = 1
+    while (i <= len) {
+      ch = substr(block, i, 1)
+      if (ch == "\\" && i < len) {
+        next_ch = substr(block, i + 1, 1)
+        if (is_ascii_punct(next_ch)) {
+          out = out ch next_ch
+          i += 2
+          continue
+        }
+      }
+      if (ch == "`") {
+        k = 0
+        while (i + k <= len && substr(block, i + k, 1) == "`") k++
+        close_pos = 0
+        j = i + k
+        while (j <= len) {
+          if (substr(block, j, 1) == "`") {
+            m = 0
+            while (j + m <= len && substr(block, j + m, 1) == "`") m++
+            if (m == k) {
+              close_pos = j
+              break
+            }
+            j += m
+          } else {
+            j++
+          }
+        }
+        if (close_pos > 0) {
+          for (idx = i; idx < close_pos + k; idx++) {
+            c = substr(block, idx, 1)
+            out = out (c == "\n" ? "\n" : "x")
+          }
+          i = close_pos + k
+          continue
+        }
+        out = out substr(block, i, k)
+        i += k
+        continue
+      }
+      out = out ch
+      i++
+    }
+    return out
+  }
+
+  function scan_title_end(str, pos, len,    opener, closer, c) {
+    opener = substr(str, pos, 1)
+    if (opener == "\"") closer = "\""
+    else if (opener == single_quote) closer = single_quote
+    else if (opener == "(") closer = ")"
+    else return 0
+    pos++
+    while (pos <= len) {
+      c = substr(str, pos, 1)
+      if (c == "\\" && pos < len && is_ascii_punct(substr(str, pos + 1, 1))) {
+        pos += 2
+        continue
+      }
+      if (c == closer) return pos
+      if (opener == "(" && c == "(") return 0
+      pos++
+    }
+    return 0
+  }
+
+  function check_ref_defs(stripped, start_line,    n, blines, r, s, len, j, c, close_b, label, rest, next_s, gt, dest, dest_end, dest_line) {
+    n = split(stripped, blines, "\n")
+    for (r = 1; r <= n; r++) {
+      s = strip_indent3(blines[r])
+      if (substr(s, 1, 1) != "[" || substr(s, 1, 2) == "[^") continue
+      len = length(s)
+      close_b = 0
+      for (j = 2; j <= len; j++) {
+        c = substr(s, j, 1)
+        if (c == "\\" && j < len && is_ascii_punct(substr(s, j + 1, 1))) {
+          j++
+          continue
+        }
+        if (c == "[") {
+          close_b = 0
+          break
+        }
+        if (c == "]") {
+          close_b = j
+          break
+        }
+      }
+      if (close_b == 0 || substr(s, close_b + 1, 1) != ":") continue
+      label = substr(s, 2, close_b - 2)
+      if (label ~ /^[ \t]*$/) continue
+      rest = substr(s, close_b + 2)
+      sub(/^[ \t]+/, "", rest)
+      dest_line = start_line + r - 1
+      if (rest == "" && r + 1 <= n) {
+        next_s = blines[r + 1]
+        sub(/^[ \t]+/, "", next_s)
+        if (next_s != "") rest = next_s
+      }
+      if (rest == "") continue
+      if (substr(rest, 1, 1) == "<") {
+        gt = 0
+        for (j = 2; j <= length(rest); j++) {
+          c = substr(rest, j, 1)
+          if (c == "\\" && j < length(rest) && is_ascii_punct(substr(rest, j + 1, 1))) {
+            j++
+            continue
+          }
+          if (c == "<") {
+            gt = 0
+            break
+          }
+          if (c == ">") {
+            gt = j
+            break
+          }
+        }
+        if (gt == 0) continue
+        dest = substr(rest, 2, gt - 2)
+      } else {
+        dest_end = 1
+        while (dest_end <= length(rest)) {
+          c = substr(rest, dest_end, 1)
+          if (c == " " || c == "\t") break
+          dest_end++
+        }
+        dest = substr(rest, 1, dest_end - 1)
+      }
+      if (!is_allowed_url(dest)) {
+        printf "%s:%d: disallowed relative link destination in reference definition: %s\n", file, dest_line, (dest == "" ? "<empty>" : dest) > "/dev/stderr"
+        errors++
+      }
+    }
+  }
+
+  function check_inline_links(stripped, start_line,    len, i, ch, stack_depth, p, q, c, valid, end_pos, dest, dest_start, paren_depth, ws_start, title_end, err_line) {
+    len = length(stripped)
+    stack_depth = 0
+    i = 1
+    while (i <= len) {
+      ch = substr(stripped, i, 1)
+      if (ch == "\\" && i < len && is_ascii_punct(substr(stripped, i + 1, 1))) {
+        i += 2
+        continue
+      }
+      if (ch == "[") {
+        stack_depth++
+        i++
+        continue
+      }
+      if (ch == "]") {
+        if (stack_depth > 0) {
+          stack_depth--
+          if (i < len && substr(stripped, i + 1, 1) == "(") {
+            p = i + 2
+            while (p <= len && (substr(stripped, p, 1) == " " || substr(stripped, p, 1) == "\t" || substr(stripped, p, 1) == "\n")) p++
+            valid = 0
+            end_pos = 0
+            dest = ""
+            if (p <= len && substr(stripped, p, 1) == ")") {
+              valid = 1
+              end_pos = p
+            } else if (p <= len && substr(stripped, p, 1) == "<") {
+              q = p + 1
+              while (q <= len) {
+                c = substr(stripped, q, 1)
+                if (c == "\\" && q < len && is_ascii_punct(substr(stripped, q + 1, 1))) {
+                  q += 2
+                  continue
+                }
+                if (c == "\n" || c == "<") {
+                  q = 0
+                  break
+                }
+                if (c == ">") break
+                q++
+              }
+              if (q > 0 && q <= len && substr(stripped, q, 1) == ">") {
+                dest = substr(stripped, p + 1, q - p - 1)
+                p = q + 1
+                ws_start = p
+                while (p <= len && (substr(stripped, p, 1) == " " || substr(stripped, p, 1) == "\t" || substr(stripped, p, 1) == "\n")) p++
+                if (p <= len && substr(stripped, p, 1) == ")") {
+                  valid = 1
+                  end_pos = p
+                } else if (p > ws_start && p <= len) {
+                  title_end = scan_title_end(stripped, p, len)
+                  if (title_end > 0) {
+                    p = title_end + 1
+                    while (p <= len && (substr(stripped, p, 1) == " " || substr(stripped, p, 1) == "\t" || substr(stripped, p, 1) == "\n")) p++
+                    if (p <= len && substr(stripped, p, 1) == ")") {
+                      valid = 1
+                      end_pos = p
+                    }
+                  }
+                }
+              }
+            } else if (p <= len) {
+              dest_start = p
+              paren_depth = 0
+              while (p <= len) {
+                c = substr(stripped, p, 1)
+                if (c == "\\" && p < len && is_ascii_punct(substr(stripped, p + 1, 1))) {
+                  p += 2
+                  continue
+                }
+                if (c == "(") {
+                  paren_depth++
+                  p++
+                  continue
+                }
+                if (c == ")") {
+                  if (paren_depth == 0) break
+                  paren_depth--
+                  p++
+                  continue
+                }
+                if (c == " " || c == "\t" || c == "\n") break
+                p++
+              }
+              if (paren_depth == 0) {
+                dest = substr(stripped, dest_start, p - dest_start)
+                ws_start = p
+                while (p <= len && (substr(stripped, p, 1) == " " || substr(stripped, p, 1) == "\t" || substr(stripped, p, 1) == "\n")) p++
+                if (p <= len && substr(stripped, p, 1) == ")") {
+                  valid = 1
+                  end_pos = p
+                } else if (p > ws_start && p <= len) {
+                  title_end = scan_title_end(stripped, p, len)
+                  if (title_end > 0) {
+                    p = title_end + 1
+                    while (p <= len && (substr(stripped, p, 1) == " " || substr(stripped, p, 1) == "\t" || substr(stripped, p, 1) == "\n")) p++
+                    if (p <= len && substr(stripped, p, 1) == ")") {
+                      valid = 1
+                      end_pos = p
+                    }
+                  }
+                }
+              }
+            }
+            if (valid) {
+              if (!is_allowed_url(dest)) {
+                err_line = start_line + count_newlines(substr(stripped, 1, i - 1))
+                printf "%s:%d: disallowed relative link destination: %s\n", file, err_line, (dest == "" ? "<empty>" : dest) > "/dev/stderr"
+                errors++
+              }
+              i = end_pos + 1
+              continue
+            }
+          }
+        }
+      }
+      i++
+    }
+  }
+
+  function flush_block(    stripped) {
+    if (block == "") return
+    stripped = strip_code_spans(block)
+    check_ref_defs(stripped, block_start)
+    check_inline_links(stripped, block_start)
+    block = ""
+    block_start = 0
+  }
+
+  BEGIN {
+    single_quote = sprintf("%c", 39)
+    ascii_punct = "!\"#$%&" single_quote "()*+,-./:;<=>?@[\\]^_`{|}~"
+    in_fence = 0
+    fence_char = ""
+    fence_len = 0
+    block = ""
+    block_start = 0
+    errors = 0
+  }
+
+  {
+    sub(/\r$/, "")
+    if (in_fence) {
+      if (is_fence_close($0)) {
+        in_fence = 0
+        fence_char = ""
+        fence_len = 0
+      }
+      next
+    }
+    if (is_fence_open($0)) {
+      flush_block()
+      in_fence = 1
+      next
+    }
+    if ($0 ~ /^[ \t]*$/) {
+      flush_block()
+      next
+    }
+    if (block == "") {
+      block = $0
+      block_start = NR
+    } else {
+      block = block "\n" $0
+    }
+  }
+
+  END {
+    flush_block()
+    if (errors > 0) exit 1
+  }
+' "$changes_file"

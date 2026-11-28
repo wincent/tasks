@@ -37,6 +37,8 @@ jobs:
 
       - run: bin/test
       - run: bin/vet
+      - run: bin/check-changelog
+      - run: bin/test-release-notes
       - run: bin/test-release-tag
       - run: bin/test-publish-release
 

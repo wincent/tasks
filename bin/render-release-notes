@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+extract_only=0
+if [[ ${1:-} == --extract ]]; then
+  extract_only=1
+  shift
+fi
+
+(( $# == 1 || $# == 2 )) || fail "Usage: $0 [--extract] <tag> [<changes-file>]"
+tag=$1
+script_dir=$(cd "$(dirname "$0")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+changes_file=${2:-"$repo_root/CHANGES.md"}
+
+[[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'Expected a release tag (vMAJOR.MINOR.PATCH)'
+[[ -f "$changes_file" && -r "$changes_file" ]] || fail "Changelog file not found: $changes_file"
+
+status=0
+body=$(
+  awk -v tag="$tag" '
+    function strip_indent3(s,    i) {
+      for (i = 0; i < 3 && substr(s, 1, 1) == " "; i++) {
+        s = substr(s, 2)
+      }
+      return s
+    }
+
+    function is_fence_open(line,    s, ch, n, rest) {
+      s = strip_indent3(line)
+      if (substr(s, 1, 3) == "```") {
+        ch = "`"
+      } else if (substr(s, 1, 3) == "~~~") {
+        ch = "~"
+      } else {
+        return 0
+      }
+      n = 0
+      while (substr(s, n + 1, 1) == ch) n++
+      rest = substr(s, n + 1)
+      if (ch == "`" && index(rest, "`") > 0) return 0
+      fence_char = ch
+      fence_len = n
+      return 1
+    }
+
+    function is_fence_close(line,    s, n, rest) {
+      s = strip_indent3(line)
+      n = 0
+      while (substr(s, n + 1, 1) == fence_char) n++
+      if (n < fence_len) return 0
+      rest = substr(s, n + 1)
+      return (rest ~ /^[ \t]*$/)
+    }
+
+    function is_target_heading(line, target,    rest, next_ch) {
+      if (substr(line, 1, 3) != "## ") return 0
+      rest = substr(line, 4)
+      if (substr(rest, 1, length(target)) != target) return 0
+      if (length(rest) == length(target)) return 1
+      next_ch = substr(rest, length(target) + 1, 1)
+      return (next_ch == " " || next_ch == "\t")
+    }
+
+    function is_section_boundary(line) {
+      return (substr(line, 1, 3) == "## " || substr(line, 1, 2) == "# " || line == "##" || line == "#")
+    }
+
+    BEGIN {
+      in_fence = 0
+      fence_char = ""
+      fence_len = 0
+      in_section = 0
+      matches = 0
+      count = 0
+    }
+
+    {
+      sub(/\r$/, "")
+      if (in_fence) {
+        if (in_section) lines[++count] = $0
+        if (is_fence_close($0)) {
+          in_fence = 0
+          fence_char = ""
+          fence_len = 0
+        }
+        next
+      }
+      if (is_fence_open($0)) {
+        in_fence = 1
+        if (in_section) lines[++count] = $0
+        next
+      }
+      if (is_target_heading($0, tag)) {
+        matches++
+        in_section = (matches == 1)
+        next
+      }
+      if (in_section && is_section_boundary($0)) {
+        in_section = 0
+        next
+      }
+      if (in_section) {
+        lines[++count] = $0
+      }
+    }
+
+    END {
+      if (matches == 0) exit 2
+      if (matches > 1) exit 3
+      start = 1
+      while (start <= count && lines[start] ~ /^[ \t]*$/) start++
+      end = count
+      while (end >= start && lines[end] ~ /^[ \t]*$/) end--
+      if (start > end) exit 4
+      for (i = start; i <= end; i++) {
+        print lines[i]
+      }
+    }
+  ' "$changes_file"
+) || status=$?
+
+case "$status" in
+  0) ;;
+  2) fail "No changelog section found for $tag in $changes_file" ;;
+  3) fail "Duplicate changelog section found for $tag in $changes_file" ;;
+  4) fail "Changelog section for $tag is empty in $changes_file" ;;
+  *) fail "Could not extract changelog section for $tag from $changes_file" ;;
+esac
+
+if (( extract_only )); then
+  printf '%s\n' "$body"
+  exit 0
+fi
+
+: "${GITHUB_REPOSITORY:?Set GITHUB_REPOSITORY}"
+[[ "$GITHUB_REPOSITORY" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]] || fail 'Expected GITHUB_REPOSITORY in owner/repo format'
+
+server_url=${GITHUB_SERVER_URL:-https://github.com}
+server_url=${server_url%/}
+blob_base="$server_url/$GITHUB_REPOSITORY/blob/$tag"
+
+printf '## Changes\n\n%s\n\n' "$body"
+printf 'See [CHANGES.md](%s/CHANGES.md) for the full changelog.\n\n' "$blob_base"
+cat <<'EOF'
+## Installation and verification
+
+These binaries require shared libgit2 1.9.x at runtime. Linux binaries are built on Ubuntu 26.04 (install `libgit2-1.9`); macOS binaries are built on macOS 15 with Homebrew `libgit2`. See `BUILD-INFO.txt` inside each archive for the actual build toolchain and dependency versions.
+
+EOF
+printf 'Verify the archive before extracting it, as described in [ADR-0002](%s/docs/adrs/0002-provenance-based-releases.md).\n' "$blob_base"
