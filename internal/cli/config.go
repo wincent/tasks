@@ -15,7 +15,8 @@ import (
 )
 
 type userConfig struct {
-	modelAliases map[string]string
+	modelAliases   map[string]string
+	terminalStatus *bool
 }
 
 func userConfigPath(streams IO) (string, bool) {
@@ -49,16 +50,20 @@ func loadUserConfig(streams IO) (userConfig, error) {
 }
 
 func formatUserConfig(cfg userConfig) string {
-	if len(cfg.modelAliases) == 0 {
-		return ""
-	}
 	var b strings.Builder
-	b.WriteString("models:\n  aliases:\n")
-	for _, name := range slices.Sorted(maps.Keys(cfg.modelAliases)) {
-		b.WriteString("    ")
-		b.WriteString(formatYAMLScalar(name))
-		b.WriteString(": ")
-		b.WriteString(formatYAMLScalar(cfg.modelAliases[name]))
+	if len(cfg.modelAliases) > 0 {
+		b.WriteString("models:\n  aliases:\n")
+		for _, name := range slices.Sorted(maps.Keys(cfg.modelAliases)) {
+			b.WriteString("    ")
+			b.WriteString(formatYAMLScalar(name))
+			b.WriteString(": ")
+			b.WriteString(formatYAMLScalar(cfg.modelAliases[name]))
+			b.WriteByte('\n')
+		}
+	}
+	if cfg.terminalStatus != nil {
+		b.WriteString("terminal:\n  status: ")
+		b.WriteString(strconv.FormatBool(*cfg.terminalStatus))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -140,15 +145,52 @@ func needsYAMLQuoting(s string) bool {
 	return false
 }
 
-func resolveModelOption(a arguments, streams IO) (string, bool, error) {
-	if len(a.values["--model"]) == 0 {
-		return "", false, nil
-	}
+type launchOptions struct {
+	model          string
+	hasModel       bool
+	terminalStatus bool
+}
+
+func resolveLaunchOptions(a arguments, streams IO) (launchOptions, error) {
 	cfg, err := loadUserConfig(streams)
 	if err != nil {
-		return "", false, err
+		return launchOptions{}, err
 	}
-	return cfg.resolveModel(a.value("--model")), true, nil
+	terminalStatus, err := resolveTerminalStatus(cfg, streams)
+	if err != nil {
+		return launchOptions{}, err
+	}
+	opts := launchOptions{terminalStatus: terminalStatus}
+	if len(a.values["--model"]) > 0 {
+		opts.model = cfg.resolveModel(a.value("--model"))
+		opts.hasModel = true
+	}
+	return opts, nil
+}
+
+func parseBoolSetting(s string) (bool, error) {
+	switch strings.ToLower(s) {
+	case "true", "1", "on":
+		return true, nil
+	case "false", "0", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean value %q (expected true, 1, on, false, 0, or off)", s)
+	}
+}
+
+func resolveTerminalStatus(cfg userConfig, streams IO) (bool, error) {
+	if raw := streams.getenv("TASKS_TERMINAL_STATUS"); raw != "" {
+		enabled, err := parseBoolSetting(raw)
+		if err != nil {
+			return false, fmt.Errorf("TASKS_TERMINAL_STATUS: %w", err)
+		}
+		return enabled, nil
+	}
+	if cfg.terminalStatus != nil {
+		return *cfg.terminalStatus, nil
+	}
+	return true, nil
 }
 
 func isThinkingLevel(s string) bool {
@@ -185,10 +227,11 @@ const (
 	configSectionRoot configSection = iota
 	configSectionModels
 	configSectionAliases
+	configSectionTerminal
 )
 
-// parseUserConfig parses a strict YAML subset supporting the nested
-// models.aliases mapping without adding a third-party YAML dependency.
+// parseUserConfig parses a strict YAML subset supporting models.aliases and
+// terminal.status without adding a third-party YAML dependency.
 func parseUserConfig(data []byte) (userConfig, error) {
 	if !utf8.Valid(data) {
 		return userConfig{}, fmt.Errorf("line %d: invalid UTF-8", invalidUTF8Line(data))
@@ -197,9 +240,13 @@ func parseUserConfig(data []byte) (userConfig, error) {
 	section := configSectionRoot
 	seenModels := false
 	seenAliases := false
+	seenTerminal := false
+	seenTerminalStatus := false
 	modelsIndent := -1
 	aliasesIndent := -1
+	terminalIndent := -1
 	var aliases map[string]string
+	var terminalStatus *bool
 
 	lines := strings.Split(string(data), "\n")
 	for idx, rawLine := range lines {
@@ -254,21 +301,41 @@ func parseUserConfig(data []byte) (userConfig, error) {
 			case indent != aliasesIndent:
 				return userConfig{}, fmt.Errorf("line %d: inconsistent indentation", lineNo)
 			}
+		case configSectionTerminal:
+			switch {
+			case indent == 0:
+				section = configSectionRoot
+			case terminalIndent == -1:
+				terminalIndent = indent
+			case indent != terminalIndent:
+				return userConfig{}, fmt.Errorf("line %d: inconsistent indentation", lineNo)
+			}
 		}
 
 		switch section {
 		case configSectionRoot:
-			if key != "models" {
+			switch key {
+			case "models":
+				if seenModels {
+					return userConfig{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
+				}
+				if hasValue {
+					return userConfig{}, fmt.Errorf("line %d: %q must be a mapping", lineNo, key)
+				}
+				seenModels = true
+				section = configSectionModels
+			case "terminal":
+				if seenTerminal {
+					return userConfig{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
+				}
+				if hasValue {
+					return userConfig{}, fmt.Errorf("line %d: %q must be a mapping", lineNo, key)
+				}
+				seenTerminal = true
+				section = configSectionTerminal
+			default:
 				return userConfig{}, fmt.Errorf("line %d: unknown top-level key %q", lineNo, key)
 			}
-			if seenModels {
-				return userConfig{}, fmt.Errorf("line %d: duplicate key %q", lineNo, key)
-			}
-			if hasValue {
-				return userConfig{}, fmt.Errorf("line %d: %q must be a mapping", lineNo, key)
-			}
-			seenModels = true
-			section = configSectionModels
 		case configSectionModels:
 			if key != "aliases" {
 				return userConfig{}, fmt.Errorf("line %d: unknown key %q under models", lineNo, key)
@@ -298,10 +365,26 @@ func parseUserConfig(data []byte) (userConfig, error) {
 				return userConfig{}, fmt.Errorf("line %d: duplicate model alias %q", lineNo, key)
 			}
 			aliases[key] = value
+		case configSectionTerminal:
+			if key != "status" {
+				return userConfig{}, fmt.Errorf("line %d: unknown key %q under terminal", lineNo, key)
+			}
+			if seenTerminalStatus {
+				return userConfig{}, fmt.Errorf("line %d: duplicate key %q under terminal", lineNo, key)
+			}
+			if !hasValue || strings.TrimSpace(value) == "" {
+				return userConfig{}, fmt.Errorf("line %d: terminal.status requires a boolean value (true, 1, on, false, 0, or off)", lineNo)
+			}
+			enabled, err := parseBoolSetting(value)
+			if err != nil {
+				return userConfig{}, fmt.Errorf("line %d: terminal.status: %w", lineNo, err)
+			}
+			seenTerminalStatus = true
+			terminalStatus = &enabled
 		}
 	}
 
-	return userConfig{modelAliases: aliases}, nil
+	return userConfig{modelAliases: aliases, terminalStatus: terminalStatus}, nil
 }
 
 func invalidUTF8Line(data []byte) int {

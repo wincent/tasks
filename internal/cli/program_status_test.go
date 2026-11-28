@@ -482,6 +482,219 @@ func TestProgramStatusGatingConditions(t *testing.T) {
 	}
 }
 
+func TestProgramStatusConfigAndEnvPrecedence(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		args       []string
+		setupTask  bool
+		configYAML string
+		tty        bool
+		envUpdates []string
+		wantStates []string
+		wantErr    string
+	}{
+		{
+			name:       "run disabled via config without model",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color"},
+			wantStates: nil,
+		},
+		{
+			name:       "go disabled via config without model",
+			args:       []string{"go", "Disabled go"},
+			setupTask:  false,
+			configYAML: "terminal:\n  status: off\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color"},
+			wantStates: nil,
+		},
+		{
+			name:       "run enabled via config",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: true\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color"},
+			wantStates: []string{"working", "done"},
+		},
+		{
+			name:       "run env 0 disables when config omits status",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=0"},
+			wantStates: nil,
+		},
+		{
+			name:       "run env false overrides config true",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: true\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=FALSE"},
+			wantStates: nil,
+		},
+		{
+			name:       "go env off overrides config true",
+			args:       []string{"go", "Env off go"},
+			setupTask:  false,
+			configYAML: "terminal:\n  status: true\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=off"},
+			wantStates: nil,
+		},
+		{
+			name:       "run env 1 overrides config false",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=1"},
+			wantStates: []string{"working", "done"},
+		},
+		{
+			name:       "go env on overrides config false",
+			args:       []string{"go", "Env on go"},
+			setupTask:  false,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=ON"},
+			wantStates: []string{"working", "done"},
+		},
+		{
+			name:       "run empty env falls back to config false",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS="},
+			wantStates: nil,
+		},
+		{
+			name:       "run empty env falls back to default true",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS="},
+			wantStates: []string{"working", "done"},
+		},
+		{
+			name:       "env 1 still respects outside tmux gating",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX", "TERM=xterm-256color", "TASKS_TERMINAL_STATUS=1"},
+			wantStates: nil,
+		},
+		{
+			name:       "env 1 still respects non-tty gating",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        false,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=1"},
+			wantStates: nil,
+		},
+		{
+			name:       "env 1 still respects dumb terminal gating",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: false\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=dumb", "TASKS_TERMINAL_STATUS=1"},
+			wantStates: nil,
+		},
+		{
+			name:       "env 1 still does not emit for tasks pi",
+			args:       []string{"pi", "1"},
+			setupTask:  true,
+			configYAML: "terminal:\n  status: true\n",
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=1"},
+			wantStates: nil,
+		},
+		{
+			name:       "run invalid env fails and emits nothing",
+			args:       []string{"run", "1"},
+			setupTask:  true,
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=maybe"},
+			wantStates: nil,
+			wantErr:    "TASKS_TERMINAL_STATUS",
+		},
+		{
+			name:       "go invalid env fails and emits nothing",
+			args:       []string{"go", "Bad env go"},
+			setupTask:  false,
+			tty:        true,
+			envUpdates: []string{"TMUX=/tmp/tmux-1000/default,123,0", "TERM=tmux-256color", "TASKS_TERMINAL_STATUS=maybe"},
+			wantStates: nil,
+			wantErr:    "TASKS_TERMINAL_STATUS",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			wf := taskWorkflowFixture(t)
+			if tc.setupTask {
+				run(t, wf.root, "create", "Status config test", "--body", "requirements")
+			}
+
+			env := withEnv(wf.env, tc.envUpdates...)
+			if tc.configYAML != "" {
+				xdg := t.TempDir()
+				cfgPath := filepath.Join(xdg, "tasks", "config.yml")
+				if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
+					t.Fatal(err)
+				}
+				writeSafetyFile(t, cfgPath, tc.configYAML)
+				env = withEnv(env, "XDG_CONFIG_HOME="+xdg)
+			}
+
+			var diag bytes.Buffer
+			streams := IO{
+				Err: &diag,
+				Env: env,
+				Runner: piFixture(func(_ context.Context, child process.Command) process.Result {
+					if tc.wantErr != "" {
+						t.Fatal("Pi should not be launched when status config/env is invalid")
+					}
+					commitImplementation(t, piWorktree(t, child), "status-cfg.txt", "ok\n")
+					return process.Result{}
+				}),
+			}
+			var readOut func() string
+			if tc.tty {
+				slave, reader := ptyCapture(t)
+				streams.In, streams.Out = slave, slave
+				readOut = reader
+			} else {
+				var buf bytes.Buffer
+				streams.Out = &buf
+				readOut = buf.String
+			}
+
+			err := Run(context.Background(), wf.root, tc.args, streams)
+			gotOut := readOut()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("%v: got error %v, want error containing %q", tc.args, err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("%v failed: %v\nstderr: %s", tc.args, err, diag.String())
+			}
+			assertOSC7501States(t, gotOut, tc.wantStates...)
+		})
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {

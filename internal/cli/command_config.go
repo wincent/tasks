@@ -14,7 +14,8 @@ func init() {
 		summary: "Show parsed user configuration.",
 		details: `Reads $XDG_CONFIG_HOME/tasks/config.yml when XDG_CONFIG_HOME is an
 absolute path, or ~/.config/tasks/config.yml otherwise. Prints nothing if
-the file is missing or empty, and exits with an error if it is invalid.`,
+the file is missing or has no configured settings, and exits with an error
+if it is invalid.`,
 		run: func(_ context.Context, _ string, _ *git.Repository, _ arguments, streams IO) error {
 			cfg, err := loadUserConfig(streams)
 			if err != nil {

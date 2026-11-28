@@ -35,7 +35,7 @@ func init() {
 		details: "Quote a title that contains spaces. Create a task with \"None provided.\" as its\n" +
 			"description, then run Pi non-interactively and merge successful work into the\n" +
 			"recorded topic (default_target_branch, or main by default). Pi must be on PATH.\n" +
-			"To run an existing task, use `tasks run NUMBER`.\n\nOptions:\n" + modelHelp + topicHelp,
+			"To run an existing task, use `tasks run NUMBER`.\n\nOptions:\n" + modelHelp + topicHelp + terminalStatusHelp,
 		validate: func(a arguments) error {
 			if err := validateGo(a); err != nil {
 				return err
@@ -43,7 +43,7 @@ func init() {
 			return validateTopicOption(a)
 		},
 		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
-			model, hasModel, err := resolveModelOption(a, streams)
+			opts, err := resolveLaunchOptions(a, streams)
 			if err != nil {
 				return err
 			}
@@ -52,12 +52,12 @@ func init() {
 				return err
 			}
 			// Creation has released the metadata lock that launchTask needs.
-			return launchTaskWithModel(ctx, cwd, repo, arguments{
+			return launchTaskWithOptions(ctx, cwd, repo, arguments{
 				action:        "run",
 				prefix:        a.prefix,
 				defaultTarget: a.defaultTarget,
 				tasks:         []taskArgument{{number: n}},
-			}, model, hasModel, streams)
+			}, opts, streams)
 		},
 	})
 }

@@ -35,6 +35,10 @@ const promptHelp = "  --prompt TEXT    Append instructions to Pi for this run on
 
 const worktreeHelp = "  --worktree PATH  Select an existing checkout for this task."
 
+const terminalStatusHelp = "\n\nWhen stdout is a terminal inside tmux, emits OSC 7501 status updates unless\n" +
+	"disabled via terminal.status in config.yml or TASKS_TERMINAL_STATUS\n" +
+	"(true/1/on, false/0/off; env overrides config)."
+
 const setupGuideURL = "https://github.com/wincent/tasks/blob/main/docs/usage/getting-started.md"
 
 const listingHelp = `In text output, (M) marks modified tasks and (?) marks untracked tasks.

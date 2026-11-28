@@ -74,20 +74,20 @@ func launchTask(ctx context.Context, cwd string, repo *git.Repository, a argumen
 	if _, supplied := a.values["--worktree"]; supplied && a.value("--worktree") == "" {
 		return errors.New("--worktree requires a nonempty path")
 	}
-	model, hasModel, err := resolveModelOption(a, streams)
+	opts, err := resolveLaunchOptions(a, streams)
 	if err != nil {
 		return err
 	}
-	return launchTaskWithModel(ctx, cwd, repo, a, model, hasModel, streams)
+	return launchTaskWithOptions(ctx, cwd, repo, a, opts, streams)
 }
 
-func launchTaskWithModel(ctx context.Context, cwd string, repo *git.Repository, a arguments, model string, hasModel bool, streams IO) error {
+func launchTaskWithOptions(ctx context.Context, cwd string, repo *git.Repository, a arguments, opts launchOptions, streams IO) error {
 	var status *programStatus
-	if a.action != "pi" {
+	if a.action != "pi" && opts.terminalStatus {
 		status = newProgramStatus(streams)
 		defer status.clearIfActive()
 	}
-	err := runLaunchTask(ctx, cwd, repo, a, model, hasModel, streams, status)
+	err := runLaunchTask(ctx, cwd, repo, a, opts.model, opts.hasModel, streams, status)
 	status.finish(ctx, err)
 	return err
 }

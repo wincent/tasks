@@ -21,7 +21,8 @@ func init() {
 			"Options:\n" + modelHelp +
 			"  --no-merge       Keep the work for review. Use `tasks merge NUMBER` later.\n" +
 			promptHelp +
-			worktreeHelp,
+			worktreeHelp +
+			terminalStatusHelp,
 		run: func(ctx context.Context, cwd string, repo *git.Repository, a arguments, streams IO) error {
 			return launchTask(ctx, cwd, repo, a, streams)
 		},

@@ -153,73 +153,30 @@ func TestLaunchModelAliases(t *testing.T) {
 	}
 }
 
-func TestLaunchLazyConfigLoadingWhenModelOmitted(t *testing.T) {
+func TestNonLaunchCommandsIgnoreInvalidConfig(t *testing.T) {
 	t.Parallel()
 	const invalidYAML = "models:\n\taliases:\n    sol: bad\n"
 
-	for _, command := range []string{"run", "pi", "go"} {
-		t.Run(command, func(t *testing.T) {
-			t.Parallel()
-			wf := taskWorkflowFixture(t)
-			root := wf.root
-			cfgPath := filepath.Join(wf.home, ".config", "tasks", "config.yml")
-			if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
-				t.Fatal(err)
-			}
-			writeSafetyFile(t, cfgPath, invalidYAML)
+	wf := taskWorkflowFixture(t)
+	root := wf.root
+	cfgPath := filepath.Join(wf.home, ".config", "tasks", "config.yml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeSafetyFile(t, cfgPath, invalidYAML)
 
-			if command != "go" {
-				run(t, root, "create", "Lazy config", "--body", "requirements")
-			}
+	run(t, root, "create", "Non-launch config", "--body", "requirements")
+	env := withEnv(wf.env, "TASKS_TERMINAL_STATUS=bogus")
 
-			// Non-launch commands must also ignore invalid user config.
-			for _, cmd := range [][]string{
-				{"list"},
-				{"check"},
-			} {
-				if err := Run(context.Background(), root, cmd, IO{Env: wf.env}); err != nil {
-					t.Fatalf("%q failed with invalid config.yml: %v", cmd, err)
-				}
-			}
-			if command != "go" {
-				for _, cmd := range [][]string{
-					{"show", "1"},
-					{"comment", "1", "--body", "note"},
-				} {
-					if err := Run(context.Background(), root, cmd, IO{Env: wf.env}); err != nil {
-						t.Fatalf("%q failed with invalid config.yml: %v", cmd, err)
-					}
-				}
-			}
-
-			streams := IO{Env: wf.env}
-			if command == "pi" {
-				master, slave, err := testutil.OpenPTY()
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer testutil.ClosePTY(master, slave)
-				go io.Copy(io.Discard, master)
-				streams.In, streams.Out = slave, slave
-			}
-
-			target := "1"
-			if command == "go" {
-				target = "Lazy config go"
-			}
-			var launched bool
-			streams.Runner = piFixture(func(_ context.Context, child process.Command) process.Result {
-				launched = true
-				piWorktree(t, child)
-				if slices.Contains(child.Args, "--model") {
-					t.Fatalf("unexpected --model in Pi args: %q", child.Args)
-				}
-				return process.Result{Code: 17}
-			})
-			if err := Run(context.Background(), root, []string{command, target}, streams); err == nil || ExitCode(err) != 17 || !launched {
-				t.Fatalf("%s without --model should launch Pi despite invalid config.yml (launched=%v): %v", command, launched, err)
-			}
-		})
+	for _, cmd := range [][]string{
+		{"list"},
+		{"check"},
+		{"show", "1"},
+		{"comment", "1", "--body", "note"},
+	} {
+		if err := Run(context.Background(), root, cmd, IO{Env: env}); err != nil {
+			t.Fatalf("%q failed with invalid config.yml / TASKS_TERMINAL_STATUS: %v", cmd, err)
+		}
 	}
 }
 
@@ -228,25 +185,101 @@ func TestLaunchInvalidConfigFailsBeforeMutatingState(t *testing.T) {
 	const invalidYAML = "models:\n  unknown: bad\n"
 
 	for _, command := range []string{"run", "pi", "go"} {
+		for _, withModel := range []bool{false, true} {
+			name := command
+			if withModel {
+				name += "-with-model"
+			} else {
+				name += "-without-model"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				wf := taskWorkflowFixture(t)
+				repo, root := wf.repo, wf.root
+				cfgPath := filepath.Join(wf.home, ".config", "tasks", "config.yml")
+				if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
+					t.Fatal(err)
+				}
+				writeSafetyFile(t, cfgPath, invalidYAML)
+
+				if command != "go" {
+					run(t, root, "create", "No mutation", "--body", "requirements")
+				}
+				beforeTasks := fixtureRevision(t, repo, store.Branch)
+
+				streams := IO{
+					Env: wf.env,
+					Runner: piFixture(func(context.Context, process.Command) process.Result {
+						t.Fatal("Pi should not be launched when config.yml is invalid")
+						return process.Result{}
+					}),
+				}
+				if command == "pi" {
+					master, slave, err := testutil.OpenPTY()
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer testutil.ClosePTY(master, slave)
+					go io.Copy(io.Discard, master)
+					streams.In, streams.Out = slave, slave
+				}
+
+				target := "1"
+				if command == "go" {
+					target = "Should not be created"
+				}
+				args := []string{command, target}
+				if withModel {
+					args = append(args, "--model", "sol")
+				}
+				err := Run(context.Background(), root, args, streams)
+				if err == nil || ExitCode(err) != 1 || !strings.Contains(err.Error(), "invalid config") || !strings.Contains(err.Error(), "line 2:") {
+					t.Fatalf("%v with invalid config: got error %v, want invalid config line 2 error", args, err)
+				}
+
+				if afterTasks := fixtureRevision(t, repo, store.Branch); afterTasks != beforeTasks {
+					t.Fatalf("%s mutated task history despite invalid config.yml", command)
+				}
+				if command != "go" {
+					assertStatus(t, root, "open")
+				}
+				if _, err := os.Stat(filepath.Join(root, ".agent-worktrees")); !os.IsNotExist(err) {
+					t.Fatalf("%s created worktree directory despite invalid config.yml: %v", command, err)
+				}
+				if command == "go" {
+					if _, err := os.Stat(filepath.Join(root, ".git", "tasks")); !os.IsNotExist(err) {
+						t.Fatalf("%s created task state directory despite invalid config.yml: %v", command, err)
+					}
+				} else {
+					if record, err := readTaskSession(filepath.Join(root, ".git", "tasks"), 1); err != nil || record != nil {
+						t.Fatalf("%s wrote task session despite invalid config.yml: %+v, %v", command, record, err)
+					}
+				}
+				if _, err := os.Stat(filepath.Join(wf.home, ".pi")); !os.IsNotExist(err) {
+					t.Fatalf("%s created Pi session directory despite invalid config.yml: %v", command, err)
+				}
+			})
+		}
+	}
+}
+
+func TestLaunchInvalidTerminalStatusEnvFailsBeforeMutatingState(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{"run", "pi", "go"} {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()
 			wf := taskWorkflowFixture(t)
 			repo, root := wf.repo, wf.root
-			cfgPath := filepath.Join(wf.home, ".config", "tasks", "config.yml")
-			if err := os.MkdirAll(filepath.Dir(cfgPath), 0700); err != nil {
-				t.Fatal(err)
-			}
-			writeSafetyFile(t, cfgPath, invalidYAML)
-
 			if command != "go" {
 				run(t, root, "create", "No mutation", "--body", "requirements")
 			}
 			beforeTasks := fixtureRevision(t, repo, store.Branch)
 
 			streams := IO{
-				Env: wf.env,
+				Env: withEnv(wf.env, "TASKS_TERMINAL_STATUS=flase"),
 				Runner: piFixture(func(context.Context, process.Command) process.Result {
-					t.Fatal("Pi should not be launched when config.yml is invalid")
+					t.Fatal("Pi should not be launched when TASKS_TERMINAL_STATUS is invalid")
 					return process.Result{}
 				}),
 			}
@@ -264,31 +297,31 @@ func TestLaunchInvalidConfigFailsBeforeMutatingState(t *testing.T) {
 			if command == "go" {
 				target = "Should not be created"
 			}
-			err := Run(context.Background(), root, []string{command, target, "--model", "sol"}, streams)
-			if err == nil || ExitCode(err) != 1 || !strings.Contains(err.Error(), "invalid config") || !strings.Contains(err.Error(), "line 2:") {
-				t.Fatalf("%s with invalid config: got error %v, want invalid config line 2 error", command, err)
+			err := Run(context.Background(), root, []string{command, target}, streams)
+			if err == nil || ExitCode(err) != 1 || !strings.Contains(err.Error(), "TASKS_TERMINAL_STATUS") || !strings.Contains(err.Error(), `"flase"`) {
+				t.Fatalf("%s with invalid TASKS_TERMINAL_STATUS: got error %v, want TASKS_TERMINAL_STATUS error", command, err)
 			}
 
 			if afterTasks := fixtureRevision(t, repo, store.Branch); afterTasks != beforeTasks {
-				t.Fatalf("%s mutated task history despite invalid config.yml", command)
+				t.Fatalf("%s mutated task history despite invalid TASKS_TERMINAL_STATUS", command)
 			}
 			if command != "go" {
 				assertStatus(t, root, "open")
 			}
 			if _, err := os.Stat(filepath.Join(root, ".agent-worktrees")); !os.IsNotExist(err) {
-				t.Fatalf("%s created worktree directory despite invalid config.yml: %v", command, err)
+				t.Fatalf("%s created worktree directory despite invalid TASKS_TERMINAL_STATUS: %v", command, err)
 			}
 			if command == "go" {
 				if _, err := os.Stat(filepath.Join(root, ".git", "tasks")); !os.IsNotExist(err) {
-					t.Fatalf("%s created task state directory despite invalid config.yml: %v", command, err)
+					t.Fatalf("%s created task state directory despite invalid TASKS_TERMINAL_STATUS: %v", command, err)
 				}
 			} else {
 				if record, err := readTaskSession(filepath.Join(root, ".git", "tasks"), 1); err != nil || record != nil {
-					t.Fatalf("%s wrote task session despite invalid config.yml: %+v, %v", command, record, err)
+					t.Fatalf("%s wrote task session despite invalid TASKS_TERMINAL_STATUS: %+v, %v", command, record, err)
 				}
 			}
 			if _, err := os.Stat(filepath.Join(wf.home, ".pi")); !os.IsNotExist(err) {
-				t.Fatalf("%s created Pi session directory despite invalid config.yml: %v", command, err)
+				t.Fatalf("%s created Pi session directory despite invalid TASKS_TERMINAL_STATUS: %v", command, err)
 			}
 		})
 	}

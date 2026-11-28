@@ -10,12 +10,15 @@ import (
 	"testing"
 )
 
+func boolPtr(v bool) *bool { return &v }
+
 func TestParseUserConfigValid(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name  string
-		input string
-		want  map[string]string
+		name       string
+		input      string
+		want       map[string]string
+		wantStatus *bool
 	}{
 		{
 			name:  "empty file",
@@ -46,6 +49,103 @@ func TestParseUserConfigValid(t *testing.T) {
 			name:  "empty aliases section with comments",
 			input: "models:\n  aliases: # comment\n    # empty\n",
 			want:  nil,
+		},
+		{
+			name:  "empty terminal section",
+			input: "terminal:\n",
+			want:  nil,
+		},
+		{
+			name:  "empty terminal section with comments",
+			input: "terminal: # section comment\n  # nothing yet\n",
+			want:  nil,
+		},
+		{
+			name:       "terminal status false",
+			input:      "terminal:\n  status: false\n",
+			wantStatus: boolPtr(false),
+		},
+		{
+			name:       "terminal status true with comment",
+			input:      "terminal:\n  status: true # inline comment\n",
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:       "terminal status truthy variants",
+			input:      "terminal:\n  status: ON\n",
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:       "terminal status numeric 1",
+			input:      "terminal:\n  status: 1\n",
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:       "terminal status numeric 0",
+			input:      "terminal:\n  status: 0\n",
+			wantStatus: boolPtr(false),
+		},
+		{
+			name:       "terminal status mixed case off",
+			input:      "terminal:\n  status: Off\n",
+			wantStatus: boolPtr(false),
+		},
+		{
+			name:       "terminal status mixed case true",
+			input:      "terminal:\n  status: TrUe\n",
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:       "terminal status quoted keys and value",
+			input:      "\"terminal\":\n  'status': \"FALSE\" # disable\n",
+			wantStatus: boolPtr(false),
+		},
+		{
+			name: "models followed by terminal",
+			input: strings.Join([]string{
+				"models:",
+				"  aliases:",
+				"    sol: openai-codex/gpt-6.2-sol",
+				"terminal:",
+				"  status: false",
+				"",
+			}, "\n"),
+			want: map[string]string{
+				"sol": "openai-codex/gpt-6.2-sol",
+			},
+			wantStatus: boolPtr(false),
+		},
+		{
+			name: "terminal followed by models with distinct indentation",
+			input: strings.Join([]string{
+				"terminal:",
+				"    status: on",
+				"models:",
+				"  aliases:",
+				"    fast: anthropic/claude-haiku-4-5:low",
+				"",
+			}, "\n"),
+			want: map[string]string{
+				"fast": "anthropic/claude-haiku-4-5:low",
+			},
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:       "empty models followed by terminal",
+			input:      "models:\nterminal:\n  status: 0\n",
+			wantStatus: boolPtr(false),
+		},
+		{
+			name:       "empty aliases followed by terminal",
+			input:      "models:\n  aliases:\nterminal:\n  status: 1\n",
+			wantStatus: boolPtr(true),
+		},
+		{
+			name:  "empty terminal followed by models",
+			input: "terminal:\nmodels:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n",
+			want: map[string]string{
+				"sol": "openai-codex/gpt-6.2-sol",
+			},
 		},
 		{
 			name: "plain aliases with colons and comments",
@@ -87,11 +187,12 @@ func TestParseUserConfigValid(t *testing.T) {
 		},
 		{
 			name:  "CRLF line endings without trailing newline",
-			input: "models:\r\n  aliases:\r\n    sol: openai-codex/gpt-6.2-sol\r\n    fast: anthropic/claude-haiku-4-5:low",
+			input: "models:\r\n  aliases:\r\n    sol: openai-codex/gpt-6.2-sol\r\n    fast: anthropic/claude-haiku-4-5:low\r\nterminal:\r\n  status: off",
 			want: map[string]string{
 				"sol":  "openai-codex/gpt-6.2-sol",
 				"fast": "anthropic/claude-haiku-4-5:low",
 			},
+			wantStatus: boolPtr(false),
 		},
 		{
 			name:  "non-2-space consistent indentation",
@@ -112,6 +213,9 @@ func TestParseUserConfigValid(t *testing.T) {
 			}
 			if !maps.Equal(cfg.modelAliases, tc.want) {
 				t.Fatalf("aliases = %#v, want %#v", cfg.modelAliases, tc.want)
+			}
+			if (cfg.terminalStatus == nil) != (tc.wantStatus == nil) || (cfg.terminalStatus != nil && *cfg.terminalStatus != *tc.wantStatus) {
+				t.Fatalf("terminalStatus = %v, want %v", cfg.terminalStatus, tc.wantStatus)
 			}
 		})
 	}
@@ -449,6 +553,120 @@ func TestParseUserConfigErrors(t *testing.T) {
 			wantLine: "line 3:",
 			wantMsg:  "unsupported escape sequence",
 		},
+		{
+			name:     "unknown key under terminal",
+			input:    []byte("terminal:\n  bell: false\n"),
+			wantLine: "line 2:",
+			wantMsg:  `unknown key "bell" under terminal`,
+		},
+		{
+			name:     "duplicate top-level terminal",
+			input:    []byte("terminal:\nterminal:\n"),
+			wantLine: "line 2:",
+			wantMsg:  `duplicate key "terminal"`,
+		},
+		{
+			name:     "duplicate top-level terminal quoted",
+			input:    []byte("terminal:\n  status: false\n\"terminal\":\n"),
+			wantLine: "line 3:",
+			wantMsg:  `duplicate key "terminal"`,
+		},
+		{
+			name:     "duplicate status under terminal",
+			input:    []byte("terminal:\n  status: true\n  status: false\n"),
+			wantLine: "line 3:",
+			wantMsg:  `duplicate key "status" under terminal`,
+		},
+		{
+			name:     "duplicate status under terminal quoted",
+			input:    []byte("terminal:\n  status: true\n  'status': false\n"),
+			wantLine: "line 3:",
+			wantMsg:  `duplicate key "status" under terminal`,
+		},
+		{
+			name:     "scalar value for terminal",
+			input:    []byte("terminal: false\n"),
+			wantLine: "line 1:",
+			wantMsg:  `"terminal" must be a mapping`,
+		},
+		{
+			name:     "flow mapping on terminal",
+			input:    []byte("terminal: {}\n"),
+			wantLine: "line 1:",
+			wantMsg:  "flow collections are not supported",
+		},
+		{
+			name:     "flow sequence on terminal status",
+			input:    []byte("terminal:\n  status: []\n"),
+			wantLine: "line 2:",
+			wantMsg:  "flow collections are not supported",
+		},
+		{
+			name:     "sequence under terminal",
+			input:    []byte("terminal:\n  - status: false\n"),
+			wantLine: "line 2:",
+			wantMsg:  "sequences are not supported",
+		},
+		{
+			name:     "missing terminal status value",
+			input:    []byte("terminal:\n  status:\n"),
+			wantLine: "line 2:",
+			wantMsg:  "terminal.status requires a boolean value",
+		},
+		{
+			name:     "comment-only terminal status value",
+			input:    []byte("terminal:\n  status: # comment\n"),
+			wantLine: "line 2:",
+			wantMsg:  "terminal.status requires a boolean value",
+		},
+		{
+			name:     "empty quoted terminal status value",
+			input:    []byte("terminal:\n  status: \"\"\n"),
+			wantLine: "line 2:",
+			wantMsg:  "terminal.status requires a boolean value",
+		},
+		{
+			name:     "whitespace-only quoted terminal status value",
+			input:    []byte("terminal:\n  status: '   '\n"),
+			wantLine: "line 2:",
+			wantMsg:  "terminal.status requires a boolean value",
+		},
+		{
+			name:     "unrecognized terminal status value yes",
+			input:    []byte("terminal:\n  status: yes\n"),
+			wantLine: "line 2:",
+			wantMsg:  `terminal.status: invalid boolean value "yes"`,
+		},
+		{
+			name:     "unrecognized terminal status value 2",
+			input:    []byte("terminal:\n  status: 2\n"),
+			wantLine: "line 2:",
+			wantMsg:  `terminal.status: invalid boolean value "2"`,
+		},
+		{
+			name:     "quoted terminal status value with spaces",
+			input:    []byte("terminal:\n  status: \" true \"\n"),
+			wantLine: "line 2:",
+			wantMsg:  `terminal.status: invalid boolean value " true "`,
+		},
+		{
+			name:     "escaped newline in terminal status value",
+			input:    []byte("terminal:\n  status: \"false\\n\"\n"),
+			wantLine: "line 2:",
+			wantMsg:  `terminal.status: invalid boolean value "false\n"`,
+		},
+		{
+			name:     "tab indentation under terminal",
+			input:    []byte("terminal:\n\tstatus: false\n"),
+			wantLine: "line 2:",
+			wantMsg:  "tabs are not allowed",
+		},
+		{
+			name:     "inconsistent indentation under terminal",
+			input:    []byte("terminal:\n  status: false\n    nested: true\n"),
+			wantLine: "line 3:",
+			wantMsg:  "inconsistent indentation",
+		},
 	}
 
 	for _, tc := range cases {
@@ -684,6 +902,67 @@ func TestLoadUserConfigXDGAndErrors(t *testing.T) {
 	})
 }
 
+func TestResolveTerminalStatus(t *testing.T) {
+	t.Parallel()
+
+	t.Run("precedence and defaults", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name string
+			cfg  userConfig
+			env  []string
+			want bool
+		}{
+			{name: "default true when both unset", cfg: userConfig{}, env: []string{}, want: true},
+			{name: "default true when env empty", cfg: userConfig{}, env: []string{"TASKS_TERMINAL_STATUS="}, want: true},
+			{name: "config false with env unset", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{}, want: false},
+			{name: "config false with env empty", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{"TASKS_TERMINAL_STATUS="}, want: false},
+			{name: "config true with env unset", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{}, want: true},
+			{name: "config true with env empty", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{"TASKS_TERMINAL_STATUS="}, want: true},
+			{name: "env 1 overrides config false", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{"TASKS_TERMINAL_STATUS=1"}, want: true},
+			{name: "env true overrides config false", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{"TASKS_TERMINAL_STATUS=true"}, want: true},
+			{name: "env TRUE overrides config false", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{"TASKS_TERMINAL_STATUS=TRUE"}, want: true},
+			{name: "env On overrides config false", cfg: userConfig{terminalStatus: boolPtr(false)}, env: []string{"TASKS_TERMINAL_STATUS=On"}, want: true},
+			{name: "env 0 overrides config true", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{"TASKS_TERMINAL_STATUS=0"}, want: false},
+			{name: "env false overrides config true", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{"TASKS_TERMINAL_STATUS=false"}, want: false},
+			{name: "env FALSE overrides config true", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{"TASKS_TERMINAL_STATUS=FALSE"}, want: false},
+			{name: "env Off overrides config true", cfg: userConfig{terminalStatus: boolPtr(true)}, env: []string{"TASKS_TERMINAL_STATUS=Off"}, want: false},
+			{name: "env 0 overrides default", cfg: userConfig{}, env: []string{"TASKS_TERMINAL_STATUS=0"}, want: false},
+			{name: "env off overrides default", cfg: userConfig{}, env: []string{"TASKS_TERMINAL_STATUS=off"}, want: false},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				got, err := resolveTerminalStatus(tc.cfg, IO{Env: tc.env})
+				if err != nil {
+					t.Fatalf("resolveTerminalStatus() unexpected error: %v", err)
+				}
+				if got != tc.want {
+					t.Fatalf("resolveTerminalStatus() = %v, want %v", got, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("invalid nonempty env values return error", func(t *testing.T) {
+		t.Parallel()
+		for _, bad := range []string{" ", "yes", "no", "2", "flase", " true ", "false\n"} {
+			t.Run(bad, func(t *testing.T) {
+				t.Parallel()
+				_, err := resolveTerminalStatus(userConfig{}, IO{Env: []string{"TASKS_TERMINAL_STATUS=" + bad}})
+				if err == nil {
+					t.Fatalf("TASKS_TERMINAL_STATUS=%q: expected error, got nil", bad)
+				}
+				msg := err.Error()
+				if !strings.Contains(msg, "TASKS_TERMINAL_STATUS") || !strings.Contains(msg, "invalid boolean value") {
+					t.Fatalf("TASKS_TERMINAL_STATUS=%q: unexpected error %q", bad, msg)
+				}
+			})
+		}
+	})
+}
+
 func TestFormatUserConfig(t *testing.T) {
 	t.Parallel()
 
@@ -760,6 +1039,56 @@ func TestFormatUserConfig(t *testing.T) {
 			t.Fatalf("round-trip aliases = %#v, want %#v", parsed.modelAliases, cfg.modelAliases)
 		}
 	})
+
+	t.Run("terminal status formats as normalized boolean and round-trips", func(t *testing.T) {
+		t.Parallel()
+		for _, value := range []bool{false, true} {
+			cfg := userConfig{terminalStatus: boolPtr(value)}
+			want := "terminal:\n  status: " + map[bool]string{false: "false", true: "true"}[value] + "\n"
+			got := formatUserConfig(cfg)
+			if got != want {
+				t.Fatalf("formatUserConfig(%v) = %q, want %q", value, got, want)
+			}
+			parsed, err := parseUserConfig([]byte(got))
+			if err != nil {
+				t.Fatalf("round-trip parse failed: %v", err)
+			}
+			if parsed.terminalStatus == nil || *parsed.terminalStatus != value {
+				t.Fatalf("round-trip terminalStatus = %v, want %v", parsed.terminalStatus, value)
+			}
+		}
+	})
+
+	t.Run("models aliases and terminal status format together and round-trip", func(t *testing.T) {
+		t.Parallel()
+		cfg := userConfig{
+			modelAliases: map[string]string{
+				"sol":  "openai-codex/gpt-6.2-sol",
+				"fast": "anthropic/claude-haiku-4-5:low",
+			},
+			terminalStatus: boolPtr(false),
+		}
+		want := strings.Join([]string{
+			"models:",
+			"  aliases:",
+			"    fast: anthropic/claude-haiku-4-5:low",
+			"    sol: openai-codex/gpt-6.2-sol",
+			"terminal:",
+			"  status: false",
+			"",
+		}, "\n")
+		got := formatUserConfig(cfg)
+		if got != want {
+			t.Fatalf("formatUserConfig() =\n%s\nwant:\n%s", got, want)
+		}
+		parsed, err := parseUserConfig([]byte(got))
+		if err != nil {
+			t.Fatalf("round-trip parse failed: %v", err)
+		}
+		if !maps.Equal(parsed.modelAliases, cfg.modelAliases) || parsed.terminalStatus == nil || *parsed.terminalStatus != false {
+			t.Fatalf("round-trip config = %#v, want %#v", parsed, cfg)
+		}
+	})
 }
 
 func TestConfigCommand(t *testing.T) {
@@ -811,6 +1140,7 @@ func TestConfigCommand(t *testing.T) {
 			{"comments only", "# just a comment\n\n"},
 			{"empty models", "models:\n"},
 			{"empty aliases", "models:\n  aliases:\n"},
+			{"empty terminal", "terminal:\n"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
@@ -919,6 +1249,32 @@ func TestConfigCommand(t *testing.T) {
 			if err == nil || ExitCode(err) != 2 || err.Error() != tc.want || out != "" || stderr != "" {
 				t.Fatalf("%v: got out=%q stderr=%q err=%v (exit %d), want usage error %q", tc.args, out, stderr, err, ExitCode(err), tc.want)
 			}
+		}
+	})
+
+	t.Run("prints normalized terminal status and ignores env override", func(t *testing.T) {
+		t.Parallel()
+		xdg := t.TempDir()
+		cfgPath := filepath.Join(xdg, "tasks", "config.yml")
+
+		// Missing config still prints nothing even when TASKS_TERMINAL_STATUS is set.
+		out, stderr, err := runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg, "TASKS_TERMINAL_STATUS=0"}, "config")
+		if err != nil || out != "" || stderr != "" {
+			t.Fatalf("missing config with env: got out=%q stderr=%q err=%v, want empty", out, stderr, err)
+		}
+
+		writeConfig(t, cfgPath, "terminal:\n  status: OFF\n")
+		out, stderr, err = runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg, "TASKS_TERMINAL_STATUS=1"}, "config")
+		wantFalse := "terminal:\n  status: false\n"
+		if err != nil || out != wantFalse || stderr != "" {
+			t.Fatalf("OFF config: got out=%q stderr=%q err=%v, want %q", out, stderr, err, wantFalse)
+		}
+
+		writeConfig(t, cfgPath, "terminal:\n  status: 1\nmodels:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\n")
+		out, stderr, err = runConfig(outsideRepo, []string{"XDG_CONFIG_HOME=" + xdg, "TASKS_TERMINAL_STATUS=0"}, "config")
+		wantBoth := "models:\n  aliases:\n    sol: openai-codex/gpt-6.2-sol\nterminal:\n  status: true\n"
+		if err != nil || out != wantBoth || stderr != "" {
+			t.Fatalf("combined config: got out=%q stderr=%q err=%v, want %q", out, stderr, err, wantBoth)
 		}
 	})
 

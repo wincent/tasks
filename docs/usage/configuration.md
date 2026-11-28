@@ -16,8 +16,25 @@ default_target_branch: main # optional; defaults to main
 
 ## User configuration
 
-Use `$XDG_CONFIG_HOME/tasks/config.yml` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/tasks/config.yml` otherwise. This file is optional and currently supports [model aliases](model-aliases.md).
+Use `$XDG_CONFIG_HOME/tasks/config.yml` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/tasks/config.yml` otherwise. This file is optional and supports [model aliases](model-aliases.md) (`models.aliases`) and [terminal status reporting](#terminal-status) (`terminal.status`).
 
-Run `tasks config` to display the parsed user configuration. It prints nothing if the file is missing or empty, and exits with an error if it cannot read or parse the file.
+Run `tasks config` to display the parsed user configuration. It prints nothing if the file is missing or has no configured settings, and exits with an error if it cannot read or parse the file.
 
-`config.yml` accepts a strict UTF-8 YAML subset: space-indented block mappings under `models.aliases`, plain or single/double-quoted keys and scalar values, blank lines, and `#` comments.
+`config.yml` accepts a strict UTF-8 YAML subset: space-indented block mappings under `models.aliases` and `terminal.status`, plain or single/double-quoted keys and scalar values, blank lines, and `#` comments.
+
+### Terminal status
+
+When running non-interactively (`tasks run` and `tasks go`, not `tasks pi`), `tasks` emits OSC 7501 program status updates wrapped in tmux DCS passthrough if stdout is a terminal, `TMUX` is nonempty, and `TERM` is not `dumb`.
+
+To disable (or explicitly enable) OSC 7501 status emission in `config.yml`, set `terminal.status`:
+
+```yaml
+terminal:
+  status: false
+```
+
+- Accepted values (case-insensitive): `true`, `1`, `on` (enable) and `false`, `0`, `off` (disable). Empty or unrecognized values fail with a parse error.
+- When omitted, `terminal.status` defaults to `true`. `tasks config` renders `terminal.status` (normalized to `true` or `false`) only when explicitly set in `config.yml`.
+- Override per session or per invocation with the `TASKS_TERMINAL_STATUS` environment variable, which accepts the same case-insensitive values (`true`/`1`/`on` and `false`/`0`/`off`). An unset or empty `TASKS_TERMINAL_STATUS` falls back to `config.yml`; an invalid nonempty value fails with an error.
+- Precedence: `TASKS_TERMINAL_STATUS` (when nonempty) > `terminal.status` in `config.yml` > default (`true`). `TASKS_TERMINAL_STATUS` overrides `config.yml` in both directions (for example, `TASKS_TERMINAL_STATUS=1` re-enables status emission when `config.yml` sets `terminal.status: false`, and `TASKS_TERMINAL_STATUS=0` disables it when `config.yml` sets `true` or omits it).
+- Enabling terminal status does not bypass terminal gating: sequences are still only emitted for `tasks run` and `tasks go` when stdout is a terminal, `TMUX` is nonempty, and `TERM` is not `dumb`.

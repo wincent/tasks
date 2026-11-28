@@ -21,4 +21,4 @@ tasks run 10 --model fast:high
 - With `<alias>:<thinking>`, the requested level replaces a Pi thinking-level suffix already on the target (`:off`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, or `:max`). Otherwise, the requested level is appended, preserving non-thinking colons in model IDs such as `ollama/llama3:8b`.
 - Aliases do not chain to other aliases. Unmatched `--model` values pass through to Pi unchanged.
 
-These commands read the user configuration only when `--model` is supplied. A missing file is treated as empty; an unreadable or invalid file causes the command to fail before changing task, worktree, or session state.
+`tasks run`, `tasks pi`, and `tasks go` read the user configuration before launching Pi. A missing file is treated as empty; an unreadable or invalid file causes the command to fail before changing task, worktree, or session state.

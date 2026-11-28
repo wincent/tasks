@@ -43,6 +43,7 @@ func taskWorkflowFixture(t *testing.T) workflowFixture {
 		"PI_CODING_AGENT_DIR=",
 		"HOME="+home,
 		"XDG_CONFIG_HOME",
+		"TASKS_TERMINAL_STATUS",
 	)
 	repo, root := fixture(t)
 	// Keep task worktrees out of main's status without relying on a global ignore.
