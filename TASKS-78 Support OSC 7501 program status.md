@@ -1,6 +1,6 @@
 # TASKS-78: Support OSC 7501 program status
 
-Status: open
+Status: active
 
 ## Description
 
