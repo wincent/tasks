@@ -46,7 +46,18 @@ git init -q -b main repo
 cd repo
 git config user.name 'Release Test'
 git config user.email 'release@example.invalid'
-git -c commit.gpgsign=false commit -qm 'Release candidate' --allow-empty
+cat > CHANGES.md <<'EOF'
+# Changes
+
+## v1.0.0 — 2026-11-28
+
+- feat: initial test release.
+
+## v1.0.7 — 2026-11-28
+
+EOF
+git add CHANGES.md
+git -c commit.gpgsign=false commit -qm 'Release candidate'
 commit=$(git rev-parse HEAD)
 git -c commit.gpgsign=false commit -qm 'Main advances' --allow-empty
 git checkout -q --detach "$commit"
@@ -57,6 +68,8 @@ tag "$other" v1.0.1
 git tag -am 'Unsigned tag' v1.0.2
 git tag v1.0.3
 git update-ref refs/tags/v1.0.4 "$(git rev-parse v1.0.0)"
+tag "$approved" v1.0.6
+tag "$approved" v1.0.7
 git -c commit.gpgsign=false commit -qm 'Not on main' --allow-empty
 outside=$(git rev-parse HEAD)
 tag "$approved" v1.0.5
@@ -120,4 +133,9 @@ for change in '.workflow_runs=[]' '.workflow_runs[].head_sha="different"' \
   CI_RUNS=$(jq -c "$change" <<< "$success")
   reject 'needs a successful CI run from a push to main in this repository'
 done
+CI_RUNS=$success
+prepare v1.0.6 "$commit"
+reject 'No changelog section found for v1.0.6'
+prepare v1.0.7 "$commit"
+reject 'Changelog section for v1.0.7 is empty'
 printf '%s\n' 'Release tag checks passed'

@@ -6,6 +6,8 @@ cd "$(dirname "$0")/.."
 gh actions-lock --verify
 bin/test
 bin/vet
+bin/check-changelog
+bin/test-release-notes
 bin/test-release-tag
 bin/test-publish-release
 exec bin/check-format
