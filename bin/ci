@@ -7,4 +7,5 @@ gh actions-lock --verify
 bin/test
 bin/vet
 bin/test-release-tag
+bin/test-publish-release
 exec bin/check-format

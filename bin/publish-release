@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+[[ $# == 1 ]] || fail "Usage: $0 <assets-dir>"
+assets_dir=$1
+
+: "${GITHUB_REPOSITORY:?Set GITHUB_REPOSITORY}"
+: "${GITHUB_REF:?Set GITHUB_REF}"
+: "${GITHUB_RUN_ATTEMPT:?Set GITHUB_RUN_ATTEMPT}"
+: "${RELEASE_COMMIT:?Set RELEASE_COMMIT}"
+: "${TAG_OBJECT:?Set TAG_OBJECT}"
+
+[[ "$GITHUB_REF" == refs/tags/* && -n "${GITHUB_REF#refs/tags/}" ]] || fail 'Expected GITHUB_REF to reference a tag'
+
+sha256_file() {
+  local digest
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest=$(sha256sum < "$1")
+  else
+    digest=$(shasum -a 256 < "$1")
+  fi
+  printf '%s\n' "${digest%% *}"
+}
+
+check_tag() {
+  local current
+  current=$(gh api "$repo/git/ref/tags/$tag" --jq '.object | select(.type == "tag") | .sha') || return 1
+  [[ "$current" == "$TAG_OBJECT" ]]
+}
+
+tag=${GITHUB_REF#refs/tags/}
+repo="repos/$GITHUB_REPOSITORY"
+check_tag || fail 'The release tag changed after verification'
+
+cd "$assets_dir" || fail 'No release artifacts for this attempt; re-run all jobs'
+shopt -s nullglob dotglob
+targets=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
+entries=(*)
+(( ${#entries[@]} == ${#targets[@]} )) || fail 'Incomplete or unexpected release artifacts for this attempt; re-run all jobs'
+assets=()
+for target in "${targets[@]}"; do
+  dir="release-$GITHUB_RUN_ATTEMPT-$target"
+  asset="$dir/tasks-$target.tar.gz"
+  entries=("$dir"/*)
+  [[ ! -L "$dir" && ${#entries[@]} == 1 && -f "$asset" && ! -L "$asset" && -s "$asset" ]] || fail "Unexpected package for $target"
+  gh attestation verify "$asset" \
+    --repo "$GITHUB_REPOSITORY" \
+    --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+    --source-ref "$GITHUB_REF" \
+    --source-digest "$RELEASE_COMMIT" \
+    --deny-self-hosted-runners
+  assets+=("$asset")
+done
+
+# Don't reuse a draft or modify an existing release. If a publish
+# attempt left a draft, a maintainer must remove it before retrying.
+gh api --paginate "$repo/releases" | jq -es --arg tag "$tag" \
+  'all(.[][]; .tag_name != $tag)' >/dev/null || fail 'Could not confirm that no release or draft exists for this tag'
+gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+  --draft --verify-tag --title "$tag" --notes 'These binaries require shared libgit2 1.9.x at runtime. Linux binaries are built on Ubuntu 26.04 (install libgit2-1.9); macOS binaries are built on macOS 15 with Homebrew libgit2. See BUILD-INFO.txt inside each archive for the actual build toolchain and dependency versions. Verify the archive before extracting it, as described in ADR-0002.'
+
+draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,databaseId --jq 'select(.isDraft) | .databaseId')
+[[ "$draft" =~ ^[0-9]+$ ]] || fail 'Could not identify the draft release'
+expected=$(
+  for asset in "${assets[@]}"; do
+    digest=$(sha256_file "$asset")
+    printf '%s\tsha256:%s\n' "${asset##*/}" "$digest"
+  done | jq -Rn '[inputs | split("\t") | {name: .[0], digest: .[1]}] | sort_by(.name)'
+)
+gh api --paginate "$repo/releases/$draft/assets" | jq -es --argjson expected "$expected" '
+  add | all(.[]; .state == "uploaded") and (map({name, digest}) | sort_by(.name)) == $expected
+' >/dev/null || fail 'The draft assets do not match the verified archives'
+
+# Release immutability and tag rulesets must already be enabled in
+# repository settings. Check the ref again immediately before publishing.
+check_tag || fail 'The release tag changed after verification'
+gh api --method PATCH "$repo/releases/$draft" -F draft=false --jq '.html_url'

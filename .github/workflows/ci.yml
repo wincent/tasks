@@ -38,6 +38,7 @@ jobs:
       - run: bin/test
       - run: bin/vet
       - run: bin/test-release-tag
+      - run: bin/test-publish-release
 
       - name: Install dprint
         run: |

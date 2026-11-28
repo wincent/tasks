@@ -109,69 +109,22 @@ jobs:
       contents: write
       attestations: read
     steps:
-      # No checkout: publication uses only the packages from this run attempt.
+      # Sparse-checkout only the publish script; release assets stay in RUNNER_TEMP.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.verify-tag.outputs.commit }}
+          persist-credentials: false
+          sparse-checkout: bin/publish-release
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@v8.0.2
         with:
           pattern: release-${{ github.run_attempt }}-*
           path: ${{ runner.temp }}/release-assets
 
       - name: Verify the complete asset set and publish
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
           TAG_OBJECT: ${{ needs.verify-tag.outputs.tag_object }}
-        run: |
-          fail() { printf '%s\n' "$*" >&2; exit 1; }
-          check_tag() {
-            current=$(gh api "$repo/git/ref/tags/$tag" --jq '.object | select(.type == "tag") | .sha') || return 1
-            [[ "$current" == "$TAG_OBJECT" ]]
-          }
-
-          tag=${GITHUB_REF#refs/tags/}
-          repo="repos/$GITHUB_REPOSITORY"
-          check_tag || fail 'The release tag changed after verification'
-
-          cd "$RUNNER_TEMP/release-assets" || fail 'No release artifacts for this attempt; re-run all jobs'
-          shopt -s nullglob dotglob
-          targets=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
-          entries=(*)
-          (( ${#entries[@]} == ${#targets[@]} )) || fail 'Incomplete or unexpected release artifacts for this attempt; re-run all jobs'
-          assets=()
-          for target in "${targets[@]}"; do
-            dir="release-$GITHUB_RUN_ATTEMPT-$target"
-            asset="$dir/tasks-$target.tar.gz"
-            entries=("$dir"/*)
-            [[ ! -L "$dir" && ${#entries[@]} == 1 && -f "$asset" && ! -L "$asset" && -s "$asset" ]] || fail "Unexpected package for $target"
-            gh attestation verify "$asset" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-              --source-ref "$GITHUB_REF" \
-              --source-digest "$RELEASE_COMMIT" \
-              --deny-self-hosted-runners
-            assets+=("$asset")
-          done
-
-          # Don't reuse a draft or modify an existing release. If a publish
-          # attempt left a draft, a maintainer must remove it before retrying.
-          gh api --paginate "$repo/releases" | jq -es --arg tag "$tag" \
-            'all(.[][]; .tag_name != $tag)' >/dev/null || fail 'Could not confirm that no release or draft exists for this tag'
-          gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
-            --draft --verify-tag --title "$tag" --notes 'These binaries require shared libgit2 1.9.x at runtime. Linux binaries are built on Ubuntu 26.04 (install libgit2-1.9); macOS binaries are built on macOS 15 with Homebrew libgit2. See BUILD-INFO.txt inside each archive for the actual build toolchain and dependency versions. Verify the archive before extracting it, as described in ADR-0002.'
-
-          draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,databaseId --jq 'select(.isDraft) | .databaseId')
-          [[ "$draft" =~ ^[0-9]+$ ]] || fail 'Could not identify the draft release'
-          expected=$(
-            for asset in "${assets[@]}"; do
-              digest=$(sha256sum < "$asset")
-              printf '%s\tsha256:%s\n' "${asset##*/}" "${digest%% *}"
-            done | jq -Rn '[inputs | split("\t") | {name: .[0], digest: .[1]}] | sort_by(.name)'
-          )
-          gh api --paginate "$repo/releases/$draft/assets" | jq -es --argjson expected "$expected" '
-            add | all(.[]; .state == "uploaded") and (map({name, digest}) | sort_by(.name)) == $expected
-          ' >/dev/null || fail 'The draft assets do not match the verified archives'
-
-          # Release immutability and tag rulesets must already be enabled in
-          # repository settings. Check the ref again immediately before publishing.
-          check_tag || fail 'The release tag changed after verification'
-          gh api --method PATCH "$repo/releases/$draft" -F draft=false --jq '.html_url'
+        run: bin/publish-release "$RUNNER_TEMP/release-assets"

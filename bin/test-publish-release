@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+publish=$(cd "$(dirname "$0")" && pwd)/publish-release
+work=$(mktemp -d /tmp/tasks-publish-test.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+
+mkdir "$work/mock"
+export PATH="$work/mock:$PATH"
+cat > "$work/mock/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$MOCK_LOG"
+case "$*" in
+  "api repos/test/tasks/git/ref/tags/v1.0.0 --jq .object | select(.type == \"tag\") | .sha")
+    count=$(cat "$MOCK_TAG_COUNT")
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$MOCK_TAG_COUNT"
+    if (( count == 1 )); then
+      printf '%s\n' "$MOCK_TAG_FIRST"
+    else
+      printf '%s\n' "$MOCK_TAG_SECOND"
+    fi
+    ;;
+  "attestation verify "*" --repo test/tasks --signer-workflow test/tasks/.github/workflows/release.yml --source-ref refs/tags/v1.0.0 --source-digest $RELEASE_COMMIT --deny-self-hosted-runners")
+    if [[ -n "${MOCK_FAIL_ATTEST:-}" && "$3" == *"$MOCK_FAIL_ATTEST"* ]]; then
+      printf 'Attestation verification failed for %s\n' "$3" >&2
+      exit 1
+    fi
+    ;;
+  "api --paginate repos/test/tasks/releases")
+    printf '%s\n' "$MOCK_RELEASES"
+    ;;
+  "release create v1.0.0 "*" --repo test/tasks --draft --verify-tag --title v1.0.0 --notes "*)
+    ;;
+  "release view v1.0.0 --repo test/tasks --json isDraft,databaseId --jq select(.isDraft) | .databaseId")
+    printf '%s\n' "$MOCK_DRAFT_ID"
+    ;;
+  "api --paginate repos/test/tasks/releases/42/assets")
+    printf '%s\n' "$MOCK_DRAFT_ASSETS"
+    ;;
+  "api --method PATCH repos/test/tasks/releases/42 -F draft=false --jq .html_url")
+    printf '%s\n' 'https://github.com/test/tasks/releases/tag/v1.0.0'
+    ;;
+  *)
+    printf 'Unexpected gh call: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x "$work/mock/gh"
+
+sha256_file() {
+  local digest
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest=$(sha256sum < "$1")
+  else
+    digest=$(shasum -a 256 < "$1")
+  fi
+  printf '%s\n' "${digest%% *}"
+}
+
+export GITHUB_REPOSITORY=test/tasks
+export GITHUB_REF=refs/tags/v1.0.0
+export GITHUB_RUN_ATTEMPT=1
+export RELEASE_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export TAG_OBJECT=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+export MOCK_LOG="$work/gh.log"
+export MOCK_TAG_COUNT="$work/tag-count"
+
+targets=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64)
+
+setup_assets() {
+  rm -rf "$work/assets" "$work/real-dir"
+  mkdir "$work/assets"
+  local items=()
+  for target in "${targets[@]}"; do
+    local dir="$work/assets/release-1-$target"
+    local asset="$dir/tasks-$target.tar.gz"
+    mkdir "$dir"
+    printf 'payload-%s\n' "$target" > "$asset"
+    items+=("$(jq -nc --arg name "tasks-$target.tar.gz" --arg digest "sha256:$(sha256_file "$asset")" '{name:$name, digest:$digest, state:"uploaded"}')")
+  done
+  export MOCK_TAG_FIRST="$TAG_OBJECT"
+  export MOCK_TAG_SECOND="$TAG_OBJECT"
+  export MOCK_FAIL_ATTEST=''
+  export MOCK_RELEASES='[]'
+  export MOCK_DRAFT_ID='42'
+  MOCK_DRAFT_ASSETS=$(printf '%s\n' "${items[@]}" | jq -cs '.')
+  export MOCK_DRAFT_ASSETS
+  : > "$MOCK_LOG"
+  printf '0\n' > "$MOCK_TAG_COUNT"
+}
+
+reject() {
+  local message=$1
+  if "$publish" "$work/assets" > "$work/log" 2>&1 || [[ $(<"$work/log") != *"$message"* ]]; then
+    printf 'Expected rejection: %s\n' "$message" >&2
+    head -50 "$work/log" >&2
+    exit 1
+  fi
+}
+
+assert_not_logged() {
+  local needle=$1
+  if grep -Fq "$needle" "$MOCK_LOG"; then
+    printf 'Unexpected gh call matching: %s\n' "$needle" >&2
+    cat "$MOCK_LOG" >&2
+    exit 1
+  fi
+}
+
+# Happy path.
+setup_assets
+url=$("$publish" "$work/assets")
+[[ "$url" == 'https://github.com/test/tasks/releases/tag/v1.0.0' ]]
+(( $(cat "$MOCK_TAG_COUNT") == 2 ))
+grep -Fq 'api --method PATCH repos/test/tasks/releases/42 -F draft=false' "$MOCK_LOG"
+
+# Tag moved before publication starts.
+setup_assets
+MOCK_TAG_FIRST=cccccccccccccccccccccccccccccccccccccccc
+reject 'The release tag changed after verification'
+assert_not_logged 'release create'
+
+# Missing assets directory, or missing/extra artifact directories.
+setup_assets
+rm -rf "$work/assets"
+reject 'No release artifacts for this attempt'
+
+setup_assets
+rm -rf "$work/assets/release-1-darwin-amd64"
+reject 'Incomplete or unexpected release artifacts'
+
+setup_assets
+mkdir "$work/assets/extra"
+reject 'Incomplete or unexpected release artifacts'
+
+# Symlinked artifact directory, extra file, empty archive, or symlinked archive.
+setup_assets
+mv "$work/assets/release-1-linux-amd64" "$work/real-dir"
+ln -s "$work/real-dir" "$work/assets/release-1-linux-amd64"
+reject 'Unexpected package for linux-amd64'
+
+setup_assets
+printf 'extra\n' > "$work/assets/release-1-linux-amd64/extra"
+reject 'Unexpected package for linux-amd64'
+
+setup_assets
+: > "$work/assets/release-1-linux-amd64/tasks-linux-amd64.tar.gz"
+reject 'Unexpected package for linux-amd64'
+
+setup_assets
+ln -sf /dev/null "$work/assets/release-1-linux-amd64/tasks-linux-amd64.tar.gz"
+reject 'Unexpected package for linux-amd64'
+
+# Attestation verification failure.
+setup_assets
+MOCK_FAIL_ATTEST=darwin-arm64
+reject 'Attestation verification failed'
+assert_not_logged 'release create'
+
+# Existing release or draft for tag.
+setup_assets
+MOCK_RELEASES='[{"tag_name":"v1.0.0"}]'
+reject 'Could not confirm that no release or draft exists for this tag'
+assert_not_logged 'release create'
+
+# Unidentified draft release.
+setup_assets
+MOCK_DRAFT_ID=''
+reject 'Could not identify the draft release'
+assert_not_logged 'draft=false'
+
+# Uploaded asset digest mismatch or non-uploaded state.
+setup_assets
+MOCK_DRAFT_ASSETS=$(jq -c '.[0].digest = "sha256:0000"' <<< "$MOCK_DRAFT_ASSETS")
+reject 'The draft assets do not match the verified archives'
+assert_not_logged 'draft=false'
+
+setup_assets
+MOCK_DRAFT_ASSETS=$(jq -c '.[0].state = "starter"' <<< "$MOCK_DRAFT_ASSETS")
+reject 'The draft assets do not match the verified archives'
+assert_not_logged 'draft=false'
+
+# Tag moved between draft creation and publish.
+setup_assets
+MOCK_TAG_SECOND=cccccccccccccccccccccccccccccccccccccccc
+reject 'The release tag changed after verification'
+assert_not_logged 'draft=false'
+
+printf '%s\n' 'Release publish checks passed'
