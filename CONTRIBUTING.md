@@ -41,7 +41,7 @@ The repository settings are:
 
 The release process is triggered by pushing a signed tag pointing at a commit on `main` for which CI has previously passed:
 
-1. Update [CHANGES.md](CHANGES.md) with the version, release date, and user-visible changes. Note that, because change text is extracted and included in release notes, **it must not include relative links** (instead, link to absolute GitHub URLs pointing at the specific tagged version of the link target).
+1. Update [CHANGES.md](CHANGES.md) with the version, release date, and user-visible changes. Note that, because change text is extracted and included in [release notes](https://github.com/wincent/tasks/releases), **it must not include relative links** (instead, link to absolute GitHub URLs pointing at the specific tagged version of the link target).
 2. Run `bin/ci` as a final preflight check.
 3. Commit and push `main`.
 4. **Wait for CI to pass.**
